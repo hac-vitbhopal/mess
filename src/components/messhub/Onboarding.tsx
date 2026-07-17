@@ -59,7 +59,7 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
                 autoFocus
                 value={name}
                 onChange={(e) => setName(e.target.value.slice(0, 50))}
-                placeholder="Ishaan Sharma"
+                placeholder="Your Name"
                 className="w-full rounded-2xl border border-border bg-card px-4 py-3.5 text-base outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
               />
             </label>
