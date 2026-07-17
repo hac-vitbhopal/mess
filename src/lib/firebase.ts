@@ -1,45 +1,91 @@
 /**
- * Firebase scaffolding (prepared, not connected).
- *
- * To enable: create a Firebase project, fill in env vars in .env.local:
- *   VITE_FIREBASE_API_KEY=
- *   VITE_FIREBASE_AUTH_DOMAIN=
- *   VITE_FIREBASE_PROJECT_ID=
- *   VITE_FIREBASE_STORAGE_BUCKET=
- *   VITE_FIREBASE_MESSAGING_SENDER_ID=
- *   VITE_FIREBASE_APP_ID=
- *   VITE_FIREBASE_VAPID_KEY=
- *
- * Then install: bun add firebase
- * And uncomment the code below.
+ * Firebase messaging and subscription module.
+ * Ensure you install the SDK first: bun add firebase
  */
+import { initializeApp, getApps, getApp } from "firebase/app";
 
-export const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyD45WuPr0HR9d0lJY4HCrhRUhy-kV0wsw4",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "messmenu-a387b.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "messmenu-a387b",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "messmenu-a387b.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "1057632756638",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:1057632756638:web:8eca944e315ec5c76c2c8f"
 };
 
+// Check if configuration exists safely
 export const isFirebaseConfigured = () => Boolean(firebaseConfig.apiKey);
 
-// Placeholder: subscribe a device to a mess topic via FCM.
-// Real implementation registers the SW, gets a token, and calls backend to subscribe.
-export async function subscribeToMessTopic(messId: string) {
-  if (!isFirebaseConfigured()) {
-    console.info("[FCM] Firebase not configured. Would subscribe to topic:", messId);
-    return;
-  }
-  // const { getMessaging, getToken } = await import("firebase/messaging");
-  // ... token retrieval + backend subscribe
-}
+// Safely initialize app avoiding multi-instance errors, running exclusively on client-side window environment
+const app = typeof window !== "undefined" && isFirebaseConfigured()
+  ? (getApps().length > 0 ? getApp() : initializeApp(firebaseConfig))
+  : null;
 
+/**
+ * Requests native browser/device notification permissions
+ */
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
   if (typeof Notification === "undefined") return "denied";
   if (Notification.permission === "granted" || Notification.permission === "denied") {
     return Notification.permission;
   }
   return Notification.requestPermission();
+}
+
+/**
+ * Retrieves the FCM device token using the active service worker and syncs subscription with the backend
+ */
+export async function subscribeToMessTopic(messId: string): Promise<void> {
+  if (!isFirebaseConfigured() || !app) {
+    console.info("[FCM] Firebase not configured. Would subscribe to topic:", messId);
+    return;
+  }
+
+  try {
+    // Dynamic import to prevent Node/SSR build environment crashes
+    const { getMessaging, getToken } = await import("firebase/messaging");
+    const messaging = getMessaging(app);
+
+    // Ensure the service worker is active and ready before requesting the FCM token
+    const serviceWorkerRegistration = await navigator.serviceWorker.ready;
+
+    const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+    if (!vapidKey) {
+      console.warn("[FCM] Missing VITE_FIREBASE_VAPID_KEY in environment configuration.");
+    }
+
+    // Retrieve unique browser notification routing device token
+    const token = await getToken(messaging, {
+      serviceWorkerRegistration,
+      vapidKey: vapidKey
+    });
+
+    if (!token) {
+      console.warn("[FCM] No token instance returned. Verify browser permission policies.");
+      return;
+    }
+
+    console.info(`[FCM] Token generated. Syncing topic registration for: mess_${messId}`);
+
+    // Call internal backend proxy endpoint to let Firebase Admin handle topic subscription safely
+    const response = await fetch("/api/subscribe", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        token,
+        topic: `mess_${messId}`,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Server tracking returned status code ${response.status}`);
+    }
+
+    console.info(`[FCM] Successfully subscribed to mess_${messId}`);
+  } catch (error) {
+    console.error("[FCM] Error processing subscription sequence:", error);
+    throw error;
+  }
 }

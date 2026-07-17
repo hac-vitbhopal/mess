@@ -140,3 +140,11 @@
 @utility live-dot {
   animation: pulse-ring 2s infinite;
 }
+@layer base {
+  html, body {
+    overflow-x: hidden;
+    overscroll-behavior-y: contain; /* Prevents pull-to-refresh pull-down bounces */
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+}
