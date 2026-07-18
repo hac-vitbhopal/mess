@@ -19,13 +19,22 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
       setError(parsed.error.issues[0]?.message ?? "Please check your inputs");
       return;
     }
+    
     const profile = parsed.data;
+    
+    // 1. Save locally to device storage immediately
     saveProfile(profile);
+    
+    // 2. ⚡ FIX: Fire the callback instantly so the parent view swaps without delay
+    onComplete(profile);
+    
+    // 3. Kick off async permissions/network tasks in the background without blocking the UI thread
     try {
       await requestNotificationPermission();
       await subscribeToMessTopic(profile.messId);
-    } catch {}
-    onComplete(profile);
+    } catch (err) {
+      console.warn("Background notification subscription bypassed:", err);
+    }
   }
 
   const canSubmit = name.trim().length > 0 && messId !== null;
@@ -73,6 +82,7 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
                 return (
                   <button
                     key={m.id}
+                    type="button"
                     onClick={() => setMessId(m.id)}
                     className={`rounded-2xl border p-4 text-left transition ${
                       active
@@ -96,6 +106,7 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
           )}
 
           <button
+            type="button"
             disabled={!canSubmit}
             onClick={submit}
             className="mt-8 w-full rounded-2xl gradient-warm px-6 py-4 font-semibold text-white shadow-card transition hover:opacity-95 disabled:opacity-40"

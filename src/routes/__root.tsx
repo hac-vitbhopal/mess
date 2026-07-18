@@ -84,7 +84,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:description", content: "Live meal timeline, today's menu and mess announcements — all in one place." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "apple-mobile-web-app-capable", content: "yes" },
+      
+      // 📱 FIXED: Changed the deprecated apple specific meta tag to the standard standard parameter
+      { name: "mobile-web-app-capable", content: "yes" },
+      
       { name: "apple-mobile-web-app-title", content: "MessHub" },
       { name: "apple-mobile-web-app-status-bar-style", content: "default" },
     ],
