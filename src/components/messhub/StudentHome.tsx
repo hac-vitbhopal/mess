@@ -123,25 +123,64 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
   }, [focus, focusIsLive, currentMenu, today]);
 
   useEffect(() => {
-    if (!db || !profile.messId) return;
+  if (!db || !profile.messId) return;
 
-    const broadcastQuery = query(
-      collection(db, "broadcasts"),
-      where("messId", "==", profile.messId),
-      orderBy("createdAt", "desc")
-    );
-    
-    const broadcastUnsubscribe = onSnapshot(broadcastQuery, (snapshot) => {
-      const list = snapshot.docs.map(doc => ({
+  // 📡 Listen to real-time broadcast entries on Firestore
+  const broadcastQuery = query(
+    collection(db, "broadcasts"),
+    orderBy("createdAt", "desc")
+  );
+  
+  const broadcastUnsubscribe = onSnapshot(broadcastQuery, (snapshot) => {
+    const list = snapshot.docs
+      .map(doc => ({
         id: doc.id,
+        messId: doc.data().messId,
         title: doc.data().title,
         body: doc.data().body
-      }));
-      setBroadcasts(list);
-    });
+      }))
+      .filter(b => b.messId === profile.messId || b.messId === "all");
 
-    return () => broadcastUnsubscribe();
-  }, [profile.messId]);
+    setBroadcasts(list);
+
+    // 🔔 Trigger Native Phone Notification Panel Alert
+    if (list.length > 0) {
+      const latestAlert = list[0]; 
+      const alertId = latestAlert.id;
+
+      // Ensure we only process this unique Firestore document ID once
+      if (!sessionStorage.getItem(`messhub.processed_alert_${alertId}`)) {
+        if ("Notification" in window && Notification.permission === "granted") {
+          
+          const title = `📢 Mess Alert: ${latestAlert.title}`;
+          const options = {
+            body: latestAlert.body,
+            icon: "/icon-192.png",
+            badge: "/icon-192.png",
+            tag: `broadcast-${alertId}`,
+            renotify: true,
+            requireInteraction: true, // Holds banner on lockscreen permanently until swiped
+            vibrate: [300, 100, 300],
+            data: { url: "/" }
+          };
+
+          // ⚡ FIX: Force it directly into the Service Worker registration context.
+          // This bypasses the foreground window rules and pushes it straight to the phone's notification panel.
+          navigator.serviceWorker.ready.then((registration) => {
+            registration.showNotification(title, options as any);
+          }).catch((err) => {
+            console.error("Service Worker notification failure:", err);
+          });
+        }
+        
+        // Mark this specific Firestore entry as handled locally on this device session
+        sessionStorage.setItem(`messhub.processed_alert_${alertId}`, "true");
+      }
+    }
+  });
+
+  return () => broadcastUnsubscribe();
+}, [profile.messId]);
 
   const strip = useMemo(() => buildDateStrip(today, 21), [today]);
   const stripRef = useRef<HTMLDivElement>(null);

@@ -1,13 +1,16 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
-import { collection, doc, writeBatch, onSnapshot } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { 
   getAdminSession, 
   saveAdminSession, 
   clearAdminSession, 
-  ADMIN_AUTH_KEYS, 
-  mkEmptyDay 
+  ADMIN_AUTH_KEYS,
+  MESSES,
+  MEAL_DEFS,
+  HARDCODED_WEEKLY_MENUS,
+  type MealKey
 } from "@/lib/messhub";
 
 export const Route = createFileRoute("/super-admin")({
@@ -27,7 +30,6 @@ function SuperAdminGatekeeper() {
   const [authError, setAuthError] = useState(false);
 
   useEffect(() => {
-    // Redirect if a standard admin tries to breach the root console
     if (session && session.role !== "super-admin") {
       navigate({ to: "/admin" });
     }
@@ -98,73 +100,94 @@ function SuperAdminGatekeeper() {
 }
 
 function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
-  const [liveMesses, setLiveMesses] = useState<{ id: string; name: string; subtitle?: string }[]>([]);
-  const [newMessId, setNewMessId] = useState("");
-  const [newMessName, setNewMessName] = useState("");
-  const [newMessSubtitle, setNewMessSubtitle] = useState("");
-  const [isCreating, setIsCreating] = useState(false);
+  // Setup local data structures
+  const currentWeekday = new Date().getDay();
 
-  // 📡 Real-time sync list mapping from active Firestore nodes
-  useEffect(() => {
+  // Meal Trigger states
+  const [selectedMealKey, setSelectedMealKey] = useState<MealKey>("lunch");
+  const [isFiringMealAlert, setIsFiringMealAlert] = useState(false);
+
+  // Custom Broadcast states
+  const [targetMessId, setTargetMessId] = useState<string>("all");
+  const [broadcastTitle, setBroadcastTitle] = useState("");
+  const [broadcastBody, setBroadcastBody] = useState("");
+  const [isBroadcastingCustom, setIsBroadcastingCustom] = useState(false);
+
+  // 🔥 1. AUTOMATED MEAL TRIGGER FUNCTION (ALL MESSES BROADCAST)
+  async function handleTriggerMealNotification() {
     if (!db) return;
-    const unsubscribe = onSnapshot(collection(db, "messes"), (snapshot) => {
-      const list = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as any;
-      setLiveMesses(list);
-    });
-    return () => unsubscribe();
-  }, []);
 
-  // 🏗️ Automated 7-Day Matrix Provisioning Generator Engine
-  async function handleCreateNewMess(e: React.FormEvent) {
-  e.preventDefault();
-  const cleanId = newMessId.trim().toLowerCase().replace(/\s+/g, "_");
-  const cleanName = newMessName.trim();
-  const cleanSubtitle = newMessSubtitle.trim();
+    const selectedDef = MEAL_DEFS.find((m) => m.key === selectedMealKey);
+    const mealName = selectedDef ? selectedDef.name : selectedMealKey;
 
-  if (!cleanId || !cleanName || !db) return;
-  
-  // 🔑 FIX: Capture the narrowed non-null instance in a local variable
-  const firestore = db;
-  setIsCreating(true);
+    // Double confirmation popup dialog as requested
+    const confirmation = window.confirm(
+      `🚨 ARE YOU SURE?\n\nThis will instantly parse today's menus across ALL messes and blast a live Zomato-style ${mealName} notification to every student device. Continue?`
+    );
+    if (!confirmation) return;
 
-  try {
-    // Pass the local reference to the writeBatch builder
-    const batch = writeBatch(firestore);
+    setIsFiringMealAlert(true);
+    try {
+      // Swiggy/Zomato style copy templates
+      const pushTemplates: Record<string, { title: string; bodyPrefix: string }> = {
+        breakfast: { title: "🍳 Breakfast Counter Open!", bodyPrefix: "Today's fuel is served: " },
+        lunch: { title: "🍽️ Lunch is Served!", bodyPrefix: "Smells amazing right now! On the line: " },
+        snacks: { title: "☕ High Tea / Snacks Ready!", bodyPrefix: "Time for a quick study break! Grab some: " },
+        dinner: { title: "🌙 Dinner Window Open!", bodyPrefix: "Ready to wrap up your day? Tonight's spread: " },
+      };
 
-    // 1. Establish the main core mess metadata parameters document path
-    const messDocRef = doc(firestore, "messes", cleanId);
-    batch.set(messDocRef, {
-      name: cleanName,
-      ...(cleanSubtitle ? { subtitle: cleanSubtitle } : {}),
-    });
+      const template = pushTemplates[selectedMealKey] || { 
+        title: `🍽️ ${mealName} is Live!`, 
+        bodyPrefix: "Check out today's selections: " 
+      };
 
-    // 2. Automate creation of all 7 weekday structures populated with empty arrays
-    const emptyDayData = mkEmptyDay(); 
-    const weekdaysList = ["1", "2", "3", "4", "5", "6", "0"];
+      // Loop over every mess, grab its specific hardcoded menu items for today, and write a broadcast doc
+      for (const mess of MESSES) {
+        const items = HARDCODED_WEEKLY_MENUS[mess.id]?.[currentWeekday]?.[selectedMealKey] ?? [];
+        const itemString = items.slice(0, 3).join(", ") + (items.length > 3 ? "..." : "");
+        const finalBodyText = `${template.bodyPrefix}${itemString || "Freshly cooked menu choices"}. Come down to the hall!`;
 
-    weekdaysList.forEach((dayId) => {
-      // 🔑 FIX: Use the local 'firestore' reference inside the callback closure
-      const dayDocRef = doc(firestore, "messes", cleanId, "weeklyMenu", dayId);
-      batch.set(dayDocRef, emptyDayData);
-    });
+        await addDoc(collection(db, "broadcasts"), {
+          messId: mess.id, // Direct target message delivery stream per dining hall
+          title: template.title,
+          body: finalBodyText,
+          createdAt: serverTimestamp(),
+        });
+      }
 
-    // Commit transaction up to cloud nodes concurrently
-    await batch.commit();
-
-    setNewMessId("");
-    setNewMessName("");
-    setNewMessSubtitle("");
-    alert(`Registered ${cleanName} and fully generated all 7 empty weekday slots inside Firestore!`);
-  } catch (error) {
-    console.error("Batch initialization failure:", error);
-    alert("Error setting up mess architecture nodes.");
-  } finally {
-    setIsCreating(false);
+      alert(`🚀 Success! Live ${mealName} push notices successfully dispersed across all student nodes!`);
+    } catch (error) {
+      console.error("Meal transmission failure:", error);
+      alert("Error pushing layout data over Firestore nodes.");
+    } finally {
+      setIsFiringMealAlert(false);
+    }
   }
-}
+
+  // 📢 2. CUSTOM CHANNELS BROADCAST FUNCTION (ONE OR ALL MESSES)
+  async function handleDeployCustomBroadcast(e: React.FormEvent) {
+    e.preventDefault();
+    if (!broadcastTitle.trim() || !broadcastBody.trim() || !db) return;
+
+    setIsBroadcastingCustom(true);
+    try {
+      await addDoc(collection(db, "broadcasts"), {
+        messId: targetMessId, // Saves as specific ID or global "all" string parameters
+        title: broadcastTitle.trim(),
+        body: broadcastBody.trim(),
+        createdAt: serverTimestamp(),
+      });
+
+      setBroadcastTitle("");
+      setBroadcastBody("");
+      alert(`⚡ Custom broadcast successfully deployed to channel destination: "${targetMessId}".`);
+    } catch (error) {
+      console.error("Custom broadcast failure:", error);
+      alert("Error writing document to cloud collections.");
+    } finally {
+      setIsBroadcastingCustom(false);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-[#fbf7f2]">
@@ -182,84 +205,104 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
       </header>
 
       <main className="mx-auto max-w-2xl px-5 py-6 space-y-6">
-        {/* Creation Input Section */}
+        
+        {/* CARD 1: 🚀 Zomato-Style Live Meal Transmitter Console */}
         <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
-          <h2 className="text-base font-bold text-foreground tracking-tight">Register New Mess</h2>
+          <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
+            <span>🚀</span> Automated Meal Alert Push
+          </h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Initializes the mess channel and instantly sets up its Monday to Sunday database calendar nodes.
+            Selects a current meal period, builds custom interactive notifications featuring today's menu choices automatically, and triggers them across **ALL** campus app sessions.
           </p>
 
-          <form onSubmit={handleCreateNewMess} className="mt-4 space-y-3">
+          <div className="mt-4 flex flex-col gap-3">
             <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1">Unique Mess ID (e.g., `crcl` or `mayuri_boys`):</label>
+              <label className="block text-xs font-semibold text-muted-foreground mb-1">Select Active Service Window:</label>
+              <select
+                value={selectedMealKey}
+                onChange={(e) => setSelectedMealKey(e.target.value as MealKey)}
+                className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2.5 text-xs font-bold outline-none focus:border-primary focus:bg-white transition"
+              >
+                {MEAL_DEFS.map((m) => (
+                  <option key={m.key} value={m.key}>
+                    {m.icon} {m.name} Setup Template
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleTriggerMealNotification}
+              disabled={isFiringMealAlert}
+              className="mt-1 w-full rounded-xl gradient-warm py-3 text-xs font-bold text-white shadow-card transition active:scale-[0.99] disabled:opacity-40"
+            >
+              {isFiringMealAlert ? "Syncing Menu Assets & Pushing..." : "Transmit Live Meal Alerts to All Devices"}
+            </button>
+          </div>
+        </div>
+
+        {/* CARD 2: 📢 Custom Channel Broadcast Control */}
+        <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
+          <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
+            <span>📢</span> Custom Channel Broadcast
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Draft a completely custom announcement notice and deliver it dynamically to either a single specific targeted hall or a universal global blast.
+          </p>
+
+          <form onSubmit={handleDeployCustomBroadcast} className="mt-4 space-y-3">
+            <div>
+              <label className="block text-xs font-semibold text-muted-foreground mb-1">Target Channel Node Destination:</label>
+              <select
+                value={targetMessId}
+                onChange={(e) => setTargetMessId(e.target.value)}
+                className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2.5 text-xs font-semibold outline-none focus:border-primary focus:bg-white transition"
+              >
+                <option value="all">🌍 All Messes (Global Broadcast)</option>
+                {MESSES.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    🏢 {m.name} {m.subtitle ? `(${m.subtitle})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-muted-foreground mb-1">Broadcast Custom Heading:</label>
               <input
                 required
                 type="text"
-                value={newMessId}
-                onChange={(e) => setNewMessId(e.target.value)}
-                placeholder="lowercase_id"
+                value={broadcastTitle}
+                onChange={(e) => setBroadcastTitle(e.target.value)}
+                placeholder="Enter alert header text..."
                 className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2 text-xs font-medium outline-none focus:border-primary focus:bg-white transition"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1">Display Name (e.g., `CRCL` or `Mayuri`):</label>
-              <input
+              <label className="block text-xs font-semibold text-muted-foreground mb-1">Message Text Body Content:</label>
+              <textarea
                 required
-                type="text"
-                value={newMessName}
-                onChange={(e) => setNewMessName(e.target.value)}
-                placeholder="Dining Facility Name"
-                className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2 text-xs font-medium outline-none focus:border-primary focus:bg-white transition"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1">Subtitle / Section (Optional — e.g., `Girls`):</label>
-              <input
-                type="text"
-                value={newMessSubtitle}
-                onChange={(e) => setNewMessSubtitle(e.target.value)}
-                placeholder="Leave blank if none"
-                className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2 text-xs font-medium outline-none focus:border-primary focus:bg-white transition"
+                rows={3}
+                maxLength={500}
+                value={broadcastBody}
+                onChange={(e) => setBroadcastBody(e.target.value)}
+                placeholder="Type your message details here..."
+                className="w-full resize-none rounded-xl border border-border bg-[#fbf7f2] px-3 py-2 text-xs font-medium outline-none focus:border-primary focus:bg-white transition"
               />
             </div>
 
             <button
               type="submit"
-              disabled={isCreating || !newMessId || !newMessName}
-              className="mt-2 w-full rounded-xl bg-black py-2.5 text-xs font-bold text-white shadow-card transition active:scale-[0.99] disabled:opacity-40"
+              disabled={isBroadcastingCustom || !broadcastTitle.trim() || !broadcastBody.trim()}
+              className="mt-1 w-full rounded-xl bg-black py-2.5 text-xs font-bold text-white shadow-card transition active:scale-[0.99] disabled:opacity-40"
             >
-              {isCreating ? "Generating Architecture..." : "Deploy Mess Structure"}
+              {isBroadcastingCustom ? "Dispersing Packet Streams..." : "Disperse Custom Announcement"}
             </button>
           </form>
         </div>
 
-        {/* Real-time Streaming Overview Section */}
-        <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
-          <h2 className="text-base font-bold text-foreground tracking-tight">
-            Operational Dining Halls ({liveMesses.length})
-          </h2>
-          <div className="mt-4 space-y-2">
-            {liveMesses.length === 0 ? (
-              <p className="text-xs italic text-muted-foreground py-2">No custom cloud records detected.</p>
-            ) : (
-              liveMesses.map((m) => (
-                <div key={m.id} className="flex items-center justify-between p-3 rounded-xl bg-[#fbf7f2] border border-border/40">
-                  <div className="min-w-0">
-                    <span className="text-sm font-bold text-foreground truncate block">
-                      {m.name} {m.subtitle && `(${m.subtitle})`}
-                    </span>
-                    <span className="block text-[9px] text-muted-foreground font-mono mt-0.5">ID: {m.id}</span>
-                  </div>
-                  <span className="text-[10px] uppercase font-bold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-md shrink-0">
-                    7 Days Ready
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
       </main>
     </div>
   );

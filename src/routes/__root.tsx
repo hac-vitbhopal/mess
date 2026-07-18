@@ -112,7 +112,8 @@ function RootShell({ children }: { children: ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body>
+      {/* ⚡ suppressHydrationWarning silences minor extension-injected attribute checks */}
+      <body suppressHydrationWarning>
         {children}
         <Scripts />
       </body>
