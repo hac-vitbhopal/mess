@@ -1,25 +1,54 @@
 // public/sw.js
 
-// Keep your existing installation or caching event listeners above this if you have any!
+// 1. Listen for background push events from Firebase Cloud Messaging
+self.addEventListener('push', function (event) {
+  if (!event.data) return;
 
-self.addEventListener('notificationclick', function(event) {
-  // Instantly dim and dismiss the notification panel card from the screen
-  event.notification.close(); 
+  try {
+    const payload = event.data.json();
+    const title = payload.notification?.title || "📢 MessHub Alert";
+    const options = {
+      body: payload.notification?.body || "New menu updates are available.",
+      icon: "/mess_logo.png",
+      badge: "/mess_logo.png",
+      tag: payload.data?.tag || 'generic-broadcast',
+      renotify: true,
+      requireInteraction: true, // ⚡ Holds it permanently in the notification tray until swiped
+      vibrate: [300, 100, 300],
+      data: { url: payload.data?.url || "/" }
+    };
 
-  // Force the browser shell instance to wake up and focus the MessHub tab window
+    event.waitUntil(self.registration.showNotification(title, options));
+  } catch (err) {
+    // Fallback if data string is plain text instead of json object
+    const textOptions = {
+      body: event.data.text(),
+      icon: "/mess_logo.png",
+      badge: "/mess_logo.png",
+      requireInteraction: true,
+      vibrate: [300, 100, 300]
+    };
+    event.waitUntil(self.registration.showNotification("📢 MessHub Broadcast", textOptions));
+  }
+});
+
+// 2. Handle what happens when a student taps the system tray card panel
+self.addEventListener('notificationclick', function (event) {
+  event.notification.close(); // Automatically dismiss from system tray on click
+
+  const targetUrl = event.notification.data?.url || '/';
+
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-      // Check if a tab of our app is already open somewhere in the browser background
-      for (var i = 0; i < clientList.length; i++) {
-        var client = clientList[i];
-        // Safer check: checks if the window is on our current app origin root
-        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
+      // If a tab is already open, focus it
+      for (const client of clientList) {
+        if (client.url.includes(targetUrl) && 'focus' in client) {
           return client.focus();
         }
       }
-      // If the app isn't open anywhere, spin open a fresh window instances tab
+      // Otherwise open a fresh window view channel
       if (clients.openWindow) {
-        return clients.openWindow('/');
+        return clients.openWindow(targetUrl);
       }
     })
   );
