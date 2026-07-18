@@ -478,7 +478,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
               disabled={isSubmittingFeedback || !feedbackMessage.trim()}
               className="w-full rounded-xl bg-foreground text-background px-3 py-2.5 text-xs font-bold active:scale-[0.99] transition disabled:opacity-40"
             >
-              {isSubmittingFeedback ? "Submitting Ticket..." : "Submit Formspree Report"}
+              {isSubmittingFeedback ? "Submitting Ticket..." : "Submit Response"}
             </button>
           </form>
         </div>

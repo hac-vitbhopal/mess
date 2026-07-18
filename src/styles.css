@@ -143,7 +143,10 @@
 @layer base {
   html, body {
     overflow-x: hidden;
-    overscroll-behavior-y: contain; /* Prevents pull-to-refresh pull-down bounces */
+    overflow-y: auto;              /* ✅ Forces native vertical scrolling for mouse wheels */
+    height: auto;                  /* ✅ Prevents layout boxes from locking down the viewpoint */
+    min-height: 100vh;             /* ✅ Guarantees background structural coverage */
+    overscroll-behavior-y: auto;   /* ✅ Re-enables native desktop mouse wheel pass-through */
     -webkit-tap-highlight-color: transparent;
     user-select: none;
   }
