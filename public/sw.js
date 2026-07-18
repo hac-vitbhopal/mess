@@ -20,19 +20,19 @@ const messaging = firebase.messaging();
 messaging.onBackgroundMessage((payload) => {
   console.log('[sw.js] Background message intercepted: ', payload);
 
-  const title = payload.notification?.title || "📢 MessHub Alert";
+  // ⚡ FIX: Extract parameters natively out of the updated data string attributes
+  const title = payload.data?.title || "📢 MessHub Alert";
   const options = {
-    body: payload.notification?.body || "New menu updates are available.",
+    body: payload.data?.body || "New menu updates are available.",
     icon: "/mess_logo.png",
     badge: "/mess_logo.png",
-    tag: payload.data?.tag || 'generic-broadcast',
+    tag: payload.data?.tag || 'meal-alert',
     renotify: true,
-    requireInteraction: true, // ⚡ Holds it permanently in the notification tray until swiped
+    requireInteraction: true, 
     vibrate: [300, 100, 300],
     data: { url: payload.data?.url || "/" }
   };
 
-  // Keep the service worker alive until the operating system displays it in the phone's tray
   self.registration.showNotification(title, options);
 });
 

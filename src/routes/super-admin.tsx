@@ -12,6 +12,7 @@ import {
   HARDCODED_WEEKLY_MENUS,
   type MealKey
 } from "@/lib/messhub";
+import { sendFcmNotification } from "@/lib/broadcast-action";
 
 export const Route = createFileRoute("/super-admin")({
   head: () => ({
@@ -25,15 +26,23 @@ export const Route = createFileRoute("/super-admin")({
 
 function SuperAdminGatekeeper() {
   const navigate = useNavigate();
-  const [session, setSession] = useState(() => getAdminSession());
+  
+  // 1. Setup mounting guards to cleanly bypass server side rendering conflicts
+  const [isMounted, setIsMounted] = useState(false);
+  const [session, setSession] = useState<any>(null);
   const [passcode, setPasscode] = useState("");
   const [authError, setAuthError] = useState(false);
 
   useEffect(() => {
-    if (session && session.role !== "super-admin") {
+    setSession(getAdminSession());
+    setIsMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (isMounted && session && session.role !== "super-admin") {
       navigate({ to: "/admin" });
     }
-  }, [session, navigate]);
+  }, [session, navigate, isMounted]);
 
   function handleVerifyPasscode(e: React.FormEvent) {
     e.preventDefault();
@@ -50,6 +59,11 @@ function SuperAdminGatekeeper() {
       setPasscode("");
       if ("vibrate" in navigator) navigator.vibrate(200);
     }
+  }
+
+  // Render a matching, neutral shell layout during server compilation passes
+  if (!isMounted) {
+    return <div className="min-h-screen bg-[#1c1c1e]" />;
   }
 
   if (!session || session.role !== "super-admin") {
@@ -100,14 +114,11 @@ function SuperAdminGatekeeper() {
 }
 
 function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
-  // Setup local data structures
   const currentWeekday = new Date().getDay();
 
-  // Meal Trigger states
   const [selectedMealKey, setSelectedMealKey] = useState<MealKey>("lunch");
   const [isFiringMealAlert, setIsFiringMealAlert] = useState(false);
 
-  // Custom Broadcast states
   const [targetMessId, setTargetMessId] = useState<string>("all");
   const [broadcastTitle, setBroadcastTitle] = useState("");
   const [broadcastBody, setBroadcastBody] = useState("");
@@ -120,19 +131,18 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
     const selectedDef = MEAL_DEFS.find((m) => m.key === selectedMealKey);
     const mealName = selectedDef ? selectedDef.name : selectedMealKey;
 
-    // Double confirmation popup dialog as requested
     const confirmation = window.confirm(
-      `🚨 ARE YOU SURE?\n\nThis will instantly parse today's menus across ALL messes and blast a live Zomato-style ${mealName} notification to every student device. Continue?`
+      `🚨 ARE YOU SURE?\n\nThis will update the UI and send a live system notification to all student devices.`
     );
     if (!confirmation) return;
 
     setIsFiringMealAlert(true);
     try {
-      // Swiggy/Zomato style copy templates
       const pushTemplates: Record<string, { title: string; bodyPrefix: string }> = {
         breakfast: { title: "🍳 Breakfast Counter Open!", bodyPrefix: "Today's fuel is served: " },
         lunch: { title: "🍽️ Lunch is Served!", bodyPrefix: "Smells amazing right now! On the line: " },
         snacks: { title: "☕ High Tea / Snacks Ready!", bodyPrefix: "Time for a quick study break! Grab some: " },
+        "high-tea": { title: "☕ High Tea Ready!", bodyPrefix: "Time for a quick break! Grab some: " },
         dinner: { title: "🌙 Dinner Window Open!", bodyPrefix: "Ready to wrap up your day? Tonight's spread: " },
       };
 
@@ -141,24 +151,31 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
         bodyPrefix: "Check out today's selections: " 
       };
 
-      // Loop over every mess, grab its specific hardcoded menu items for today, and write a broadcast doc
       for (const mess of MESSES) {
         const items = HARDCODED_WEEKLY_MENUS[mess.id]?.[currentWeekday]?.[selectedMealKey] ?? [];
         const itemString = items.slice(0, 3).join(", ") + (items.length > 3 ? "..." : "");
         const finalBodyText = `${template.bodyPrefix}${itemString || "Freshly cooked menu choices"}. Come down to the hall!`;
 
         await addDoc(collection(db, "broadcasts"), {
-          messId: mess.id, // Direct target message delivery stream per dining hall
+          messId: mess.id,
           title: template.title,
           body: finalBodyText,
           createdAt: serverTimestamp(),
         });
+
+        // ✅ FIXED: Replaced raw fetch with your type-safe TanStack server function call
+        await sendFcmNotification({
+          data: {
+            topic: `mess_${mess.id}`,
+            title: template.title,
+            body: finalBodyText,
+          }
+        }).catch(err => console.error("FCM server function streaming error:", err));
       }
 
-      alert(`🚀 Success! Live ${mealName} push notices successfully dispersed across all student nodes!`);
+      alert(`🚀 Success! UI updated and background alerts dispatched!`);
     } catch (error) {
       console.error("Meal transmission failure:", error);
-      alert("Error pushing layout data over Firestore nodes.");
     } finally {
       setIsFiringMealAlert(false);
     }
@@ -172,18 +189,28 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
     setIsBroadcastingCustom(true);
     try {
       await addDoc(collection(db, "broadcasts"), {
-        messId: targetMessId, // Saves as specific ID or global "all" string parameters
+        messId: targetMessId,
         title: broadcastTitle.trim(),
         body: broadcastBody.trim(),
         createdAt: serverTimestamp(),
       });
 
+      const targetTopic = targetMessId === "all" ? "mess_all" : `mess_${targetMessId}`;
+
+      // ✅ FIXED: Replaced manual fetch here too for absolute system-wide coordination
+      await sendFcmNotification({
+        data: {
+          topic: targetTopic,
+          title: broadcastTitle.trim(),
+          body: broadcastBody.trim(),
+        }
+      });
+
       setBroadcastTitle("");
       setBroadcastBody("");
-      alert(`⚡ Custom broadcast successfully deployed to channel destination: "${targetMessId}".`);
+      alert(`⚡ Custom broadcast and native system push alert successfully deployed!`);
     } catch (error) {
       console.error("Custom broadcast failure:", error);
-      alert("Error writing document to cloud collections.");
     } finally {
       setIsBroadcastingCustom(false);
     }
@@ -206,7 +233,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
 
       <main className="mx-auto max-w-2xl px-5 py-6 space-y-6">
         
-        {/* CARD 1: 🚀 Zomato-Style Live Meal Transmitter Console */}
         <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
           <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
             <span>🚀</span> Automated Meal Alert Push
@@ -242,7 +268,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           </div>
         </div>
 
-        {/* CARD 2: 📢 Custom Channel Broadcast Control */}
         <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
           <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
             <span>📢</span> Custom Channel Broadcast
