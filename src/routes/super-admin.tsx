@@ -1,113 +1,266 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { MESSES } from "@/lib/messhub";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
+import { db } from "@/lib/firebase";
+import { collection, doc, writeBatch, onSnapshot } from "firebase/firestore";
+import { 
+  getAdminSession, 
+  saveAdminSession, 
+  clearAdminSession, 
+  ADMIN_AUTH_KEYS, 
+  mkEmptyDay 
+} from "@/lib/messhub";
 
 export const Route = createFileRoute("/super-admin")({
   head: () => ({
     meta: [
-      { title: "Super admin — MessHub" },
-      { name: "description", content: "Platform-wide overview of every mess." },
+      { title: "Master Control Gateway — MessHub" },
+      { name: "description", content: "Platform super-admin infrastructure console." },
     ],
   }),
-  component: SuperAdminDashboard,
+  component: SuperAdminGatekeeper,
 });
 
-const MESS_STATS: Record<string, { students: number; active: number; attended: number; complaints: number; rating: number; broadcasts: number; menu: "Published" | "Draft" }> = {
-  crcl: { students: 412, active: 380, attended: 318, complaints: 3, rating: 4.3, broadcasts: 2, menu: "Published" },
-  jmb: { students: 298, active: 260, attended: 210, complaints: 1, rating: 4.5, broadcasts: 1, menu: "Published" },
-  mayuri_boys: { students: 355, active: 320, attended: 260, complaints: 5, rating: 4.1, broadcasts: 3, menu: "Published" },
-  mayuri_girls: { students: 302, active: 285, attended: 240, complaints: 2, rating: 4.4, broadcasts: 1, menu: "Published" },
-  safal: { students: 189, active: 170, attended: 135, complaints: 0, rating: 4.6, broadcasts: 0, menu: "Draft" },
-  ab_catering: { students: 244, active: 220, attended: 180, complaints: 4, rating: 3.9, broadcasts: 2, menu: "Published" },
-};
+function SuperAdminGatekeeper() {
+  const navigate = useNavigate();
+  const [session, setSession] = useState(() => getAdminSession());
+  const [passcode, setPasscode] = useState("");
+  const [authError, setAuthError] = useState(false);
 
-function SuperAdminDashboard() {
-  const totalStudents = Object.values(MESS_STATS).reduce((a, b) => a + b.students, 0);
-  const totalActive = Object.values(MESS_STATS).reduce((a, b) => a + b.active, 0);
-  const totalComplaints = Object.values(MESS_STATS).reduce((a, b) => a + b.complaints, 0);
-  const avgRating = (Object.values(MESS_STATS).reduce((a, b) => a + b.rating, 0) / MESSES.length).toFixed(2);
+  useEffect(() => {
+    // Redirect if a standard admin tries to breach the root console
+    if (session && session.role !== "super-admin") {
+      navigate({ to: "/admin" });
+    }
+  }, [session, navigate]);
+
+  function handleVerifyPasscode(e: React.FormEvent) {
+    e.preventDefault();
+    const cleanKey = passcode.trim();
+    const matchedAuth = ADMIN_AUTH_KEYS[cleanKey];
+
+    if (matchedAuth && matchedAuth.role === "super-admin") {
+      setAuthError(false);
+      const newSession = { role: matchedAuth.role };
+      saveAdminSession(newSession);
+      setSession(newSession);
+    } else {
+      setAuthError(true);
+      setPasscode("");
+      if ("vibrate" in navigator) navigator.vibrate(200);
+    }
+  }
+
+  if (!session || session.role !== "super-admin") {
+    return (
+      <div className="min-h-screen bg-[#1c1c1e] flex flex-col justify-between px-6 py-12 safe-top safe-bottom text-white select-none">
+        <header className="flex items-center justify-between w-full max-w-sm mx-auto">
+          <Link to="/" className="text-sm font-semibold text-zinc-400 transition active:opacity-60">
+            &larr; Exit
+          </Link>
+          <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">Master Gate</span>
+        </header>
+
+        <main className="w-full max-w-sm mx-auto text-center flex-1 flex flex-col justify-center">
+          <div className="h-12 w-12 rounded-2xl bg-zinc-900 border border-zinc-800 mx-auto flex items-center justify-center">
+            <span className="text-zinc-400 text-xs font-bold">Root</span>
+          </div>
+          <h1 className="text-2xl font-black tracking-tight mt-6">Platform Master Key</h1>
+          <p className="mt-1.5 text-xs text-zinc-400 max-w-[240px] mx-auto">
+            Authorized root authentication protocol layer required.
+          </p>
+
+          <form onSubmit={handleVerifyPasscode} className="mt-8">
+            <input
+              autoFocus
+              type="password"
+              value={passcode}
+              onChange={(e) => { setAuthError(false); setPasscode(e.target.value); }}
+              placeholder="••••••••"
+              className={`w-full tracking-widest text-center rounded-2xl border bg-zinc-900 border-zinc-800 text-white px-4 py-4 text-lg font-bold outline-none transition-all ${
+                authError ? "border-red-500 ring-4 ring-red-500/10" : "focus:border-zinc-400"
+              }`}
+            />
+            {authError && <p className="mt-2.5 text-xs font-semibold text-red-400">Invalid authorization sequence.</p>}
+            <button type="submit" disabled={passcode.length === 0} className="mt-4 w-full rounded-2xl bg-white py-4 text-sm font-bold text-black active:scale-[0.99] transition-all disabled:opacity-40">
+              Verify Root Access
+            </button>
+          </form>
+        </main>
+
+        <footer className="text-center text-[10px] text-zinc-600 font-medium tracking-wide">
+          MESSHUB SYSTEM INFRASTRUCTURE CONSOLE
+        </footer>
+      </div>
+    );
+  }
+
+  return <PlatformMasterDashboard onSignOut={() => setSession(null)} />;
+}
+
+function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
+  const [liveMesses, setLiveMesses] = useState<{ id: string; name: string; subtitle?: string }[]>([]);
+  const [newMessId, setNewMessId] = useState("");
+  const [newMessName, setNewMessName] = useState("");
+  const [newMessSubtitle, setNewMessSubtitle] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
+
+  // 📡 Real-time sync list mapping from active Firestore nodes
+  useEffect(() => {
+    if (!db) return;
+    const unsubscribe = onSnapshot(collection(db, "messes"), (snapshot) => {
+      const list = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as any;
+      setLiveMesses(list);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // 🏗️ Automated 7-Day Matrix Provisioning Generator Engine
+  async function handleCreateNewMess(e: React.FormEvent) {
+  e.preventDefault();
+  const cleanId = newMessId.trim().toLowerCase().replace(/\s+/g, "_");
+  const cleanName = newMessName.trim();
+  const cleanSubtitle = newMessSubtitle.trim();
+
+  if (!cleanId || !cleanName || !db) return;
+  
+  // 🔑 FIX: Capture the narrowed non-null instance in a local variable
+  const firestore = db;
+  setIsCreating(true);
+
+  try {
+    // Pass the local reference to the writeBatch builder
+    const batch = writeBatch(firestore);
+
+    // 1. Establish the main core mess metadata parameters document path
+    const messDocRef = doc(firestore, "messes", cleanId);
+    batch.set(messDocRef, {
+      name: cleanName,
+      ...(cleanSubtitle ? { subtitle: cleanSubtitle } : {}),
+    });
+
+    // 2. Automate creation of all 7 weekday structures populated with empty arrays
+    const emptyDayData = mkEmptyDay(); 
+    const weekdaysList = ["1", "2", "3", "4", "5", "6", "0"];
+
+    weekdaysList.forEach((dayId) => {
+      // 🔑 FIX: Use the local 'firestore' reference inside the callback closure
+      const dayDocRef = doc(firestore, "messes", cleanId, "weeklyMenu", dayId);
+      batch.set(dayDocRef, emptyDayData);
+    });
+
+    // Commit transaction up to cloud nodes concurrently
+    await batch.commit();
+
+    setNewMessId("");
+    setNewMessName("");
+    setNewMessSubtitle("");
+    alert(`Registered ${cleanName} and fully generated all 7 empty weekday slots inside Firestore!`);
+  } catch (error) {
+    console.error("Batch initialization failure:", error);
+    alert("Error setting up mess architecture nodes.");
+  } finally {
+    setIsCreating(false);
+  }
+}
 
   return (
-    <div className="min-h-screen bg-background pb-16">
-      <header className="safe-top border-b border-border bg-card/60 px-5 pb-4 pt-3 backdrop-blur">
-        <div className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-          <div className="min-w-0">
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">Super admin</p>
-            <h1 className="truncate text-xl font-bold">Platform overview</h1>
-          </div>
-          <Link to="/" className="rounded-full border border-border bg-card px-3 py-1.5 text-sm shadow-card">
-            Home
-          </Link>
+    <div className="min-h-screen bg-[#fbf7f2]">
+      <header className="safe-top border-b border-border bg-white/80 px-5 pb-4 pt-4 backdrop-blur sticky top-0 z-40 flex items-center justify-between">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-red-500">Root Infrastructure</p>
+          <h1 className="text-xl font-black tracking-tight text-foreground mt-0.5">Platform Console</h1>
         </div>
+        <button 
+          onClick={() => { clearAdminSession(); onSignOut(); }} 
+          className="rounded-full border border-border bg-white px-3 py-1.5 text-xs font-bold shadow-card transition active:scale-95"
+        >
+          Exit Console
+        </button>
       </header>
 
-      <main className="mx-auto max-w-6xl px-5 py-6">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <BigStat label="Total students" value={totalStudents.toLocaleString()} />
-          <BigStat label="Active today" value={totalActive.toLocaleString()} />
-          <BigStat label="Avg rating" value={avgRating} />
-          <BigStat label="Open complaints" value={String(totalComplaints)} />
+      <main className="mx-auto max-w-2xl px-5 py-6 space-y-6">
+        {/* Creation Input Section */}
+        <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
+          <h2 className="text-base font-bold text-foreground tracking-tight">Register New Mess</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Initializes the mess channel and instantly sets up its Monday to Sunday database calendar nodes.
+          </p>
+
+          <form onSubmit={handleCreateNewMess} className="mt-4 space-y-3">
+            <div>
+              <label className="block text-xs font-semibold text-muted-foreground mb-1">Unique Mess ID (e.g., `crcl` or `mayuri_boys`):</label>
+              <input
+                required
+                type="text"
+                value={newMessId}
+                onChange={(e) => setNewMessId(e.target.value)}
+                placeholder="lowercase_id"
+                className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2 text-xs font-medium outline-none focus:border-primary focus:bg-white transition"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-muted-foreground mb-1">Display Name (e.g., `CRCL` or `Mayuri`):</label>
+              <input
+                required
+                type="text"
+                value={newMessName}
+                onChange={(e) => setNewMessName(e.target.value)}
+                placeholder="Dining Facility Name"
+                className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2 text-xs font-medium outline-none focus:border-primary focus:bg-white transition"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-muted-foreground mb-1">Subtitle / Section (Optional — e.g., `Girls`):</label>
+              <input
+                type="text"
+                value={newMessSubtitle}
+                onChange={(e) => setNewMessSubtitle(e.target.value)}
+                placeholder="Leave blank if none"
+                className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2 text-xs font-medium outline-none focus:border-primary focus:bg-white transition"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isCreating || !newMessId || !newMessName}
+              className="mt-2 w-full rounded-xl bg-black py-2.5 text-xs font-bold text-white shadow-card transition active:scale-[0.99] disabled:opacity-40"
+            >
+              {isCreating ? "Generating Architecture..." : "Deploy Mess Structure"}
+            </button>
+          </form>
         </div>
 
-        <section className="mt-8">
-          <h2 className="text-lg font-bold">All messes</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {MESSES.map((mess) => {
-              const s = MESS_STATS[mess.id];
-              return (
-                <article key={mess.id} className="rounded-2xl border border-border bg-card p-5 shadow-card transition hover:shadow-elevated">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <h3 className="truncate text-lg font-bold">
-                        {mess.name}
-                        {mess.subtitle && <span className="ml-1 text-sm font-normal text-muted-foreground">({mess.subtitle})</span>}
-                      </h3>
-                      <p className="text-xs text-muted-foreground">{s.students} students enrolled</p>
-                    </div>
-                    <span
-                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                        s.menu === "Published"
-                          ? "bg-success/15 text-success"
-                          : "bg-warning/20 text-foreground"
-                      }`}
-                    >
-                      {s.menu}
+        {/* Real-time Streaming Overview Section */}
+        <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
+          <h2 className="text-base font-bold text-foreground tracking-tight">
+            Operational Dining Halls ({liveMesses.length})
+          </h2>
+          <div className="mt-4 space-y-2">
+            {liveMesses.length === 0 ? (
+              <p className="text-xs italic text-muted-foreground py-2">No custom cloud records detected.</p>
+            ) : (
+              liveMesses.map((m) => (
+                <div key={m.id} className="flex items-center justify-between p-3 rounded-xl bg-[#fbf7f2] border border-border/40">
+                  <div className="min-w-0">
+                    <span className="text-sm font-bold text-foreground truncate block">
+                      {m.name} {m.subtitle && `(${m.subtitle})`}
                     </span>
+                    <span className="block text-[9px] text-muted-foreground font-mono mt-0.5">ID: {m.id}</span>
                   </div>
-
-                  <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-                    <MiniStat label="Active" value={s.active} />
-                    <MiniStat label="Attended" value={`~${s.attended}`} />
-                    <MiniStat label="Rating" value={s.rating.toFixed(1)} />
-                  </div>
-
-                  <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-                    <span>{s.broadcasts} broadcasts today</span>
-                    <span>{s.complaints} complaints</span>
-                  </div>
-                </article>
-              );
-            })}
+                  <span className="text-[10px] uppercase font-bold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-md shrink-0">
+                    7 Days Ready
+                  </span>
+                </div>
+              ))
+            )}
           </div>
-        </section>
+        </div>
       </main>
-    </div>
-  );
-}
-
-function BigStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-border bg-card p-4 shadow-card">
-      <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className="mt-1 font-display text-3xl font-bold">{value}</div>
-    </div>
-  );
-}
-
-function MiniStat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-xl bg-secondary/60 py-2">
-      <div className="font-display text-base font-bold">{value}</div>
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
     </div>
   );
 }

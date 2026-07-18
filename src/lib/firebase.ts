@@ -1,8 +1,9 @@
 /**
- * Firebase messaging and subscription module.
+ * Firebase messaging, database, and subscription module.
  * Ensure you install the SDK first: bun add firebase
  */
 import { initializeApp, getApps, getApp } from "firebase/app";
+import { getFirestore } from "firebase/firestore"; // Added Firestore Import
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyD45WuPr0HR9d0lJY4HCrhRUhy-kV0wsw4",
@@ -20,6 +21,9 @@ export const isFirebaseConfigured = () => Boolean(firebaseConfig.apiKey);
 const app = typeof window !== "undefined" && isFirebaseConfigured()
   ? (getApps().length > 0 ? getApp() : initializeApp(firebaseConfig))
   : null;
+
+// 🔥 EXPORTED DATABASE MEMBER: Resolves the missing 'db' export error in messhub.ts
+export const db = app ? getFirestore(app) : null;
 
 /**
  * Requests native browser/device notification permissions
