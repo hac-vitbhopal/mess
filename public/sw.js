@@ -1,52 +1,54 @@
 // public/sw.js
 
-// 1. Listen for background push events from Firebase Cloud Messaging
-self.addEventListener('push', function (event) {
-  if (!event.data) return;
+// 1. Import Firebase Compatibility Scripts inside the worker context
+importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js');
 
-  try {
-    const payload = event.data.json();
-    const title = payload.notification?.title || "📢 MessHub Alert";
-    const options = {
-      body: payload.notification?.body || "New menu updates are available.",
-      icon: "/mess_logo.png",
-      badge: "/mess_logo.png",
-      tag: payload.data?.tag || 'generic-broadcast',
-      renotify: true,
-      requireInteraction: true, // ⚡ Holds it permanently in the notification tray until swiped
-      vibrate: [300, 100, 300],
-      data: { url: payload.data?.url || "/" }
-    };
-
-    event.waitUntil(self.registration.showNotification(title, options));
-  } catch (err) {
-    // Fallback if data string is plain text instead of json object
-    const textOptions = {
-      body: event.data.text(),
-      icon: "/mess_logo.png",
-      badge: "/mess_logo.png",
-      requireInteraction: true,
-      vibrate: [300, 100, 300]
-    };
-    event.waitUntil(self.registration.showNotification("📢 MessHub Broadcast", textOptions));
-  }
+// 2. Initialize Firebase using the exact credentials from your app config
+firebase.initializeApp({
+  apiKey: "AIzaSyD45WuPr0HR9d0lJY4HCrhRUhy-kV0wsw4",
+  authDomain: "messmenu-a387b.firebaseapp.com",
+  projectId: "messmenu-a387b",
+  storageBucket: "messmenu-a387b.firebasestorage.app",
+  messagingSenderId: "1057632756638",
+  appId: "1:1057632756638:web:8eca944e315ec5c76c2c8f"
 });
 
-// 2. Handle what happens when a student taps the system tray card panel
+const messaging = firebase.messaging();
+
+// 3. Let Firebase handle incoming background message payloads safely
+messaging.onBackgroundMessage((payload) => {
+  console.log('[sw.js] Background message intercepted: ', payload);
+
+  const title = payload.notification?.title || "📢 MessHub Alert";
+  const options = {
+    body: payload.notification?.body || "New menu updates are available.",
+    icon: "/mess_logo.png",
+    badge: "/mess_logo.png",
+    tag: payload.data?.tag || 'generic-broadcast',
+    renotify: true,
+    requireInteraction: true, // ⚡ Holds it permanently in the notification tray until swiped
+    vibrate: [300, 100, 300],
+    data: { url: payload.data?.url || "/" }
+  };
+
+  // Keep the service worker alive until the operating system displays it in the phone's tray
+  self.registration.showNotification(title, options);
+});
+
+// 4. Handle notification tray tap interactions
 self.addEventListener('notificationclick', function (event) {
-  event.notification.close(); // Automatically dismiss from system tray on click
+  event.notification.close(); // Dismiss it from the tray
 
   const targetUrl = event.notification.data?.url || '/';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
-      // If a tab is already open, focus it
       for (const client of clientList) {
         if (client.url.includes(targetUrl) && 'focus' in client) {
           return client.focus();
         }
       }
-      // Otherwise open a fresh window view channel
       if (clients.openWindow) {
         return clients.openWindow(targetUrl);
       }
