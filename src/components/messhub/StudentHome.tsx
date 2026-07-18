@@ -71,6 +71,57 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
     ? countdownTo(focus.endH, focus.endM, now)
     : countdownTo(focus.startH, focus.startM, now);
 
+  // 🔔 ADDED: Interactive Swiggy/Zomato-style Notification Scheduler
+  useEffect(() => {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+
+    const lastNotifiedKey = sessionStorage.getItem("messhub.last_notified_meal");
+
+    if (focusIsLive && focus && lastNotifiedKey !== focus.key) {
+      const items = currentMenu[focus.key] ?? [];
+      const itemString = items.slice(0, 3).join(", ") + (items.length > 3 ? "..." : "");
+
+      const pushTemplates: Record<string, { title: string; body: string }> = {
+        breakfast: {
+          title: "🍳 Breakfast Counter Open!",
+          body: `Today's fuel: ${itemString || "Hot breakfast updates"}. Beat the morning rush!`,
+        },
+        lunch: {
+          title: "🍽️ Lunch is Served!",
+          body: `Smells amazing today! Hot ${itemString || "items"} ready. Head down to the mess!`,
+        },
+        snacks: {
+          title: "☕ High Tea / Snacks Ready!",
+          body: `Time for a quick study break. ${itemString || "Fresh snacks ready"}.`,
+        },
+        dinner: {
+          title: "🌙 Dinner Window Open!",
+          body: `Wrapping up the day? Tonight's spread: ${itemString || "Dinner updates"}. Enjoy your meal!`,
+        }
+      };
+
+      const alertConfig = pushTemplates[focus.key] || {
+        title: `🍽️ ${focus.name} is Live!`,
+        body: `Check out today's selections: ${itemString}`,
+      };
+
+      navigator.serviceWorker.ready.then((registration) => {
+  registration.showNotification(alertConfig.title, {
+    body: alertConfig.body,
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: `meal-${focus.key}-${dateKey(today)}`,
+    renotify: true,
+    requireInteraction: false,
+    vibrate: [200, 100, 200],
+    data: { url: "/" }
+  } as any); // ⚡ Add "as any" right here to fix the TypeScript error
+});
+
+      sessionStorage.setItem("messhub.last_notified_meal", focus.key);
+    }
+  }, [focus, focusIsLive, currentMenu, today]);
+
   useEffect(() => {
     if (!db || !profile.messId) return;
 
@@ -118,7 +169,6 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
       await deferredPrompt.userChoice;
       setDeferredPrompt(null);
     } else {
-      // Fallback message for iOS/Safari or systems where event hasn't fired
       alert(
         "To install MessHub on this device:\n\n" +
         "• iOS/Safari: Tap the 'Share' icon at the bottom and click 'Add to Home Screen'.\n" +
@@ -134,7 +184,6 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
 
     setIsSubmittingFeedback(true);
     try {
-      // ⚠️ Replace 'YOUR_FORMSPREE_ENDPOINT_ID' with your actual Formspree form ID hash
       const response = await fetch("https://formspree.io/f/mlgqbrqq", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
