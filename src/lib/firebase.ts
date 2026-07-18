@@ -3,7 +3,7 @@
  * Ensure you install the SDK first: bun add firebase
  */
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore"; // Added Firestore Import
+import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyD45WuPr0HR9d0lJY4HCrhRUhy-kV0wsw4",
@@ -22,7 +22,7 @@ const app = typeof window !== "undefined" && isFirebaseConfigured()
   ? (getApps().length > 0 ? getApp() : initializeApp(firebaseConfig))
   : null;
 
-// 🔥 EXPORTED DATABASE MEMBER: Resolves the missing 'db' export error in messhub.ts
+// EXPORTED DATABASE MEMBER
 export const db = app ? getFirestore(app) : null;
 
 /**
@@ -53,9 +53,11 @@ export async function subscribeToMessTopic(messId: string): Promise<void> {
     // Ensure the service worker is active and ready before requesting the FCM token
     const serviceWorkerRegistration = await navigator.serviceWorker.ready;
 
-    const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
-    if (!vapidKey) {
-      console.warn("[FCM] Missing VITE_FIREBASE_VAPID_KEY in environment configuration.");
+    // ⚡ FALLBACK HOOK: Paste the exact string generated from your screen here!
+    const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY || "BFMy8PUCrFHB6PHZbiZCm31sHnkCpKExaz9AlWetQ7MmV_70KrYWd5de_ziOxi3Yfeh1Sw6nZTStVer6omiRFbY";
+
+    if (!vapidKey || vapidKey === "BFMy8PUCrFHB6PHZbiZCm31sHnkCpKExaz9AlWetQ7MmV_70KrYWd5de_ziOxi3Yfeh1Sw6nZTStVer6omiRFbY") {
+      console.warn("[FCM] Missing active VAPID key pair configuration values.");
     }
 
     // Retrieve unique browser notification routing device token
