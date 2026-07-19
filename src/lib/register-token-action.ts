@@ -1,6 +1,7 @@
 "use server";
 
 import { createServerFn } from "@tanstack/react-start";
+import { adminDb } from "./firebase-admin";
 
 interface RegisterTokenPayload {
   token: string;
@@ -12,10 +13,37 @@ export const registerFcmToken = createServerFn({
 })
   .validator((data: RegisterTokenPayload) => data)
   .handler(async ({ data }) => {
-    console.log("SERVER FUNCTION IS RUNNING");
-    console.log(data);
+    const { token, messId } = data;
 
-    return {
-      success: true,
-    };
+    try {
+      console.log("Saving token:", token);
+      console.log("Mess:", messId);
+
+      // Store token using the token itself as the document id.
+      // Calling set() again simply updates the existing document.
+      await adminDb
+        .collection("fcm_tokens")
+        .doc(token)
+        .set(
+          {
+            token,
+            messId,
+            updatedAt: new Date(),
+          },
+          { merge: true }
+        );
+
+      console.log("✅ Token saved");
+
+      return {
+        success: true,
+      };
+    } catch (err: any) {
+      console.error("Failed to save token:", err);
+
+      return {
+        success: false,
+        error: err.message,
+      };
+    }
   });

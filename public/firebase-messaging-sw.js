@@ -1,4 +1,4 @@
-// public/sw.js
+//public/firebase-messaging-sw.js
 
 // 1. Import Firebase Compatibility Scripts inside the worker context
 importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js');
