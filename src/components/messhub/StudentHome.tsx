@@ -108,8 +108,8 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
       navigator.serviceWorker.ready.then((registration) => {
   registration.showNotification(alertConfig.title, {
     body: alertConfig.body,
-    icon: "/icon-192.png",
-    badge: "/icon-192.png",
+    icon: "/menu_logo.png",
+    badge: "/menu_logo.png",
     tag: `meal-${focus.key}-${dateKey(today)}`,
     renotify: true,
     requireInteraction: false,
@@ -155,8 +155,8 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
             const title = `📢 Mess Alert: ${latestAlert.title}`;
             const options = {
               body: latestAlert.body,
-              icon: "/icon-192.png",
-              badge: "/icon-192.png",
+              icon: "/menu_logo.png",
+              badge: "/menu_logo.png",
               tag: "meal-alert", // ⚡ FIXED: Matches the strict fallback 'tag' attribute inside sw.js exactly!
               renotify: true,
               requireInteraction: true, 
