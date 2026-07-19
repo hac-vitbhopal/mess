@@ -13,29 +13,40 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
   const [messId, setMessId] = useState<MessId | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function submit() {
-    const parsed = schema.safeParse({ name: name.trim(), messId });
-    if (!parsed.success) {
-      setError(parsed.error.issues[0]?.message ?? "Please check your inputs");
-      return;
-    }
-    
-    const profile = parsed.data;
-    
-    // 1. Save locally to device storage immediately
-    saveProfile(profile);
-    
-    // 2. ⚡ FIX: Fire the callback instantly so the parent view swaps without delay
-    onComplete(profile);
-    
-    // 3. Kick off async permissions/network tasks in the background without blocking the UI thread
-    try {
-      await requestNotificationPermission();
-      await subscribeToMessTopic(profile.messId);
-    } catch (err) {
-      console.warn("Background notification subscription bypassed:", err);
-    }
+ async function submit() {
+  console.log("Submit button clicked");
+
+  const parsed = schema.safeParse({ name: name.trim(), messId });
+
+  if (!parsed.success) {
+    console.log("Validation failed");
+    setError(parsed.error.issues[0]?.message ?? "Please check your inputs");
+    return;
   }
+
+  console.log("Validation passed");
+
+  const profile = parsed.data;
+
+  console.log("Saving profile...");
+  saveProfile(profile);
+
+  console.log("Calling onComplete...");
+  onComplete(profile);
+
+  try {
+    console.log("Requesting notification permission...");
+    const permission = await requestNotificationPermission();
+    console.log("Permission:", permission);
+
+    console.log("Subscribing to topic...");
+    await subscribeToMessTopic(profile.messId);
+
+    console.log("Subscription complete.");
+  } catch (err) {
+    console.error("Notification setup failed:", err);
+  }
+}
 
   const canSubmit = name.trim().length > 0 && messId !== null;
 
@@ -82,7 +93,6 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
                 return (
                   <button
                     key={m.id}
-                    type="button"
                     onClick={() => setMessId(m.id)}
                     className={`rounded-2xl border p-4 text-left transition ${
                       active
@@ -106,7 +116,6 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
           )}
 
           <button
-            type="button"
             disabled={!canSubmit}
             onClick={submit}
             className="mt-8 w-full rounded-2xl gradient-warm px-6 py-4 font-semibold text-white shadow-card transition hover:opacity-95 disabled:opacity-40"

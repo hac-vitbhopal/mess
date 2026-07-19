@@ -129,7 +129,7 @@ function RootComponent() {
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
       window.addEventListener("load", () => {
         navigator.serviceWorker
-          .register("/sw.js")
+          .register("/firebase-messaging-sw.js")
           .then((reg) => {
             console.log("MessHub Service Worker registered with scope: ", reg.scope);
           })

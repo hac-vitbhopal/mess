@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SuperAdminRouteImport } from './routes/super-admin'
 import { Route as ComplaintsRouteImport } from './routes/complaints'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as AdminNotificationsRouteImport } from './routes/AdminNotifications'
 import { Route as IndexRouteImport } from './routes/index'
 
 const SuperAdminRoute = SuperAdminRouteImport.update({
@@ -29,6 +30,11 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminNotificationsRoute = AdminNotificationsRouteImport.update({
+  id: '/AdminNotifications',
+  path: '/AdminNotifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -37,12 +43,14 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/AdminNotifications': typeof AdminNotificationsRoute
   '/admin': typeof AdminRoute
   '/complaints': typeof ComplaintsRoute
   '/super-admin': typeof SuperAdminRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/AdminNotifications': typeof AdminNotificationsRoute
   '/admin': typeof AdminRoute
   '/complaints': typeof ComplaintsRoute
   '/super-admin': typeof SuperAdminRoute
@@ -50,20 +58,29 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/AdminNotifications': typeof AdminNotificationsRoute
   '/admin': typeof AdminRoute
   '/complaints': typeof ComplaintsRoute
   '/super-admin': typeof SuperAdminRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin' | '/complaints' | '/super-admin'
+  fullPaths:
+    '/' | '/AdminNotifications' | '/admin' | '/complaints' | '/super-admin'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/complaints' | '/super-admin'
-  id: '__root__' | '/' | '/admin' | '/complaints' | '/super-admin'
+  to: '/' | '/AdminNotifications' | '/admin' | '/complaints' | '/super-admin'
+  id:
+    | '__root__'
+    | '/'
+    | '/AdminNotifications'
+    | '/admin'
+    | '/complaints'
+    | '/super-admin'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminNotificationsRoute: typeof AdminNotificationsRoute
   AdminRoute: typeof AdminRoute
   ComplaintsRoute: typeof ComplaintsRoute
   SuperAdminRoute: typeof SuperAdminRoute
@@ -92,6 +109,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/AdminNotifications': {
+      id: '/AdminNotifications'
+      path: '/AdminNotifications'
+      fullPath: '/AdminNotifications'
+      preLoaderRoute: typeof AdminNotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -104,6 +128,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminNotificationsRoute: AdminNotificationsRoute,
   AdminRoute: AdminRoute,
   ComplaintsRoute: ComplaintsRoute,
   SuperAdminRoute: SuperAdminRoute,

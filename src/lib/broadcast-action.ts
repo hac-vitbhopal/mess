@@ -1,43 +1,135 @@
-"use server" // ⚡ CRUCIAL: Tells the bundler this file runs strictly on the Node.js server side
+"use server";
 
-import { createServerFn } from '@tanstack/react-start'
+import { createServerFn } from "@tanstack/react-start";
+import { adminDb, adminMessaging } from "./firebase-admin";
 
-// We dynamically import firebase-admin ONLY when the handler runs on the server.
-// This prevents the browser compilation layer from crashing on startup.
-export const sendFcmNotification = createServerFn({ method: 'POST' })
-  .validator((data: { topic: string; title: string; body: string }) => data)
+interface NotificationPayload {
+  topic: string;
+  title: string;
+  body: string;
+}
+
+export const sendFcmNotification = createServerFn({
+  method: "POST",
+})
+  .validator((data: NotificationPayload) => data)
   .handler(async ({ data }) => {
-    try {
-      // Dynamically load the server-only admin modules safely inside the runtime block
-      const { getApps, initializeApp, cert } = await import('firebase-admin/app')
-      const { getMessaging } = await import('firebase-admin/messaging')
+    const { topic, title, body } = data;
 
-      if (getApps().length === 0) {
-        initializeApp({
-          credential: cert({
-            projectId: "messmenu-a387b",
-            clientEmail: process.env.FIREBASE_CLIENT_EMAIL || "",
-            privateKey: (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
-          }),
-        });
+    try {
+      const messId = topic.replace("mess_", "");
+
+      let query;
+
+      if (messId === "all") {
+        query = adminDb.collection("fcm_tokens");
+      } else {
+        query = adminDb
+          .collection("fcm_tokens")
+          .where("messId", "==", messId);
       }
 
-      const message = {
-  // ⚡ CHANGE: Put the properties inside 'data' and remove the top-level 'notification' object completely!
-  // This tells Firebase to hand the raw packet straight to your sw.js worker to process manually.
-  data: {
-    title: data.title,
-    body: data.body,
-    url: "/",
-    tag: "meal-alert",
-  },
-  topic: data.topic,
-};
+      const snapshot = await query.get();
 
-      const response = await getMessaging().send(message);
-      return { success: true, messageId: response };
-    } catch (error: any) {
-      console.error("FCM Backend Action Error:", error);
-      return { success: false, error: error.message };
+      if (snapshot.empty) {
+        return {
+          success: false,
+          message: "No registered devices found.",
+        };
+      }
+
+      // Store BOTH token and document id
+      const devices: {
+        token: string;
+        docId: string;
+      }[] = [];
+
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+
+        if (data.token) {
+          devices.push({
+            token: data.token,
+            docId: doc.id,
+          });
+        }
+      });
+
+      console.log(`Found ${devices.length} devices`);
+
+      let successCount = 0;
+      let failureCount = 0;
+
+      for (let i = 0; i < devices.length; i += 500) {
+        const batch = devices.slice(i, i + 500);
+
+        const response = await adminMessaging.sendEachForMulticast({
+          tokens: batch.map((d) => d.token),
+
+          data: {
+            title,
+            body,
+            url: "/",
+            tag: "meal-alert",
+          },
+
+          android: {
+            priority: "high",
+          },
+
+          apns: {
+            payload: {
+              aps: {
+                sound: "default",
+              },
+            },
+          },
+        });
+        
+
+        successCount += response.successCount;
+        failureCount += response.failureCount;
+
+        const deletes: Promise<any>[] = [];
+
+        response.responses.forEach((res, index) => {
+          if (!res.success) {
+            console.error(res.error);
+
+            const code = res.error?.code;
+
+            if (
+              code === "messaging/registration-token-not-registered" ||
+              code === "messaging/invalid-registration-token"
+            ) {
+              deletes.push(
+                adminDb
+                  .collection("fcm_tokens")
+                  .doc(batch[index].docId)
+                  .delete()
+              );
+            }
+          }
+        });
+
+        await Promise.all(deletes);
+      }
+
+      console.log("Notification Complete");
+      console.log("Success:", successCount);
+      console.log("Failed:", failureCount);
+
+      return {
+        success: true,
+        successCount,
+        failureCount,
+      };
+    } catch (err: any) {
+      console.error(err);
+
+      return {
+        success: false,
+        error: err.message,
+      };
     }
   });
