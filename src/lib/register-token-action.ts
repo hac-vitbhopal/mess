@@ -20,7 +20,7 @@ export const registerFcmToken = createServerFn({
       console.log("Mess:", messId);
 
       // Store token using the token itself as the document id.
-      // Calling set() again simply updates the existing document.
+      // Calling set() with merge: true updates messId/updatedAt if the token already exists.
       await adminDb
         .collection("fcm_tokens")
         .doc(token)
@@ -33,7 +33,7 @@ export const registerFcmToken = createServerFn({
           { merge: true }
         );
 
-      console.log("✅ Token saved");
+      console.log("✅ Token saved to Firestore");
 
       return {
         success: true,
