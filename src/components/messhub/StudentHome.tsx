@@ -71,7 +71,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
     ? countdownTo(focus.endH, focus.endM, now)
     : countdownTo(focus.startH, focus.startM, now);
 
-  // 🔔 ADDED: Interactive Swiggy/Zomato-style Notification Scheduler
+  // Interactive Swiggy/Zomato-style Notification Scheduler
   useEffect(() => {
     if (!("Notification" in window) || Notification.permission !== "granted") return;
 
@@ -106,17 +106,17 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
       };
 
       navigator.serviceWorker.ready.then((registration) => {
-  registration.showNotification(alertConfig.title, {
-    body: alertConfig.body,
-    icon: "/menu_logo.png",
-    badge: "/menu_logo.png",
-    tag: `meal-${focus.key}-${dateKey(today)}`,
-    renotify: true,
-    requireInteraction: false,
-    vibrate: [200, 100, 200],
-    data: { url: "/" }
-  } as any); // ⚡ Add "as any" right here to fix the TypeScript error
-});
+        registration.showNotification(alertConfig.title, {
+          body: alertConfig.body,
+          icon: "/menu_logo.png",
+          badge: "/menu_logo.png",
+          tag: `meal-${focus.key}-${dateKey(today)}`,
+          renotify: true,
+          requireInteraction: false,
+          vibrate: [200, 100, 200],
+          data: { url: "/" }
+        } as any);
+      });
 
       sessionStorage.setItem("messhub.last_notified_meal", focus.key);
     }
@@ -125,7 +125,6 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
   useEffect(() => {
     if (!db || !profile.messId) return;
 
-    // 📡 Listen to real-time broadcast entries on Firestore for UI sync
     const broadcastQuery = query(
       collection(db, "broadcasts"),
       orderBy("createdAt", "desc")
@@ -143,28 +142,24 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
 
       setBroadcasts(list);
 
-      // 🔔 Foreground Safeguard: Explicitly verify message lifecycle flags
       if (list.length > 0) {
         const latestAlert = list[0]; 
         const alertId = latestAlert.id;
 
-        // Ensure we only process this unique Firestore document ID once
         if (!sessionStorage.getItem(`messhub.processed_alert_${alertId}`)) {
           if ("Notification" in window && Notification.permission === "granted") {
-            
             const title = `📢 Mess Alert: ${latestAlert.title}`;
             const options = {
               body: latestAlert.body,
               icon: "/menu_logo.png",
               badge: "/menu_logo.png",
-              tag: "meal-alert", // ⚡ FIXED: Matches the strict fallback 'tag' attribute inside sw.js exactly!
+              tag: "meal-alert",
               renotify: true,
               requireInteraction: true, 
               vibrate: [300, 100, 300],
               data: { url: "/" }
             };
 
-            // Force it down into the service worker thread safely
             navigator.serviceWorker.ready.then((registration) => {
               registration.showNotification(title, options as any);
             }).catch((err) => {
@@ -172,7 +167,6 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
             });
           }
           
-          // Mark this specific Firestore entry as handled locally on this device session
           sessionStorage.setItem(`messhub.processed_alert_${alertId}`, "true");
         }
       }
@@ -189,7 +183,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
     el?.scrollIntoView({ inline: "center", block: "nearest" });
   }, [today]);
 
-  // PWA Prompt Capturing
+  // 📱 Permanent Direct PWA Install Handler
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   useEffect(() => {
@@ -197,21 +191,34 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
       e.preventDefault();
       setDeferredPrompt(e);
     };
+
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
     return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
   }, []);
 
   async function handleAppInstallation() {
     if (deferredPrompt) {
+      // Direct 1-click trigger: Immediately opens the browser's native install dialog
       deferredPrompt.prompt();
-      await deferredPrompt.userChoice;
-      setDeferredPrompt(null);
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === "accepted") {
+        setDeferredPrompt(null);
+      }
     } else {
-      alert(
-        "To install MessHub on this device:\n\n" +
-        "• iOS/Safari: Tap the 'Share' icon at the bottom and click 'Add to Home Screen'.\n" +
-        "• Android/Chrome: Tap the three dots menu at the top right and select 'Install app' or 'Add to Home screen'."
-      );
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+      if (isIOS) {
+        alert(
+          "To install MessHub on iOS:\n\n" +
+          "1. Tap the 'Share' icon in Safari.\n" +
+          "2. Tap 'Add to Home Screen'."
+        );
+      } else {
+        alert(
+          "To install MessHub on Chrome/Edge:\n\n" +
+          "1. Tap the three dots (⋮) top right.\n" +
+          "2. Tap 'Install app' or 'Add to Home screen'."
+        );
+      }
     }
   }
 
@@ -446,7 +453,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
         </div>
       </section>
 
-      {/* 📝 Glitch, Issue & Change Feedback Form (Formspree) */}
+      {/* Feedback Form */}
       <section className="mt-8 px-5">
         <div className="rounded-2xl border border-border bg-card p-5 shadow-card w-full">
           <h3 className="font-bold text-foreground text-sm tracking-tight">Report an Issue or Feedback</h3>
@@ -488,7 +495,9 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
         <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 shadow-card flex items-center justify-between gap-4">
           <div className="min-w-0">
             <h4 className="text-sm font-bold text-foreground">MessHub Platform Hub</h4>
-            <p className="text-xs text-muted-foreground mt-0.5">Keep MessHub pinned directly to your home screen for quick daily lookups.</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Keep MessHub pinned directly to your home screen. Enable notifications for timely updates.
+            </p>
           </div>
           <button 
             type="button"
