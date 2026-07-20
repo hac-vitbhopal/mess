@@ -74,7 +74,7 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
             {/* Header Top Badges */}
             <div className="flex items-center justify-between mb-3 w-full">
               <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur-md px-3 py-1 rounded-full border border-white/25 text-white text-xs font-bold uppercase tracking-wider">
-                <Sparkles className="w-3.5 h-3.5" />
+                {/* <Sparkles className="w-3.5 h-3.5" /> */}
                 <span>MessHub</span>
               </div>
               <span className="text-xs font-bold text-white bg-black/15 px-3 py-1 rounded-full backdrop-blur-md border border-white/10">
