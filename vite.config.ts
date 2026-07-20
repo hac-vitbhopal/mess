@@ -7,10 +7,9 @@ export default defineConfig({
       disableCsrfMiddlewareWarning: true,
     },
   },
-  // ⚡ Place ssr inside the native vite config block:
   vite: {
     ssr: {
-      external: ["firebase-admin"],
+      external: ["firebase-admin", "@google-cloud/firestore"],
     },
   },
 });

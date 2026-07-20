@@ -1,4 +1,3 @@
-// firebase-admin.ts
 import admin from "firebase-admin";
 
 function getAdminApp() {
@@ -8,7 +7,6 @@ function getAdminApp() {
 
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  // Safely parse multiline private key environment variables
   const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
 
   if (!projectId || !clientEmail || !privateKey) {
@@ -26,5 +24,11 @@ function getAdminApp() {
 
 const app = getAdminApp();
 
-export const adminDb = admin.firestore(app);
+// Initialize Firestore
+const firestore = admin.firestore(app);
+
+// Enable REST fallback settings to prevent gRPC constructor crashes on Vercel
+firestore.settings({ preferRest: true });
+
+export const adminDb = firestore;
 export const adminMessaging = admin.messaging(app);
