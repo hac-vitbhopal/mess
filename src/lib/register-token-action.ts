@@ -6,8 +6,8 @@ import { z } from "zod";
 
 const tokenPayloadSchema = z.object({
   token: z.string().trim().min(10).max(500),
-  messId: z.enum(["crcl", "jmb", "mayuri_boys", "mayuri_girls", "safal", "ab_catering"]),
-  name: z.string().trim().min(1).max(100).optional(), // 👈 Allow name parameter
+  messId: z.string().trim().min(1),
+  name: z.string().nullable().optional(),
 });
 
 export const registerFcmToken = createServerFn({

@@ -5,12 +5,23 @@ function getAdminApp() {
     return admin.apps[0]!;
   }
 
-  const projectId = process.env.FIREBASE_PROJECT_ID;
+  // Fallback to VITE_ prefixed keys if running in local dev server
+  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+
+  if (privateKey) {
+    // Sanitize quotes and escaped newline characters from .env files
+    privateKey = privateKey.replace(/^["']|["']$/g, "").replace(/\\n/g, "\n");
+  }
 
   if (!projectId || !clientEmail || !privateKey) {
-    throw new Error("[Firebase Admin] Missing required environment variables on Vercel.");
+    console.error("[Firebase Admin] Missing credentials:", {
+      projectId: !!projectId,
+      clientEmail: !!clientEmail,
+      privateKey: !!privateKey,
+    });
+    throw new Error("Missing Firebase Admin Service Account credentials in environment variables.");
   }
 
   return admin.initializeApp({
@@ -23,11 +34,9 @@ function getAdminApp() {
 }
 
 const app = getAdminApp();
-
-// Initialize Firestore
 const firestore = admin.firestore(app);
 
-// Enable REST fallback settings to prevent gRPC constructor crashes on Vercel
+// Use REST in serverless or local dev if gRPC bindings fail
 firestore.settings({ preferRest: true });
 
 export const adminDb = firestore;

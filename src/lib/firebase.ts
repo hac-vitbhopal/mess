@@ -1,62 +1,100 @@
-import { initializeApp, getApps, getApp } from "firebase/app";
+import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { registerFcmToken } from "./register-token-action";
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyD45WuPr0HR9d0lJY4HCrhRUhy-kV0wsw4",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "messmenu-a387b.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "messmenu-a387b",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "messmenu-a387b.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "1057632756638",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:1057632756638:web:8eca944e315ec5c76c2c8f"
 };
 
 export const isFirebaseConfigured = () => !!firebaseConfig.apiKey;
 
-const app =
-  typeof window !== "undefined" && isFirebaseConfigured()
-    ? getApps().length
-      ? getApp()
-      : initializeApp(firebaseConfig)
-    : null;
+// Ensure clean single-instance initialization
+export function getFirebaseApp(): FirebaseApp | null {
+  if (typeof window === "undefined" || !isFirebaseConfigured()) return null;
+  return getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+}
 
+const app = getFirebaseApp();
 export const db = app ? getFirestore(app) : null;
 
-export async function requestNotificationPermission(): Promise<NotificationPermission> {
-  if (!("Notification" in window)) return "denied";
-  if (Notification.permission === "granted" || Notification.permission === "denied") {
-    return Notification.permission;
+export async function requestNotificationPermission() {
+  if (!("Notification" in window)) {
+    console.error("[FCM] Notifications not supported.");
+    return "denied";
   }
-  return Notification.requestPermission();
+
+  if (Notification.permission === "granted") return "granted";
+  if (Notification.permission === "denied") return "denied";
+
+  return await Notification.requestPermission();
 }
 
 export async function subscribeToMessTopic(messId: string, name?: string) {
   try {
+    const activeApp = getFirebaseApp();
+    if (!activeApp) {
+      console.error("[FCM] Firebase App instance is not initialized.");
+      return;
+    }
+
     const permission = await requestNotificationPermission();
-    if (permission !== "granted") return;
+    if (permission !== "granted") {
+      console.error("[FCM] Cannot continue without permission.");
+      return;
+    }
+
+    console.log("[FCM] Importing messaging...");
 
     const { getMessaging, getToken, onMessage } = await import("firebase/messaging");
-    const messaging = getMessaging(app!);
+    
+    // Safely retrieve messaging instance from activeApp
+    const messaging = getMessaging(activeApp);
+
+    console.log("[FCM] Registering service worker...");
 
     const registration = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
     await navigator.serviceWorker.ready;
 
+    console.log("[FCM] Service worker ready.");
+
     const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
-    if (!vapidKey) return;
+    if (!vapidKey) {
+      throw new Error("Missing VITE_FIREBASE_VAPID_KEY");
+    }
+
+    console.log("[FCM] Getting token...");
 
     const token = await getToken(messaging, {
       vapidKey,
       serviceWorkerRegistration: registration,
     });
 
-    if (!token) return;
+    if (!token) {
+      console.error("[FCM] Token generation failed.");
+      return;
+    }
 
-    // 👈 Pass name alongside token and messId
+    console.log("FCM Token:", token);
+
+    // Save token, messId, and name to Firestore
     await registerFcmToken({
-      data: { token, messId, name },
+      data: {
+        token,
+        messId,
+        name,
+      },
     });
 
+    console.log("[FCM] Token and profile successfully saved to Firestore.");
+
     onMessage(messaging, (payload) => {
+      console.log("[FCM] Foreground message:", payload);
+
       new Notification(
         payload.data?.title || payload.notification?.title || "MessHub",
         {
