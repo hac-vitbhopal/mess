@@ -42,14 +42,28 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
   const [selectedDate, setSelectedDate] = useState<Date>(today);
   const [openMeal, setOpenMeal] = useState<MealKey | null>(null);
   const [broadcasts, setBroadcasts] = useState<{ id: string; title: string; body: string }[]>([]);
+  
+useEffect(() => {
+  async function syncToken() {
+    if (!profile?.messId) return;
+    try {
+      const { subscribeToMessTopic } = await import("@/lib/firebase");
+      await subscribeToMessTopic(profile.messId);
+      console.log("[FCM] Device token synced successfully for:", profile.messId);
+    } catch (err) {
+      console.error("[FCM] Token sync failed:", err);
+    }
+  }
 
+  syncToken();
+}, [profile.messId]);
   // Feedback form states
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
   const messMeta: Record<string, { name: string; subtitle?: string }> = {
     jmb: { name: "JMB", subtitle: "Boys" },
-    crcl: { name: "CRCL", subtitle: "" },
+    crcl: { name: "Boys Block 1", subtitle: "" },
     mayuri_boys: { name: "Mayuri", subtitle: "Boys" },
     mayuri_girls: { name: "Mayuri", subtitle: "Girls" },
     safal: { name: "Safal", subtitle: "" },

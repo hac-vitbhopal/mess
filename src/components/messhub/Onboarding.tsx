@@ -12,41 +12,44 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
   const [name, setName] = useState("");
   const [messId, setMessId] = useState<MessId | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
- async function submit() {
-  console.log("Submit button clicked");
+  async function submit() {
+    console.log("Submit button clicked");
 
-  const parsed = schema.safeParse({ name: name.trim(), messId });
+    const parsed = schema.safeParse({ name: name.trim(), messId });
 
-  if (!parsed.success) {
-    console.log("Validation failed");
-    setError(parsed.error.issues[0]?.message ?? "Please check your inputs");
-    return;
+    if (!parsed.success) {
+      console.log("Validation failed");
+      setError(parsed.error.issues[0]?.message ?? "Please check your inputs");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+
+    console.log("Validation passed");
+    const profile = parsed.data;
+
+    console.log("Saving profile...");
+    saveProfile(profile);
+
+    try {
+      console.log("Requesting notification permission...");
+      const permission = await requestNotificationPermission();
+      console.log("Permission:", permission);
+
+      console.log("Subscribing to topic...");
+      await subscribeToMessTopic(profile.messId);
+      console.log("Subscription complete.");
+    } catch (err) {
+      console.error("Notification setup failed:", err);
+    } finally {
+      console.log("Calling onComplete...");
+      onComplete(profile);
+      setIsSubmitting(false);
+    }
   }
-
-  console.log("Validation passed");
-
-  const profile = parsed.data;
-
-  console.log("Saving profile...");
-  saveProfile(profile);
-
-  console.log("Calling onComplete...");
-  onComplete(profile);
-
-  try {
-    console.log("Requesting notification permission...");
-    const permission = await requestNotificationPermission();
-    console.log("Permission:", permission);
-
-    console.log("Subscribing to topic...");
-    await subscribeToMessTopic(profile.messId);
-
-    console.log("Subscription complete.");
-  } catch (err) {
-    console.error("Notification setup failed:", err);
-  }
-}
 
   const canSubmit = name.trim().length > 0 && messId !== null;
 
@@ -116,11 +119,11 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
           )}
 
           <button
-            disabled={!canSubmit}
+            disabled={!canSubmit || isSubmitting}
             onClick={submit}
             className="mt-8 w-full rounded-2xl gradient-warm px-6 py-4 font-semibold text-white shadow-card transition hover:opacity-95 disabled:opacity-40"
           >
-            Enter MessHub
+            {isSubmitting ? "Setting up MessHub..." : "Enter MessHub"}
           </button>
           <p className="mt-4 text-center text-xs text-muted-foreground">
             Your info stays on this device.
