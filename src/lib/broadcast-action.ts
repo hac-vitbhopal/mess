@@ -18,7 +18,6 @@ export const sendFcmNotification = createServerFn({
 
     try {
       const messId = topic.replace("mess_", "");
-
       let query;
 
       if (messId === "all") {
@@ -38,24 +37,19 @@ export const sendFcmNotification = createServerFn({
         };
       }
 
-      // Store BOTH token and document id
-      const devices: {
-        token: string;
-        docId: string;
-      }[] = [];
+      const devices: { token: string; docId: string }[] = [];
 
       snapshot.forEach((doc) => {
-        const data = doc.data();
-
-        if (data.token) {
+        const docData = doc.data();
+        if (docData.token) {
           devices.push({
-            token: data.token,
+            token: docData.token,
             docId: doc.id,
           });
         }
       });
 
-      console.log(`Found ${devices.length} devices`);
+      console.log(`Found ${devices.length} registered devices.`);
 
       let successCount = 0;
       let failureCount = 0;
@@ -66,11 +60,35 @@ export const sendFcmNotification = createServerFn({
         const response = await adminMessaging.sendEachForMulticast({
           tokens: batch.map((d) => d.token),
 
+          // 1. Explicit System Banner (Required for closed PWA)
+          notification: {
+            title,
+            body,
+          },
+
+          // 2. Custom Payload for Service Worker & Click Handling
           data: {
             title,
             body,
             url: "/",
             tag: "meal-alert",
+          },
+
+          // 3. WebPush Configuration for Browser Engines
+          webpush: {
+            headers: {
+              Urgency: "high",
+            },
+            notification: {
+              title,
+              body,
+              icon: "/mess_logo.png",
+              badge: "/mess_logo.png",
+              requireInteraction: true,
+            },
+            fcmOptions: {
+              link: "/",
+            },
           },
 
           android: {
@@ -85,19 +103,15 @@ export const sendFcmNotification = createServerFn({
             },
           },
         });
-        
 
         successCount += response.successCount;
         failureCount += response.failureCount;
 
+        // Cleanup invalid/expired tokens from Firestore
         const deletes: Promise<any>[] = [];
-
         response.responses.forEach((res, index) => {
           if (!res.success) {
-            console.error(res.error);
-
             const code = res.error?.code;
-
             if (
               code === "messaging/registration-token-not-registered" ||
               code === "messaging/invalid-registration-token"
@@ -115,18 +129,13 @@ export const sendFcmNotification = createServerFn({
         await Promise.all(deletes);
       }
 
-      console.log("Notification Complete");
-      console.log("Success:", successCount);
-      console.log("Failed:", failureCount);
-
       return {
         success: true,
         successCount,
         failureCount,
       };
     } catch (err: any) {
-      console.error(err);
-
+      console.error("[FCM Broadcast Error]:", err);
       return {
         success: false,
         error: err.message,

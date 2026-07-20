@@ -27,7 +27,6 @@ export const Route = createFileRoute("/super-admin")({
 function SuperAdminGatekeeper() {
   const navigate = useNavigate();
   
-  // 1. Setup mounting guards to cleanly bypass server side rendering conflicts
   const [isMounted, setIsMounted] = useState(false);
   const [session, setSession] = useState<any>(null);
   const [passcode, setPasscode] = useState("");
@@ -61,7 +60,6 @@ function SuperAdminGatekeeper() {
     }
   }
 
-  // Render a matching, neutral shell layout during server compilation passes
   if (!isMounted) {
     return <div className="min-h-screen bg-[#1c1c1e]" />;
   }
@@ -124,7 +122,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
   const [broadcastBody, setBroadcastBody] = useState("");
   const [isBroadcastingCustom, setIsBroadcastingCustom] = useState(false);
 
-  // 🔥 1. AUTOMATED MEAL TRIGGER FUNCTION (ALL MESSES BROADCAST)
+  // 🚀 AUTOMATED MEAL TRIGGER
   async function handleTriggerMealNotification() {
     if (!db) return;
 
@@ -163,7 +161,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           createdAt: serverTimestamp(),
         });
 
-        // ✅ FIXED: Replaced raw fetch with your type-safe TanStack server function call
+        // ✅ FIXED: Direct payload delivery to TanStack Server Function
         await sendFcmNotification({
           data: {
             topic: `mess_${mess.id}`,
@@ -181,7 +179,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
     }
   }
 
-  // 📢 2. CUSTOM CHANNELS BROADCAST FUNCTION (ONE OR ALL MESSES)
+  // 📢 CUSTOM CHANNEL BROADCAST
   async function handleDeployCustomBroadcast(e: React.FormEvent) {
     e.preventDefault();
     if (!broadcastTitle.trim() || !broadcastBody.trim() || !db) return;
@@ -197,7 +195,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
 
       const targetTopic = targetMessId === "all" ? "mess_all" : `mess_${targetMessId}`;
 
-      // ✅ FIXED: Replaced manual fetch here too for absolute system-wide coordination
+      // ✅ FIXED: Direct payload delivery
       await sendFcmNotification({
         data: {
           topic: targetTopic,
