@@ -55,57 +55,63 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
   const canSubmit = name.trim().length > 0 && messId !== null;
 
   return (
-    <div className="min-h-screen w-full bg-[#FFF8F5] text-[#221510] flex flex-col justify-between relative overflow-x-hidden font-sans">
+    <div className="min-h-[100svh] w-full bg-[#FFF8F5] text-[#221510] flex flex-col justify-between items-center relative overflow-x-hidden font-sans select-none">
       
-      {/* Background Soft Glow Effects */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-2xl h-[400px] bg-gradient-to-b from-[#FF7A00]/10 via-[#FF9E43]/5 to-transparent blur-3xl pointer-events-none" />
+      {/* Background Soft Glow Effect */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-2xl h-[300px] bg-gradient-to-b from-[#FF7A00]/10 via-[#FF9E43]/5 to-transparent blur-3xl pointer-events-none" />
 
-      <div className="w-full max-w-xl mx-auto flex-1 flex flex-col justify-between relative z-10">
+      {/* Main Container Envelope */}
+      <div className="w-full max-w-md mx-auto flex-1 flex flex-col justify-between relative z-10">
         
-        {/* TOP RICH ORANGE HEADER - INTEGRATED WITH LOGO */}
-        <div className="relative w-full bg-gradient-to-br from-[#FF6B2C] via-[#F97316] to-[#FB923C] pt-8 pb-10 px-6 rounded-b-[44px] text-center overflow-hidden shadow-xl shadow-[#F97316]/20">
-          
-          {/* Subtle Shimmer Overlay */}
-          <div className="absolute -top-10 -right-10 w-48 h-48 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+        {/* HEADER & LOGO WRAPPER BLOCK */}
+        <div className="relative w-full">
+          {/* Top Rich Orange Banner */}
+          <div className="w-full bg-gradient-to-br from-[#FF6B2C] via-[#F97316] to-[#EA580C] pt-8 pb-14 px-6 rounded-b-[40px] text-center shadow-lg shadow-[#F97316]/15 relative overflow-hidden">
+            
+            {/* Ambient Shimmer Overlay */}
+            <div className="absolute -top-12 -right-12 w-40 h-40 bg-white/10 rounded-full blur-2xl pointer-events-none" />
 
-          {/* Header Top Pills */}
-          <div className="flex items-center justify-between mb-4 max-w-md mx-auto">
-            <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur-md px-3.5 py-1 rounded-full border border-white/25 text-white text-xs font-bold uppercase tracking-wider">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>MessHub</span>
+            {/* Header Top Badges */}
+            <div className="flex items-center justify-between mb-3 w-full">
+              <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur-md px-3 py-1 rounded-full border border-white/25 text-white text-xs font-bold uppercase tracking-wider">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>MessHub</span>
+              </div>
+              <span className="text-xs font-bold text-white bg-black/15 px-3 py-1 rounded-full backdrop-blur-md border border-white/10">
+                Setup
+              </span>
             </div>
-            <span className="text-xs font-bold text-white bg-black/15 px-3.5 py-1 rounded-full backdrop-blur-md border border-white/10">
-              Setup
-            </span>
+
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+              Welcome Student
+            </h1>
+            <p className="text-xs sm:text-sm text-white/95 mt-0.5 max-w-xs mx-auto font-medium">
+              Your campus dining companion.
+            </p>
           </div>
 
-          {/* STICKED LOGO BADGE (Integrated into header flow) */}
-          <div className="w-20 h-20 sm:w-24 sm:h-24 mx-auto mb-3 rounded-full bg-white p-1 shadow-md border-2 border-white/80 flex items-center justify-center shrink-0">
-            <img
-              src="/mess_logo.png"
-              alt="MessHub Logo"
-              className="w-full h-full object-cover rounded-full"
-            />
+          {/* EXACTLY ANCHORED LOGO BADGE */}
+          <div className="absolute left-1/2 -translate-x-1/2 -bottom-10 z-30 shrink-0">
+            <div className="w-20 h-20 sm:w-22 sm:h-22 rounded-full bg-white p-1 shadow-md shadow-[#F97316]/20 border-4 border-[#FFF8F5] flex items-center justify-center overflow-hidden">
+              <img
+                src="/mess_logo.png"
+                alt="MessHub Logo"
+                className="w-full h-full object-cover rounded-full"
+              />
+            </div>
           </div>
-
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-            Welcome Student
-          </h1>
-          <p className="text-xs sm:text-sm text-white/95 mt-1 max-w-xs mx-auto font-medium">
-            Your campus dining companion.
-          </p>
         </div>
 
-        {/* FORM CONTENT SECTION */}
-        <div className="px-5 sm:px-8 pt-6 pb-8 flex flex-col gap-6 max-w-md mx-auto w-full">
+        {/* FORM CONTENT SECTION (Unified Spacing Architecture) */}
+        <div className="px-5 sm:px-6 pt-12 pb-6 flex flex-col gap-4 w-full flex-1 justify-center">
           
           {/* Full Name Input */}
-          <div>
-            <label className="block text-xs font-bold text-[#C2410C] uppercase tracking-wider mb-2">
+          <div className="mt-2">
+            <label className="block text-xs font-bold text-[#C2410C] uppercase tracking-wider mb-1.5">
               Full Name
             </label>
-            <div className="relative flex items-center bg-white rounded-2xl px-4 py-3.5 border-2 border-[#FFEDD5] focus-within:border-[#F97316] focus-within:ring-4 focus-within:ring-[#F97316]/10 transition-all shadow-sm">
-              <User className="w-5 h-5 text-[#F97316] mr-3 shrink-0" />
+            <div className="relative flex items-center bg-white rounded-2xl px-3.5 py-3 border-2 border-[#FFEDD5] focus-within:border-[#F97316] focus-within:ring-4 focus-within:ring-[#F97316]/10 transition-all shadow-sm">
+              <User className="w-5 h-5 text-[#F97316] mr-2.5 shrink-0" />
               <input
                 autoFocus
                 value={name}
@@ -118,14 +124,14 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
 
           {/* Interactive Mess Selection Grid */}
           <div>
-            <div className="flex items-center justify-between mb-2.5">
+            <div className="flex items-center justify-between mb-1.5">
               <label className="block text-xs font-bold text-[#C2410C] uppercase tracking-wider">
                 Select Mess
               </label>
               <span className="text-[11px] text-[#C2410C]/70 font-medium">Choose assigned mess</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+            <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
               {MESSES.map((m) => {
                 const active = messId === m.id;
                 return (
@@ -133,9 +139,9 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
                     key={m.id}
                     type="button"
                     onClick={() => setMessId(m.id)}
-                    className={`p-3.5 rounded-2xl text-left transition-all duration-200 relative flex flex-col justify-between border-2 cursor-pointer active:scale-[0.98] ${
+                    className={`p-2.5 sm:p-3 rounded-2xl text-left transition-all duration-150 relative flex flex-col justify-between border-2 cursor-pointer active:scale-[0.98] ${
                       active
-                        ? "bg-gradient-to-br from-[#FF6B2C] to-[#EA580C] border-[#FF6B2C] text-white shadow-lg shadow-[#F97316]/25"
+                        ? "bg-gradient-to-br from-[#FF6B2C] to-[#EA580C] border-[#FF6B2C] text-white shadow-md shadow-[#F97316]/25"
                         : "bg-white border-[#FFEDD5] text-[#221510] hover:border-[#F97316]/50 hover:bg-[#FFF7ED]"
                     }`}
                   >
@@ -162,23 +168,23 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
             </div>
           </div>
 
-          {/* Error Banner */}
+          {/* Error Display */}
           {error && (
-            <div role="alert" className="rounded-xl bg-red-50 border border-red-200 p-3 text-xs text-red-700 font-medium">
+            <div role="alert" className="rounded-xl bg-red-50 border border-red-200 p-2.5 text-xs text-red-700 font-medium">
               {error}
             </div>
           )}
 
-          {/* Submit Action Button */}
+          {/* Submit Button */}
           <div className="pt-2">
             <button
               disabled={!canSubmit || isSubmitting}
               onClick={submit}
-              className="w-full bg-gradient-to-r from-[#FF6B2C] via-[#F97316] to-[#EA580C] hover:opacity-95 text-white font-bold py-4 rounded-2xl shadow-lg shadow-[#F97316]/30 transition-all text-sm sm:text-base disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-[0.99]"
+              className="w-full bg-gradient-to-r from-[#FF6B2C] via-[#F97316] to-[#EA580C] hover:opacity-95 text-white font-bold py-3.5 rounded-2xl shadow-lg shadow-[#F97316]/25 transition-all text-sm sm:text-base disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-[0.99]"
             >
               {isSubmitting ? "Setting up MessHub..." : "Enter MessHub"}
             </button>
-            <p className="mt-3 text-center text-[11px] text-[#C2410C]/60 font-medium">
+            <p className="mt-2 text-center text-[11px] text-[#C2410C]/60 font-medium">
               Your info stays on this device.
             </p>
           </div>
