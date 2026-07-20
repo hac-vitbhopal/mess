@@ -42,13 +42,13 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
   const [selectedDate, setSelectedDate] = useState<Date>(today);
   const [openMeal, setOpenMeal] = useState<MealKey | null>(null);
   const [broadcasts, setBroadcasts] = useState<{ id: string; title: string; body: string }[]>([]);
-  
+
 useEffect(() => {
   async function syncToken() {
     if (!profile?.messId) return;
     try {
       const { subscribeToMessTopic } = await import("@/lib/firebase");
-      await subscribeToMessTopic(profile.messId);
+      await subscribeToMessTopic(profile.messId, profile.name); // Pass the student's name to the subscription function
       console.log("[FCM] Device token synced successfully for:", profile.messId);
     } catch (err) {
       console.error("[FCM] Token sync failed:", err);

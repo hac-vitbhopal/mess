@@ -40,7 +40,7 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
       console.log("Permission:", permission);
 
       console.log("Subscribing to topic...");
-      await subscribeToMessTopic(profile.messId);
+      await subscribeToMessTopic(profile.messId, profile.name);
       console.log("Subscription complete.");
     } catch (err) {
       console.error("Notification setup failed:", err);

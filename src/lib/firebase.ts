@@ -30,7 +30,7 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
   return Notification.requestPermission();
 }
 
-export async function subscribeToMessTopic(messId: string) {
+export async function subscribeToMessTopic(messId: string, name?: string) {
   try {
     const permission = await requestNotificationPermission();
     if (permission !== "granted") return;
@@ -51,8 +51,9 @@ export async function subscribeToMessTopic(messId: string) {
 
     if (!token) return;
 
+    // 👈 Pass name alongside token and messId
     await registerFcmToken({
-      data: { token, messId },
+      data: { token, messId, name },
     });
 
     onMessage(messaging, (payload) => {
@@ -64,7 +65,7 @@ export async function subscribeToMessTopic(messId: string) {
         }
       );
     });
-  } catch {
-    // Silent catch in production
+  } catch (err) {
+    console.error("[FCM] Fatal Error:", err);
   }
 }
