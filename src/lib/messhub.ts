@@ -71,7 +71,7 @@ export const MEAL_DEFS: MealDef[] = [
   { key: "breakfast", name: "Breakfast", icon: "🍳", startH: 7, startM: 30, endH: 9, endM: 30 },
   { key: "lunch",     name: "Lunch",     icon: "🍽️", startH: 12, startM: 15, endH: 14, endM: 15 },
   { key: "snacks",    name: "Snacks",    icon: "☕", startH: 17, startM: 15,  endH: 18, endM: 15 },
-  { key: "dinner",    name: "Dinner",    icon: "🌙", startH: 19, startM: 10, endH: 20, endM: 45 },
+  { key: "dinner",    name: "Dinner",    icon: "🌙", startH: 19, startM: 30, endH: 21, endM: 15 },
 ];
 
 export function mealDef(key: MealKey) {
