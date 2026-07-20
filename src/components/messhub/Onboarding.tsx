@@ -88,15 +88,15 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
         </div>
 
         {/* OVERLAPPING LOGO BADGE */}
-        <div className="relative -mt-16 mx-auto z-20">
-          <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-white p-1.5 shadow-xl shadow-[#F97316]/20 border-[#FFF8F5] flex items-center justify-center">
-            <img
-              src="/mess_logo.png"
-              alt="MessHub Logo"
-              className="w-28 h-28 object-cover rounded-full"
-            />
-          </div>
-        </div>
+        <div className="relative -mt-12 sm:-mt-14 md:-mt-16 mx-auto z-20 shrink-0">
+  <div className="w-24 h-24 sm:w-28 sm:h-28 md:w-32 md:h-32 rounded-full bg-white p-1 sm:p-1.5 shadow-xl shadow-[#F97316]/20 border-4 border-[#FFF8F5] flex items-center justify-center overflow-hidden">
+    <img
+      src="/menu_logo.png"
+      alt="MessHub Logo"
+      className="w-full h-full object-cover rounded-full"
+    />
+  </div>
+</div>
 
         {/* FORM CONTENT SECTION */}
         <div className="px-5 sm:px-8 pt-4 pb-8 flex flex-col gap-6 max-w-md mx-auto w-full">
