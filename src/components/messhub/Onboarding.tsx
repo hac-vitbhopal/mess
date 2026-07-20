@@ -62,21 +62,30 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
 
       <div className="w-full max-w-xl mx-auto flex-1 flex flex-col justify-between relative z-10">
         
-        {/* TOP RICH ORANGE HEADER - COVERS FULL MOBILE TOP */}
-        <div className="relative w-full bg-gradient-to-br from-[#FF6B2C] via-[#F97316] to-[#FB923C] pt-10 pb-20 px-6 rounded-b-[44px] text-center overflow-hidden shadow-xl shadow-[#F97316]/20">
+        {/* TOP RICH ORANGE HEADER - INTEGRATED WITH LOGO */}
+        <div className="relative w-full bg-gradient-to-br from-[#FF6B2C] via-[#F97316] to-[#FB923C] pt-8 pb-10 px-6 rounded-b-[44px] text-center overflow-hidden shadow-xl shadow-[#F97316]/20">
           
           {/* Subtle Shimmer Overlay */}
           <div className="absolute -top-10 -right-10 w-48 h-48 bg-white/10 rounded-full blur-2xl pointer-events-none" />
 
           {/* Header Top Pills */}
-          <div className="flex items-center justify-between mb-5 max-w-md mx-auto">
+          <div className="flex items-center justify-between mb-4 max-w-md mx-auto">
             <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur-md px-3.5 py-1 rounded-full border border-white/25 text-white text-xs font-bold uppercase tracking-wider">
-              {/* <Sparkles className="w-3.5 h-3.5" /> */}
+              <Sparkles className="w-3.5 h-3.5" />
               <span>MessHub</span>
             </div>
             <span className="text-xs font-bold text-white bg-black/15 px-3.5 py-1 rounded-full backdrop-blur-md border border-white/10">
               Setup
             </span>
+          </div>
+
+          {/* STICKED LOGO BADGE (Integrated into header flow) */}
+          <div className="w-20 h-20 sm:w-24 sm:h-24 mx-auto mb-3 rounded-full bg-white p-1 shadow-md border-2 border-white/80 flex items-center justify-center shrink-0">
+            <img
+              src="/mess_logo.png"
+              alt="MessHub Logo"
+              className="w-full h-full object-cover rounded-full"
+            />
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
@@ -87,19 +96,8 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
           </p>
         </div>
 
-        {/* OVERLAPPING LOGO BADGE */}
-        <div className="relative -mt-12 sm:-mt-14 md:-mt-16 mx-auto z-20 shrink-0">
-  <div className="w-24 h-24 sm:w-28 sm:h-28 md:w-32 md:h-32 rounded-full bg-white p-1 sm:p-1.5 shadow-xl shadow-[#F97316]/20 border-4 border-[#FFF8F5] flex items-center justify-center overflow-hidden">
-    <img
-      src="/menu_logo.png"
-      alt="MessHub Logo"
-      className="w-full h-full object-cover rounded-full"
-    />
-  </div>
-</div>
-
         {/* FORM CONTENT SECTION */}
-        <div className="px-5 sm:px-8 pt-4 pb-8 flex flex-col gap-6 max-w-md mx-auto w-full">
+        <div className="px-5 sm:px-8 pt-6 pb-8 flex flex-col gap-6 max-w-md mx-auto w-full">
           
           {/* Full Name Input */}
           <div>
