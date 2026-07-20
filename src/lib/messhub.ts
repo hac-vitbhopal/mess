@@ -484,13 +484,13 @@ export const MEALS = MEAL_DEFS;
 /* ---------------- Role Security & Gatekeeping ---------------- */
 
 export const ADMIN_AUTH_KEYS: Record<string, { role: "admin" | "super-admin"; messId?: MessId }> = {
-  "JMB@2026": { role: "admin", messId: "jmb" },
-  "CRCL@2026": { role: "admin", messId: "crcl" },
-  "MAYURIB@2026": { role: "admin", messId: "mayuri_boys" },
-  "MAYURIG@2026": { role: "admin", messId: "mayuri_girls" },
-  "SAFAL@2026": { role: "admin", messId: "safal" },
-  "ABCAT@2026": { role: "admin", messId: "ab_catering" },
-  "SUPERHUB#99": { role: "super-admin" } 
+  "MeranaamJMB@2026": { role: "admin", messId: "jmb" },
+  "MeranaamCRCL@2026": { role: "admin", messId: "crcl" },
+  "MeranaamMAYURIB@2026": { role: "admin", messId: "mayuri_boys" },
+  "MeranaamMAYURIG@2026": { role: "admin", messId: "mayuri_girls" },
+  "MeranaamSAFAL@2026": { role: "admin", messId: "safal" },
+  "MeranaamABCAT@2026": { role: "admin", messId: "ab_catering" },
+  "Meranaammesshai#99": { role: "super-admin" } 
 };
 
 const ADMIN_SESSION_KEY = "messhub.admin.session";

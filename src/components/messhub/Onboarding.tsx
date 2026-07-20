@@ -2,6 +2,7 @@ import { useState } from "react";
 import { MESSES, saveProfile, type MessId, type StudentProfile } from "@/lib/messhub";
 import { requestNotificationPermission, subscribeToMessTopic } from "@/lib/firebase";
 import { z } from "zod";
+import { User, Check, Sparkles } from "lucide-react";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Please enter your name").max(50),
@@ -54,81 +55,138 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
   const canSubmit = name.trim().length > 0 && messId !== null;
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-background">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[55vh] gradient-warm opacity-20" />
-      <div className="pointer-events-none absolute -top-32 -right-20 h-80 w-80 rounded-full gradient-warm blur-3xl opacity-40" />
+    <div className="min-h-screen w-full bg-[#FFF8F5] text-[#221510] flex flex-col justify-between relative overflow-x-hidden font-sans">
+      
+      {/* Background Soft Glow Effects */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-2xl h-[400px] bg-gradient-to-b from-[#FF7A00]/10 via-[#FF9E43]/5 to-transparent blur-3xl pointer-events-none" />
 
-      <div className="relative mx-auto flex min-h-screen max-w-md flex-col px-6 safe-top safe-bottom">
-        <header className="pt-4 pb-6">
-          <div className="flex items-center gap-2">
-            <div className="grid h-10 w-10 place-items-center rounded-2xl gradient-warm text-white text-lg shadow-card">🍽️</div>
-            <span className="font-display text-lg font-bold tracking-tight">MessHub</span>
+      <div className="w-full max-w-xl mx-auto flex-1 flex flex-col justify-between relative z-10">
+        
+        {/* TOP RICH ORANGE HEADER - COVERS FULL MOBILE TOP */}
+        <div className="relative w-full bg-gradient-to-br from-[#FF6B2C] via-[#F97316] to-[#FB923C] pt-10 pb-20 px-6 rounded-b-[44px] text-center overflow-hidden shadow-xl shadow-[#F97316]/20">
+          
+          {/* Subtle Shimmer Overlay */}
+          <div className="absolute -top-10 -right-10 w-48 h-48 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+
+          {/* Header Top Pills */}
+          <div className="flex items-center justify-between mb-5 max-w-md mx-auto">
+            <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur-md px-3.5 py-1 rounded-full border border-white/25 text-white text-xs font-bold uppercase tracking-wider">
+              {/* <Sparkles className="w-3.5 h-3.5" /> */}
+              <span>MessHub</span>
+            </div>
+            <span className="text-xs font-bold text-white bg-black/15 px-3.5 py-1 rounded-full backdrop-blur-md border border-white/10">
+              Setup
+            </span>
           </div>
-        </header>
 
-        <div className="flex-1">
-          <h1 className="text-4xl font-bold leading-tight">
-            Your campus <br />
-            <span className="bg-clip-text text-transparent gradient-warm">dining companion.</span>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+            Welcome Student
           </h1>
-          <p className="mt-3 text-muted-foreground">
-            Just your name and mess. No email, no OTP, no password.
+          <p className="text-xs sm:text-sm text-white/95 mt-1 max-w-xs mx-auto font-medium">
+            Your campus dining companion.
           </p>
+        </div>
 
-          <div className="mt-8">
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-medium text-muted-foreground">Full name</span>
+        {/* OVERLAPPING LOGO BADGE */}
+        <div className="relative -mt-16 mx-auto z-20">
+          <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-white p-1.5 shadow-xl shadow-[#F97316]/20 border-[#FFF8F5] flex items-center justify-center">
+            <img
+              src="/mess_logo.png"
+              alt="MessHub Logo"
+              className="w-28 h-28 object-cover rounded-full"
+            />
+          </div>
+        </div>
+
+        {/* FORM CONTENT SECTION */}
+        <div className="px-5 sm:px-8 pt-4 pb-8 flex flex-col gap-6 max-w-md mx-auto w-full">
+          
+          {/* Full Name Input */}
+          <div>
+            <label className="block text-xs font-bold text-[#C2410C] uppercase tracking-wider mb-2">
+              Full Name
+            </label>
+            <div className="relative flex items-center bg-white rounded-2xl px-4 py-3.5 border-2 border-[#FFEDD5] focus-within:border-[#F97316] focus-within:ring-4 focus-within:ring-[#F97316]/10 transition-all shadow-sm">
+              <User className="w-5 h-5 text-[#F97316] mr-3 shrink-0" />
               <input
                 autoFocus
                 value={name}
                 onChange={(e) => setName(e.target.value.slice(0, 50))}
-                placeholder="Your Name"
-                className="w-full rounded-2xl border border-border bg-card px-4 py-3.5 text-base outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
+                placeholder="Enter your name"
+                className="w-full bg-transparent text-sm sm:text-base text-[#221510] font-semibold placeholder-[#D4A391] focus:outline-none"
               />
-            </label>
+            </div>
           </div>
 
-          <div className="mt-6">
-            <span className="mb-2 block text-sm font-medium text-muted-foreground">Assigned mess</span>
-            <div className="grid grid-cols-2 gap-3">
+          {/* Interactive Mess Selection Grid */}
+          <div>
+            <div className="flex items-center justify-between mb-2.5">
+              <label className="block text-xs font-bold text-[#C2410C] uppercase tracking-wider">
+                Select Mess
+              </label>
+              <span className="text-[11px] text-[#C2410C]/70 font-medium">Choose assigned mess</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
               {MESSES.map((m) => {
                 const active = messId === m.id;
                 return (
                   <button
                     key={m.id}
+                    type="button"
                     onClick={() => setMessId(m.id)}
-                    className={`rounded-2xl border p-4 text-left transition ${
+                    className={`p-3.5 rounded-2xl text-left transition-all duration-200 relative flex flex-col justify-between border-2 cursor-pointer active:scale-[0.98] ${
                       active
-                        ? "border-primary bg-primary/5 shadow-card"
-                        : "border-border bg-card hover:border-primary/40"
+                        ? "bg-gradient-to-br from-[#FF6B2C] to-[#EA580C] border-[#FF6B2C] text-white shadow-lg shadow-[#F97316]/25"
+                        : "bg-white border-[#FFEDD5] text-[#221510] hover:border-[#F97316]/50 hover:bg-[#FFF7ED]"
                     }`}
                   >
-                    <div className="text-base font-semibold">{m.name}</div>
-                    {m.subtitle && <div className="text-xs text-muted-foreground">{m.subtitle}</div>}
-                    {active && <div className="mt-2 text-xs font-medium text-primary">Selected</div>}
+                    <div>
+                      <div className="flex items-center justify-between gap-1">
+                        <span className={`text-xs sm:text-sm font-bold line-clamp-1 ${active ? "text-white" : "text-[#221510]"}`}>
+                          {m.name}
+                        </span>
+                        {active && (
+                          <div className="w-4 h-4 rounded-full bg-white text-[#F97316] flex items-center justify-center shrink-0 shadow-sm">
+                            <Check className="w-3 h-3 stroke-[3]" />
+                          </div>
+                        )}
+                      </div>
+                      {m.subtitle && (
+                        <p className={`text-[10px] sm:text-xs mt-0.5 line-clamp-1 ${active ? "text-white/90" : "text-[#9A3412]/60"}`}>
+                          {m.subtitle}
+                        </p>
+                      )}
+                    </div>
                   </button>
                 );
               })}
             </div>
           </div>
 
+          {/* Error Banner */}
           {error && (
-            <div role="alert" className="mt-4 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            <div role="alert" className="rounded-xl bg-red-50 border border-red-200 p-3 text-xs text-red-700 font-medium">
               {error}
             </div>
           )}
 
-          <button
-            disabled={!canSubmit || isSubmitting}
-            onClick={submit}
-            className="mt-8 w-full rounded-2xl gradient-warm px-6 py-4 font-semibold text-white shadow-card transition hover:opacity-95 disabled:opacity-40"
-          >
-            {isSubmitting ? "Setting up MessHub..." : "Enter MessHub"}
-          </button>
-          <p className="mt-4 text-center text-xs text-muted-foreground">
-            Your info stays on this device.
-          </p>
+          {/* Submit Action Button */}
+          <div className="pt-2">
+            <button
+              disabled={!canSubmit || isSubmitting}
+              onClick={submit}
+              className="w-full bg-gradient-to-r from-[#FF6B2C] via-[#F97316] to-[#EA580C] hover:opacity-95 text-white font-bold py-4 rounded-2xl shadow-lg shadow-[#F97316]/30 transition-all text-sm sm:text-base disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-[0.99]"
+            >
+              {isSubmitting ? "Setting up MessHub..." : "Enter MessHub"}
+            </button>
+            <p className="mt-3 text-center text-[11px] text-[#C2410C]/60 font-medium">
+              Your info stays on this device.
+            </p>
+          </div>
+
         </div>
+
       </div>
     </div>
   );
