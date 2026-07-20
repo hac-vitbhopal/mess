@@ -18,8 +18,18 @@ export const sendFcmNotification = createServerFn({
 
     try {
       const messId = topic.replace("mess_", "");
-      let query;
 
+      // 1. SAVE BROADCAST DOCUMENT TO FIRESTORE FIRST
+      await adminDb.collection("broadcasts").add({
+        title,
+        body,
+        messId,
+        topic,
+        createdAt: new Date(),
+      });
+
+      // 2. QUERY TARGETED FCM TOKENS
+      let query;
       if (messId === "all") {
         query = adminDb.collection("fcm_tokens");
       } else {
@@ -32,8 +42,10 @@ export const sendFcmNotification = createServerFn({
 
       if (snapshot.empty) {
         return {
-          success: false,
-          message: "No registered devices found.",
+          success: true,
+          message: "Broadcast saved to database, but no registered devices were found to notify.",
+          successCount: 0,
+          failureCount: 0,
         };
       }
 
@@ -49,32 +61,32 @@ export const sendFcmNotification = createServerFn({
         }
       });
 
-      console.log(`Found ${devices.length} registered devices.`);
-
       let successCount = 0;
       let failureCount = 0;
 
+      // 3. SEND PUSH NOTIFICATION BATCHES
       for (let i = 0; i < devices.length; i += 500) {
         const batch = devices.slice(i, i + 500);
 
         const response = await adminMessaging.sendEachForMulticast({
           tokens: batch.map((d) => d.token),
 
-          // 1. Explicit System Banner (Required for closed PWA)
+          // Explicit System Banner (Required for closed PWA/Browser)
           notification: {
             title,
             body,
           },
 
-          // 2. Custom Payload for Service Worker & Click Handling
+          // Custom Payload for Service Worker & Foreground/Background
           data: {
             title,
             body,
+            messId,
             url: "/",
             tag: "meal-alert",
           },
 
-          // 3. WebPush Configuration for Browser Engines
+          // WebPush Configuration
           webpush: {
             headers: {
               Urgency: "high",
@@ -82,8 +94,8 @@ export const sendFcmNotification = createServerFn({
             notification: {
               title,
               body,
-              icon: "/mess_logo.png",
-              badge: "/mess_logo.png",
+              icon: "/menu_logo.png", // 👈 Corrected filename
+              badge: "/menu_logo.png",
               requireInteraction: true,
             },
             fcmOptions: {
