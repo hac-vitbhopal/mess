@@ -2,25 +2,22 @@
 
 import { createServerFn } from "@tanstack/react-start";
 import { adminDb } from "./firebase-admin";
+import { z } from "zod";
 
-interface RegisterTokenPayload {
-  token: string;
-  messId: string;
-}
+// Strict Zod schema enforcing payload bounds
+const tokenPayloadSchema = z.object({
+  token: z.string().trim().min(10).max(500, "Token string exceeds maximum length limit"),
+  messId: z.enum(["crcl", "jmb", "mayuri_boys", "mayuri_girls", "safal", "ab_catering"]),
+});
 
 export const registerFcmToken = createServerFn({
   method: "POST",
 })
-  .validator((data: RegisterTokenPayload) => data)
+  .validator((data: unknown) => tokenPayloadSchema.parse(data))
   .handler(async ({ data }) => {
     const { token, messId } = data;
 
     try {
-      console.log("Saving token:", token);
-      console.log("Mess:", messId);
-
-      // Store token using the token itself as the document id.
-      // Calling set() with merge: true updates messId/updatedAt if the token already exists.
       await adminDb
         .collection("fcm_tokens")
         .doc(token)
@@ -33,17 +30,11 @@ export const registerFcmToken = createServerFn({
           { merge: true }
         );
 
-      console.log("✅ Token saved to Firestore");
-
-      return {
-        success: true,
-      };
+      return { success: true };
     } catch (err: any) {
-      console.error("Failed to save token:", err);
-
       return {
         success: false,
-        error: err.message,
+        error: "Internal database update failure",
       };
     }
   });
