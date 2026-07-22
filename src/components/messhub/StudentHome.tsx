@@ -122,8 +122,8 @@ useEffect(() => {
       navigator.serviceWorker.ready.then((registration) => {
         registration.showNotification(alertConfig.title, {
           body: alertConfig.body,
-          icon: "/menu_logo.png",
-          badge: "/menu_logo.png",
+          icon: "/mess_logo.png",
+          badge: "/mess_logo.png",
           tag: `meal-${focus.key}-${dateKey(today)}`,
           renotify: true,
           requireInteraction: false,
@@ -165,8 +165,8 @@ useEffect(() => {
             const title = `📢 Mess Alert: ${latestAlert.title}`;
             const options = {
               body: latestAlert.body,
-              icon: "/menu_logo.png",
-              badge: "/menu_logo.png",
+              icon: "/mess_logo.png",
+              badge: "/mess_logo.png",
               tag: "meal-alert",
               renotify: true,
               requireInteraction: true, 

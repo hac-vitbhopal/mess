@@ -99,7 +99,7 @@ export async function subscribeToMessTopic(messId: string, name?: string) {
         payload.data?.title || payload.notification?.title || "MessHub",
         {
           body: payload.data?.body || payload.notification?.body || "",
-          icon: "/menu_logo.png",
+          icon: "/mess_logo.png",
         }
       );
     });

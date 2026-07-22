@@ -94,8 +94,8 @@ export const sendFcmNotification = createServerFn({
             notification: {
               title,
               body,
-              icon: "/menu_logo.png", // 👈 Corrected filename
-              badge: "/menu_logo.png",
+              icon: "/mess_logo.png", // 👈 Corrected filename
+              badge: "/mess_logo.png",
               requireInteraction: true,
             },
             fcmOptions: {

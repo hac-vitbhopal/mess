@@ -24,8 +24,8 @@ messaging.onBackgroundMessage((payload) => {
   const title = payload.notification?.title || payload.data?.title || "📢 MessHub Alert";
   const body = payload.notification?.body || payload.data?.body || "New menu updates are available.";
 
-  // ⚡ Ensure this filename matches your exact file in /public directory (menu_logo.png)
-  const iconPath = "/menu_logo.png"; 
+  // ⚡ Ensure this filename matches your exact file in /public directory (mess_logo.png)
+  const iconPath = "/mess_logo.png"; 
 
   const options = {
     body: body,
