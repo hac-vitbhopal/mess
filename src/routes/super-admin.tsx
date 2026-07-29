@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot } from "firebase/firestore";
 import { 
   getAdminSession, 
   saveAdminSession, 
@@ -10,6 +10,7 @@ import {
   MESSES,
   MEAL_DEFS,
   HARDCODED_WEEKLY_MENUS,
+  deleteBroadcasts,
   type MealKey
 } from "@/lib/messhub";
 import { sendFcmNotification } from "@/lib/broadcast-action";
@@ -121,6 +122,55 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
   const [broadcastTitle, setBroadcastTitle] = useState("");
   const [broadcastBody, setBroadcastBody] = useState("");
   const [isBroadcastingCustom, setIsBroadcastingCustom] = useState(false);
+
+  // 📋 Broadcast Management States
+  const [broadcastList, setBroadcastList] = useState<any[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // 📡 Real-time listener for active broadcast notifications
+  useEffect(() => {
+    if (!db) return;
+    const q = query(collection(db, "broadcasts"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setBroadcastList(list);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === broadcastList.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(broadcastList.map((b) => b.id));
+    }
+  };
+
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.length === 0) return;
+    if (!confirm(`Are you sure you want to delete ${selectedIds.length} broadcast(s)?`)) return;
+
+    setIsDeleting(true);
+    try {
+      await deleteBroadcasts(selectedIds);
+      setSelectedIds([]);
+    } catch (err) {
+      console.error("Failed to delete broadcasts:", err);
+      alert("Error deleting broadcasts.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   // 🚀 AUTOMATED MEAL TRIGGER
   async function handleTriggerMealNotification() {
@@ -324,6 +374,96 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
               {isBroadcastingCustom ? "Dispersing Packet Streams..." : "Disperse Custom Announcement"}
             </button>
           </form>
+        </div>
+
+        {/* 🗑️ BROADCAST HISTORY & BULK DELETE CONTROL PANEL */}
+        <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
+          <div className="flex items-center justify-between pb-3 border-b border-border">
+            <div>
+              <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
+                <span>📋</span> Active Broadcast Control
+              </h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Select and remove active announcements in real time.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleDeleteSelected}
+              disabled={selectedIds.length === 0 || isDeleting}
+              className="rounded-xl bg-red-500 px-3 py-2 text-xs font-bold text-white shadow-card transition active:scale-95 disabled:opacity-40 flex items-center gap-1.5"
+            >
+              <span>🗑️ Delete Selected</span>
+              {selectedIds.length > 0 && (
+                <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px]">
+                  {selectedIds.length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          <div className="mt-4 overflow-x-auto">
+            {broadcastList.length === 0 ? (
+              <p className="py-6 text-center text-xs italic text-muted-foreground">
+                No active announcements found in Firestore.
+              </p>
+            ) : (
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <th className="py-2.5 px-2 w-8">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.length === broadcastList.length && broadcastList.length > 0}
+                        onChange={toggleSelectAll}
+                        className="h-3.5 w-3.5 rounded border-border text-primary"
+                      />
+                    </th>
+                    <th className="py-2.5 px-2">Target</th>
+                    <th className="py-2.5 px-2">Heading</th>
+                    <th className="py-2.5 px-2 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/40">
+                  {broadcastList.map((b) => {
+                    const isChecked = selectedIds.includes(b.id);
+                    return (
+                      <tr key={b.id} className={`transition hover:bg-[#fbf7f2] ${isChecked ? "bg-red-50/50" : ""}`}>
+                        <td className="py-3 px-2">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleSelectOne(b.id)}
+                            className="h-3.5 w-3.5 rounded border-border text-primary"
+                          />
+                        </td>
+                        <td className="py-3 px-2 font-bold uppercase text-[10px] text-red-500">
+                          {b.messId}
+                        </td>
+                        <td className="py-3 px-2 font-medium text-foreground max-w-[180px] truncate">
+                          {b.title}
+                        </td>
+                        <td className="py-3 px-2 text-right">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (confirm("Delete this broadcast announcement?")) {
+                                await deleteBroadcasts([b.id]);
+                              }
+                            }}
+                            className="rounded-lg bg-red-100 px-2 py-1 text-[10px] font-bold text-red-600 hover:bg-red-500 hover:text-white transition"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
 
       </main>
