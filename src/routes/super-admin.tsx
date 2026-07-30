@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, onSnapshot } from "firebase/firestore";
 import { 
   getAdminSession, 
   saveAdminSession, 
@@ -112,6 +112,194 @@ function SuperAdminGatekeeper() {
   return <PlatformMasterDashboard onSignOut={() => setSession(null)} />;
 }
 
+/* ---------------- 👥 STUDENT DIRECTORY PANEL ---------------- */
+function StudentDirectoryPanel() {
+  const [students, setStudents] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!db) return;
+
+    // Listen to registered_students in real-time
+    const q = query(collection(db, "registered_students"));
+    const unsubscribe = onSnapshot(
+      q,
+      { includeMetadataChanges: true },
+      (snapshot) => {
+        const list: any[] = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+        // Sort locally by last active timestamp
+        list.sort((a, b) => {
+          const timeA = a.lastActiveAt?.toDate?.() ? a.lastActiveAt.toDate().getTime() : Date.now();
+          const timeB = b.lastActiveAt?.toDate?.() ? b.lastActiveAt.toDate().getTime() : Date.now();
+          return timeB - timeA;
+        });
+
+        setStudents(list);
+      },
+      (err) => console.error("[StudentDirectory] Error:", err)
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  return (
+    <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
+      <div className="flex items-center justify-between pb-3 border-b border-border">
+        <div>
+          <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
+            <span>👥</span> Onboarded Students Directory
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Real-time directory of every student who entered MessHub.
+          </p>
+        </div>
+        <span className="rounded-full bg-emerald-100 text-emerald-700 font-bold px-3 py-1 text-xs">
+          Total Students: {students.length}
+        </span>
+      </div>
+
+      <div className="mt-4 overflow-x-auto">
+        {students.length === 0 ? (
+          <p className="py-6 text-center text-xs italic text-muted-foreground">
+            No student onboarding entries recorded yet.
+          </p>
+        ) : (
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
+                <th className="py-2.5 px-2">Student Name</th>
+                <th className="py-2.5 px-2">Assigned Mess</th>
+                <th className="py-2.5 px-2 text-right">Joined / Last Active</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/40">
+              {students.map((student) => (
+                <tr key={student.id} className="transition hover:bg-[#fbf7f2]">
+                  <td className="py-3 px-2 font-bold text-foreground">
+                    {student.name || "Anonymous"}
+                  </td>
+                  <td className="py-3 px-2 font-bold uppercase text-[10px] text-red-500">
+                    {student.messId || "N/A"}
+                  </td>
+                  <td className="py-3 px-2 text-right text-muted-foreground text-[10px]">
+                    {student.lastActiveAt?.toDate
+                      ? student.lastActiveAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })
+                      : "Just now"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- 📊 LINK CLICK ANALYTICS PANEL ---------------- */
+function BroadcastAnalyticsPanel() {
+  const [clickLogs, setClickLogs] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!db) return;
+
+    const q = query(collection(db, "broadcast_clicks"));
+    const unsubscribe = onSnapshot(
+      q,
+      { includeMetadataChanges: true },
+      (snapshot) => {
+        const logs: any[] = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+        logs.sort((a, b) => {
+          const timeA = a.clickedAt?.toDate?.() ? a.clickedAt.toDate().getTime() : Date.now();
+          const timeB = b.clickedAt?.toDate?.() ? b.clickedAt.toDate().getTime() : Date.now();
+          return timeB - timeA;
+        });
+
+        setClickLogs(logs);
+      },
+      (err) => console.error("[BroadcastAnalytics] Error:", err)
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  return (
+    <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
+      <div className="flex items-center justify-between pb-3 border-b border-border">
+        <div>
+          <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
+            <span>📊</span> Broadcast Link Click Analytics
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Real-time tracking of students interacting with links inside broadcasts.
+          </p>
+        </div>
+        <span className="rounded-full bg-primary/10 text-primary font-bold px-3 py-1 text-xs">
+          Total Clicks: {clickLogs.length}
+        </span>
+      </div>
+
+      <div className="mt-4 overflow-x-auto">
+        {clickLogs.length === 0 ? (
+          <p className="py-6 text-center text-xs italic text-muted-foreground">
+            No link clicks recorded yet.
+          </p>
+        ) : (
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
+                <th className="py-2.5 px-2">Student Name</th>
+                <th className="py-2.5 px-2">Mess</th>
+                <th className="py-2.5 px-2">Broadcast Title</th>
+                <th className="py-2.5 px-2">Link Clicked</th>
+                <th className="py-2.5 px-2 text-right">Time</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/40">
+              {clickLogs.map((log) => (
+                <tr key={log.id} className="transition hover:bg-[#fbf7f2]">
+                  <td className="py-3 px-2 font-bold text-foreground">
+                    {log.userName}
+                  </td>
+                  <td className="py-3 px-2 font-bold uppercase text-[10px] text-red-500">
+                    {log.userMess}
+                  </td>
+                  <td className="py-3 px-2 text-muted-foreground max-w-[150px] truncate">
+                    {log.broadcastTitle}
+                  </td>
+                  <td className="py-3 px-2">
+                    <a
+                      href={log.clickedUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary underline max-w-[180px] truncate block font-medium"
+                    >
+                      {log.clickedUrl}
+                    </a>
+                  </td>
+                  <td className="py-3 px-2 text-right text-muted-foreground text-[10px]">
+                    {log.clickedAt?.toDate
+                      ? log.clickedAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                      : "Just now"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- 👑 PLATFORM MASTER DASHBOARD ---------------- */
 function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
   const currentWeekday = new Date().getDay();
 
@@ -123,15 +311,13 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
   const [broadcastBody, setBroadcastBody] = useState("");
   const [isBroadcastingCustom, setIsBroadcastingCustom] = useState(false);
 
-  // 📋 Broadcast Management States
   const [broadcastList, setBroadcastList] = useState<any[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // 📡 Real-time listener for active broadcast notifications
   useEffect(() => {
     if (!db) return;
-    const q = query(collection(db, "broadcasts"), orderBy("createdAt", "desc"));
+    const q = query(collection(db, "broadcasts"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const list = snapshot.docs.map((doc) => ({
         id: doc.id,
@@ -172,7 +358,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
     }
   };
 
-  // 🚀 AUTOMATED MEAL TRIGGER
   async function handleTriggerMealNotification() {
     if (!db) return;
 
@@ -190,7 +375,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
         breakfast: { title: "🍳 Breakfast Counter Open!", bodyPrefix: "Today's fuel is served: " },
         lunch: { title: "🍽️ Lunch is Served!", bodyPrefix: "Smells amazing right now! On the line: " },
         snacks: { title: "☕ High Tea / Snacks Ready!", bodyPrefix: "Time for a quick study break! Grab some: " },
-        "high-tea": { title: "☕ High Tea Ready!", bodyPrefix: "Time for a quick break! Grab some: " },
         dinner: { title: "🌙 Dinner Window Open!", bodyPrefix: "Ready to wrap up your day? Tonight's spread: " },
       };
 
@@ -211,7 +395,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           createdAt: serverTimestamp(),
         });
 
-        // ✅ FIXED: Direct payload delivery to TanStack Server Function
         await sendFcmNotification({
           data: {
             topic: `mess_${mess.id}`,
@@ -229,7 +412,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
     }
   }
 
-  // 📢 CUSTOM CHANNEL BROADCAST
   async function handleDeployCustomBroadcast(e: React.FormEvent) {
     e.preventDefault();
     if (!broadcastTitle.trim() || !broadcastBody.trim() || !db) return;
@@ -244,13 +426,15 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
       });
 
       const targetTopic = targetMessId === "all" ? "mess_all" : `mess_${targetMessId}`;
+      const detectedUrlMatch = broadcastBody.match(/(https?:\/\/[^\s]+)/);
+      const targetUrl = detectedUrlMatch ? detectedUrlMatch[0] : "/";
 
-      // ✅ FIXED: Direct payload delivery
       await sendFcmNotification({
         data: {
           topic: targetTopic,
           title: broadcastTitle.trim(),
           body: broadcastBody.trim(),
+          url: targetUrl,
         }
       });
 
@@ -281,12 +465,13 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
 
       <main className="mx-auto max-w-2xl px-5 py-6 space-y-6">
         
+        {/* AUTOMATED MEAL ALERT PUSH */}
         <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
           <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
             <span>🚀</span> Automated Meal Alert Push
           </h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Selects a current meal period, builds custom interactive notifications featuring today's menu choices automatically, and triggers them across **ALL** campus app sessions.
+            Selects a current meal period, builds custom interactive notifications featuring today's menu choices automatically, and triggers them across ALL campus app sessions.
           </p>
 
           <div className="mt-4 flex flex-col gap-3">
@@ -316,6 +501,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           </div>
         </div>
 
+        {/* CUSTOM CHANNEL BROADCAST */}
         <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
           <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
             <span>📢</span> Custom Channel Broadcast
@@ -376,7 +562,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           </form>
         </div>
 
-        {/* 🗑️ BROADCAST HISTORY & BULK DELETE CONTROL PANEL */}
+        {/* ACTIVE BROADCAST CONTROL */}
         <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
           <div className="flex items-center justify-between pb-3 border-b border-border">
             <div>
@@ -465,6 +651,12 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
             )}
           </div>
         </div>
+
+        {/* ONBOARDED STUDENTS DIRECTORY */}
+        <StudentDirectoryPanel />
+
+        {/* LIVE LINK CLICK ANALYTICS */}
+        <BroadcastAnalyticsPanel />
 
       </main>
     </div>

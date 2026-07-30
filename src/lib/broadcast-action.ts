@@ -7,6 +7,7 @@ interface NotificationPayload {
   topic: string;
   title: string;
   body: string;
+  url?: string;
 }
 
 export const sendFcmNotification = createServerFn({
@@ -14,7 +15,8 @@ export const sendFcmNotification = createServerFn({
 })
   .validator((data: NotificationPayload) => data)
   .handler(async ({ data }) => {
-    const { topic, title, body } = data;
+    // ⚡ FIX: Extract url dynamically with a default fallback to "/"
+    const { topic, title, body, url = "/" } = data;
 
     try {
       const messId = topic.replace("mess_", "");
@@ -25,6 +27,7 @@ export const sendFcmNotification = createServerFn({
         body,
         messId,
         topic,
+        url, // ⚡ Save target URL to database as well
         createdAt: new Date(),
       });
 
@@ -82,7 +85,7 @@ export const sendFcmNotification = createServerFn({
             title,
             body,
             messId,
-            url: "/",
+            url, // ⚡ FIX: Replaced hardcoded "/" with dynamic url variable
             tag: "meal-alert",
           },
 
@@ -94,12 +97,12 @@ export const sendFcmNotification = createServerFn({
             notification: {
               title,
               body,
-              icon: "/mess_logo.png", // 👈 Corrected filename
+              icon: "/mess_logo.png",
               badge: "/mess_logo.png",
               requireInteraction: true,
             },
             fcmOptions: {
-              link: "/",
+              link: url, // ⚡ FIX: Replaced hardcoded "/" with dynamic url variable
             },
           },
 

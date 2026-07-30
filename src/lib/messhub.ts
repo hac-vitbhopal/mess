@@ -1,5 +1,13 @@
 import { db } from "./firebase";
-import { collection, addDoc, doc, deleteDoc, writeBatch, serverTimestamp } from "firebase/firestore";
+import { 
+  collection, 
+  addDoc, 
+  doc, 
+  setDoc, 
+  deleteDoc, 
+  writeBatch, 
+  serverTimestamp 
+} from "firebase/firestore";
 
 export type MessId = "crcl" | "jmb" | "mayuri_boys" | "mayuri_girls" | "safal" | "ab_catering";
 
@@ -450,6 +458,56 @@ export async function deleteBroadcasts(ids: string[]): Promise<void> {
   } catch (error) {
     console.error("[Firestore] Error performing bulk broadcast deletion:", error);
     throw error;
+  }
+}
+
+/* ---------------- 📊 ANALYTICS & ONBOARDING LOGGERS ---------------- */
+
+/**
+ * 👤 Logs or updates a student profile in Firestore when they complete onboarding
+ */
+export async function logStudentOnboarding(profile: StudentProfile) {
+  if (!db || !profile.name.trim() || !profile.messId) return;
+
+  try {
+    const docId = `${profile.messId}_${profile.name.trim().toLowerCase().replace(/\s+/g, '_')}`;
+    const studentRef = doc(db, "registered_students", docId);
+
+    // ⚡ setDoc with merge: true will create or update instantly
+    await setDoc(studentRef, {
+      name: profile.name.trim(),
+      messId: profile.messId,
+      lastActiveAt: serverTimestamp(),
+    }, { merge: true });
+
+    console.info(`[Firestore] Updated student record: ${profile.name}`);
+  } catch (error) {
+    console.error("[Firestore] Error logging student onboarding:", error);
+  }
+}
+
+/**
+ * 📊 Tracks when a user clicks on a broadcast link
+ */
+export async function trackBroadcastClick(broadcastId: string, broadcastTitle: string, clickedUrl: string) {
+  if (!db) return;
+
+  const profile = getProfile();
+  const userName = profile?.name || "Anonymous Student";
+  const userMess = profile?.messId || "unknown";
+
+  try {
+    await addDoc(collection(db, "broadcast_clicks"), {
+      broadcastId,
+      broadcastTitle,
+      clickedUrl,
+      userName,
+      userMess,
+      clickedAt: serverTimestamp(),
+    });
+    console.info(`[Analytics] Tracked click by ${userName} on ${clickedUrl}`);
+  } catch (error) {
+    console.error("[Analytics] Error tracking click:", error);
   }
 }
 

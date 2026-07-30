@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
 import {
   MEAL_DEFS,
   clearProfile,
@@ -11,6 +11,8 @@ import {
   greetingFor,
   mealStatus,
   HARDCODED_WEEKLY_MENUS,
+  trackBroadcastClick,
+  logStudentOnboarding, // ⚡ FIX: Added onboarding/activity auto-sync logger
   type MealKey,
   type StudentProfile,
 } from "@/lib/messhub";
@@ -28,6 +30,16 @@ function buildDateStrip(center: Date, days = 21): Date[] {
 
 export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; onSignOut: () => void }) {
   const [now, setNow] = useState(() => new Date());
+
+  // ⚡ FIX: Auto-ping Firestore on render to ensure Super Admin always has live active records
+  useEffect(() => {
+    if (profile?.name && profile?.messId) {
+      logStudentOnboarding(profile).catch((err) =>
+        console.error("[StudentHome] Onboarding active ping error:", err)
+      );
+    }
+  }, [profile]);
+
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
@@ -43,20 +55,21 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
   const [openMeal, setOpenMeal] = useState<MealKey | null>(null);
   const [broadcasts, setBroadcasts] = useState<{ id: string; title: string; body: string }[]>([]);
 
-useEffect(() => {
-  async function syncToken() {
-    if (!profile?.messId) return;
-    try {
-      const { subscribeToMessTopic } = await import("@/lib/firebase");
-      await subscribeToMessTopic(profile.messId, profile.name); // Pass the student's name to the subscription function
-      console.log("[FCM] Device token synced successfully for:", profile.messId);
-    } catch (err) {
-      console.error("[FCM] Token sync failed:", err);
+  useEffect(() => {
+    async function syncToken() {
+      if (!profile?.messId) return;
+      try {
+        const { subscribeToMessTopic } = await import("@/lib/firebase");
+        await subscribeToMessTopic(profile.messId, profile.name);
+        console.log("[FCM] Device token synced successfully for:", profile.messId);
+      } catch (err) {
+        console.error("[FCM] Token sync failed:", err);
+      }
     }
-  }
 
-  syncToken();
-}, [profile.messId]);
+    syncToken();
+  }, [profile.messId, profile.name]);
+
   // Feedback form states
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
@@ -85,7 +98,7 @@ useEffect(() => {
     ? countdownTo(focus.endH, focus.endM, now)
     : countdownTo(focus.startH, focus.startM, now);
 
-  // Interactive Swiggy/Zomato-style Notification Scheduler
+  // Swiggy/Zomato-style Notification Scheduler
   useEffect(() => {
     if (!("Notification" in window) || Notification.permission !== "granted") return;
 
@@ -212,7 +225,6 @@ useEffect(() => {
 
   async function handleAppInstallation() {
     if (deferredPrompt) {
-      // Direct 1-click trigger: Immediately opens the browser's native install dialog
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
       if (outcome === "accepted") {
@@ -264,6 +276,32 @@ useEffect(() => {
     } finally {
       setIsSubmittingFeedback(false);
     }
+  }
+
+  // ⚡ HELPER: Renders broadcast bodies with interactive links that log click analytics to Firestore
+  function renderBroadcastBody(b: { id: string; title: string; body: string }) {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = b.body.split(urlRegex);
+
+    return parts.map((part, idx) => {
+      if (part.match(urlRegex)) {
+        return (
+          <a
+            key={idx}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => {
+              trackBroadcastClick(b.id, b.title, part);
+            }}
+            className="text-primary font-bold underline hover:opacity-80 transition break-all"
+          >
+            {part}
+          </a>
+        );
+      }
+      return <span key={idx}>{part}</span>;
+    });
   }
 
   return (
@@ -460,7 +498,9 @@ useEffect(() => {
             broadcasts.map((b) => (
               <article key={b.id} className="rounded-2xl border border-border bg-card p-4 shadow-card">
                 <h4 className="font-semibold text-foreground">{b.title}</h4>
-                <p className="mt-1 text-sm text-muted-foreground">{b.body}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {renderBroadcastBody(b)}
+                </p>
               </article>
             ))
           )}

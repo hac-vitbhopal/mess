@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { MESSES, saveProfile, type MessId, type StudentProfile } from "@/lib/messhub";
+// ⚡ FIX: Import logStudentOnboarding helper
+import { MESSES, saveProfile, logStudentOnboarding, type MessId, type StudentProfile } from "@/lib/messhub";
 import { requestNotificationPermission, subscribeToMessTopic } from "@/lib/firebase";
 import { z } from "zod";
-import { User, Check, Sparkles } from "lucide-react";
+import { User, Check } from "lucide-react";
 
 const schema = z.object({
   name: z.string().trim().min(1, "Please enter your name").max(50),
@@ -29,23 +30,32 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
     setIsSubmitting(true);
     setError(null);
 
-    console.log("Validation passed");
     const profile = parsed.data;
 
-    console.log("Saving profile...");
-    saveProfile(profile);
-
     try {
+      // 1. Save locally
+      console.log("Saving profile locally...");
+      saveProfile(profile);
+
+      // 2. ⚡ Log student to Firestore and AWAIT response before proceeding
+      console.log("Logging student onboarding to Firestore...");
+      await logStudentOnboarding(profile);
+      console.log("Firestore logging complete.");
+
+      // 3. Setup notification permissions & topics
       console.log("Requesting notification permission...");
       const permission = await requestNotificationPermission();
-      console.log("Permission:", permission);
+      console.log("Permission status:", permission);
 
-      console.log("Subscribing to topic...");
-      await subscribeToMessTopic(profile.messId, profile.name);
-      console.log("Subscription complete.");
+      if (permission === "granted") {
+        console.log("Subscribing to topic...");
+        await subscribeToMessTopic(profile.messId);
+        console.log("Subscription complete.");
+      }
     } catch (err) {
-      console.error("Notification setup failed:", err);
+      console.error("Onboarding setup issue:", err);
     } finally {
+      // 4. Transition into app ONLY after Firestore write finishes
       console.log("Calling onComplete...");
       onComplete(profile);
       setIsSubmitting(false);
@@ -74,7 +84,6 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
             {/* Header Top Badges */}
             <div className="flex items-center justify-between mb-3 w-full">
               <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur-md px-3 py-1 rounded-full border border-white/25 text-white text-xs font-bold uppercase tracking-wider">
-                {/* <Sparkles className="w-3.5 h-3.5" /> */}
                 <span>MessHub</span>
               </div>
               <span className="text-xs font-bold text-white bg-black/15 px-3 py-1 rounded-full backdrop-blur-md border border-white/10">
@@ -102,7 +111,7 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
           </div>
         </div>
 
-        {/* FORM CONTENT SECTION (Unified Spacing Architecture) */}
+        {/* FORM CONTENT SECTION */}
         <div className="px-5 sm:px-6 pt-12 pb-6 flex flex-col gap-4 w-full flex-1 justify-center">
           
           {/* Full Name Input */}
