@@ -470,19 +470,19 @@ export async function logStudentOnboarding(profile: StudentProfile) {
   if (!db || !profile.name.trim() || !profile.messId) return;
 
   try {
-    const docId = `${profile.messId}_${profile.name.trim().toLowerCase().replace(/\s+/g, '_')}`;
-    const studentRef = doc(db, "registered_students", docId);
+    // ⚡ Keying by normalized student name ensures switching messes updates their SINGLE record
+    const normalizedName = profile.name.trim().toLowerCase().replace(/\s+/g, '_');
+    const studentRef = doc(db, "registered_students", normalizedName);
 
-    // ⚡ setDoc with merge: true will create or update instantly
     await setDoc(studentRef, {
       name: profile.name.trim(),
       messId: profile.messId,
       lastActiveAt: serverTimestamp(),
     }, { merge: true });
 
-    console.info(`[Firestore] Updated student record: ${profile.name}`);
+    console.info(`[Firestore] Instantly updated record for ${profile.name} -> Mess: ${profile.messId}`);
   } catch (error) {
-    console.error("[Firestore] Error logging student onboarding:", error);
+    console.error("[Firestore] Error updating student record:", error);
   }
 }
 

@@ -17,46 +17,32 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function submit() {
-    console.log("Submit button clicked");
-
     const parsed = schema.safeParse({ name: name.trim(), messId });
 
     if (!parsed.success) {
-      console.log("Validation failed");
       setError(parsed.error.issues[0]?.message ?? "Please check your inputs");
       return;
     }
 
     setIsSubmitting(true);
     setError(null);
-
     const profile = parsed.data;
 
     try {
       // 1. Save locally
-      console.log("Saving profile locally...");
       saveProfile(profile);
 
-      // 2. ⚡ Log student to Firestore and AWAIT response before proceeding
-      console.log("Logging student onboarding to Firestore...");
+      // 2. ⚡ Await Firestore update so Super Admin catches it INSTANTLY
       await logStudentOnboarding(profile);
-      console.log("Firestore logging complete.");
 
-      // 3. Setup notification permissions & topics
-      console.log("Requesting notification permission...");
+      // 3. Notification permissions & topic switch
       const permission = await requestNotificationPermission();
-      console.log("Permission status:", permission);
-
       if (permission === "granted") {
-        console.log("Subscribing to topic...");
         await subscribeToMessTopic(profile.messId);
-        console.log("Subscription complete.");
       }
     } catch (err) {
-      console.error("Onboarding setup issue:", err);
+      console.error("Setup error:", err);
     } finally {
-      // 4. Transition into app ONLY after Firestore write finishes
-      console.log("Calling onComplete...");
       onComplete(profile);
       setIsSubmitting(false);
     }

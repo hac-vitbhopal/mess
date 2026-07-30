@@ -119,18 +119,19 @@ function StudentDirectoryPanel() {
   useEffect(() => {
     if (!db) return;
 
-    // Listen to registered_students in real-time
+    // ⚡ Real-time listener on registered_students collection
     const q = query(collection(db, "registered_students"));
+
     const unsubscribe = onSnapshot(
       q,
-      { includeMetadataChanges: true },
+      { includeMetadataChanges: true }, // ⚡ Captures local writes in 0ms!
       (snapshot) => {
         const list: any[] = snapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
         }));
 
-        // Sort locally by last active timestamp
+        // Sort locally by last active time
         list.sort((a, b) => {
           const timeA = a.lastActiveAt?.toDate?.() ? a.lastActiveAt.toDate().getTime() : Date.now();
           const timeB = b.lastActiveAt?.toDate?.() ? b.lastActiveAt.toDate().getTime() : Date.now();
@@ -139,7 +140,7 @@ function StudentDirectoryPanel() {
 
         setStudents(list);
       },
-      (err) => console.error("[StudentDirectory] Error:", err)
+      (err) => console.error("[StudentDirectoryPanel] Error:", err)
     );
 
     return () => unsubscribe();
