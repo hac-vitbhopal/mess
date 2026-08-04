@@ -4,7 +4,7 @@ import { MESSES, saveProfile, logStudentOnboarding, type MessId, type StudentPro
 import { requestNotificationPermission, subscribeToMessTopic } from "@/lib/firebase";
 import { z } from "zod";
 import { User, Check } from "lucide-react";
-
+import { Link } from "@tanstack/react-router";
 const schema = z.object({
   name: z.string().trim().min(1, "Please enter your name").max(50),
   messId: z.enum(["crcl", "jmb", "mayuri_boys", "mayuri_girls", "safal", "ab_catering"]),
@@ -187,6 +187,17 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
         </div>
 
       </div>
+      <footer className="relative z-10 pt-2 pb-2 text-center w-full max-w-md px-6">
+        <p className="text-[11px] text-[#C2410C]/70 font-medium">
+          By entering, you agree to our{" "}
+          <Link
+            to="/privacy"
+            className="font-bold underline text-[#EA580C] hover:text-[#FF6B2C] transition"
+          >
+            Privacy Policy & Terms
+          </Link>
+        </p>
+      </footer>
     </div>
   );
 }

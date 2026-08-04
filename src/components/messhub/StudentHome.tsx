@@ -12,10 +12,11 @@ import {
   mealStatus,
   HARDCODED_WEEKLY_MENUS,
   trackBroadcastClick,
-  logStudentOnboarding, // ⚡ FIX: Added onboarding/activity auto-sync logger
+  logStudentOnboarding,
   type MealKey,
   type StudentProfile,
 } from "@/lib/messhub";
+import { Link } from "@tanstack/react-router";
 
 function buildDateStrip(center: Date, days = 21): Date[] {
   const start = new Date(center);
@@ -31,7 +32,7 @@ function buildDateStrip(center: Date, days = 21): Date[] {
 export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; onSignOut: () => void }) {
   const [now, setNow] = useState(() => new Date());
 
-  // ⚡ FIX: Auto-ping Firestore on render to ensure Super Admin always has live active records
+  // Auto-ping Firestore on render to ensure Super Admin always has live active records
   useEffect(() => {
     if (profile?.name && profile?.messId) {
       logStudentOnboarding(profile).catch((err) =>
@@ -278,7 +279,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
     }
   }
 
-  // ⚡ HELPER: Renders broadcast bodies with interactive links that log click analytics to Firestore
+  // Helper function to render broadcast body links
   function renderBroadcastBody(b: { id: string; title: string; body: string }) {
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     const parts = b.body.split(urlRegex);
@@ -562,6 +563,21 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
           </button>
         </div>
       </section>
+
+      {/* 📜 BOTTOM FOOTER PRIVACY LINK AREA */}
+      <footer className="mt-8 px-5 pb-6 text-center space-y-1">
+        <p className="text-[11px] text-muted-foreground font-medium">
+          MessHub is an independent student utility app.
+        </p>
+        <p className="text-[11px] font-semibold">
+          <Link
+            to="/privacy"
+            className="font-bold underline text-primary hover:opacity-80 transition"
+          >
+            Privacy Policy & Terms
+          </Link>
+        </p>
+      </footer>
 
       {/* Bottom sheet */}
       {openMeal && (
