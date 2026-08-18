@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { getAuth, GoogleAuthProvider } from "firebase/auth"; // ⚡ Added for Google Sign-In
 import { registerFcmToken } from "./register-token-action";
 
 const firebaseConfig = {
@@ -21,6 +22,10 @@ export function getFirebaseApp(): FirebaseApp | null {
 
 const app = getFirebaseApp();
 export const db = app ? getFirestore(app) : null;
+
+// ⚡ AUTH & GOOGLE PROVIDER EXPORTS (Required for Student Login)
+export const auth = app ? getAuth(app) : null;
+export const googleProvider = new GoogleAuthProvider();
 
 export async function requestNotificationPermission() {
   if (!("Notification" in window)) {

@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp, query, onSnapshot } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, onSnapshot, orderBy } from "firebase/firestore";
 import { 
   getAdminSession, 
   saveAdminSession, 
@@ -11,15 +11,23 @@ import {
   MEAL_DEFS,
   HARDCODED_WEEKLY_MENUS,
   deleteBroadcasts,
-  type MealKey
+  toggleFeedbackStatus,
+  type MealKey,
+  type ItemFeedback
 } from "@/lib/messhub";
 import { sendFcmNotification } from "@/lib/broadcast-action";
-
+import { 
+  ShieldCheck, Users, Activity, MessageSquare, Megaphone, 
+  LogOut, Menu, X, Clock, CheckSquare, Square, Star, 
+  CheckCircle2, AlertCircle, Trash2, TrendingUp, Send, CheckCircle
+} from "lucide-react";
+import { AddMessAndMenuModal } from "@/components/messhub/AddMessAndMenuModal";
+import { PlusCircle } from "lucide-react";
 export const Route = createFileRoute("/super-admin")({
   head: () => ({
     meta: [
-      { title: "Master Control Gateway — MessHub" },
-      { name: "description", content: "Platform super-admin infrastructure console." },
+      { title: "Master Control SaaS Dashboard — MessHub" },
+      { name: "description", content: "Platform super-admin infrastructure console and analytics." },
     ],
   }),
   component: SuperAdminGatekeeper,
@@ -27,7 +35,6 @@ export const Route = createFileRoute("/super-admin")({
 
 function SuperAdminGatekeeper() {
   const navigate = useNavigate();
-  
   const [isMounted, setIsMounted] = useState(false);
   const [session, setSession] = useState<any>(null);
   const [passcode, setPasscode] = useState("");
@@ -67,7 +74,7 @@ function SuperAdminGatekeeper() {
 
   if (!session || session.role !== "super-admin") {
     return (
-      <div className="min-h-screen bg-[#1c1c1e] flex flex-col justify-between px-6 py-12 safe-top safe-bottom text-white select-none">
+      <div className="min-h-screen bg-[#1c1c1e] flex flex-col justify-between px-6 py-12 text-white select-none font-sans">
         <header className="flex items-center justify-between w-full max-w-sm mx-auto">
           <Link to="/" className="text-sm font-semibold text-zinc-400 transition active:opacity-60">
             &larr; Exit
@@ -112,222 +119,61 @@ function SuperAdminGatekeeper() {
   return <PlatformMasterDashboard onSignOut={() => setSession(null)} />;
 }
 
-/* ---------------- 👥 STUDENT DIRECTORY PANEL ---------------- */
-function StudentDirectoryPanel() {
+/* ---------------- 👑 PLATFORM MASTER SAAS DASHBOARD ---------------- */
+function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
+  const [activeTab, setActiveTab] = useState<"overview" | "feedbacks" | "broadcasts" | "students" | "analytics">("overview");
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+const [isAddMessModalOpen, setIsAddMessModalOpen] = useState(false);
+  // Global Realtime Datasets
   const [students, setStudents] = useState<any[]>([]);
-
-  useEffect(() => {
-    if (!db) return;
-
-    // ⚡ Real-time listener on registered_students collection
-    const q = query(collection(db, "registered_students"));
-
-    const unsubscribe = onSnapshot(
-      q,
-      { includeMetadataChanges: true }, // ⚡ Captures local writes in 0ms!
-      (snapshot) => {
-        const list: any[] = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-
-        // Sort locally by last active time
-        list.sort((a, b) => {
-          const timeA = a.lastActiveAt?.toDate?.() ? a.lastActiveAt.toDate().getTime() : Date.now();
-          const timeB = b.lastActiveAt?.toDate?.() ? b.lastActiveAt.toDate().getTime() : Date.now();
-          return timeB - timeA;
-        });
-
-        setStudents(list);
-      },
-      (err) => console.error("[StudentDirectoryPanel] Error:", err)
-    );
-
-    return () => unsubscribe();
-  }, []);
-
-  return (
-    <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
-      <div className="flex items-center justify-between pb-3 border-b border-border">
-        <div>
-          <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
-            <span>👥</span> Onboarded Students Directory
-          </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Real-time directory of every student who entered MessHub.
-          </p>
-        </div>
-        <span className="rounded-full bg-emerald-100 text-emerald-700 font-bold px-3 py-1 text-xs">
-          Total Students: {students.length}
-        </span>
-      </div>
-
-      <div className="mt-4 overflow-x-auto">
-        {students.length === 0 ? (
-          <p className="py-6 text-center text-xs italic text-muted-foreground">
-            No student onboarding entries recorded yet.
-          </p>
-        ) : (
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
-                <th className="py-2.5 px-2">Student Name</th>
-                <th className="py-2.5 px-2">Assigned Mess</th>
-                <th className="py-2.5 px-2 text-right">Joined / Last Active</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/40">
-              {students.map((student) => (
-                <tr key={student.id} className="transition hover:bg-[#fbf7f2]">
-                  <td className="py-3 px-2 font-bold text-foreground">
-                    {student.name || "Anonymous"}
-                  </td>
-                  <td className="py-3 px-2 font-bold uppercase text-[10px] text-red-500">
-                    {student.messId || "N/A"}
-                  </td>
-                  <td className="py-3 px-2 text-right text-muted-foreground text-[10px]">
-                    {student.lastActiveAt?.toDate
-                      ? student.lastActiveAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })
-                      : "Just now"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ---------------- 📊 LINK CLICK ANALYTICS PANEL ---------------- */
-function BroadcastAnalyticsPanel() {
+  const [feedbacks, setFeedbacks] = useState<ItemFeedback[]>([]);
+  const [menuLogs, setMenuLogs] = useState<any[]>([]);
+  const [broadcastList, setBroadcastList] = useState<any[]>([]);
   const [clickLogs, setClickLogs] = useState<any[]>([]);
 
-  useEffect(() => {
-    if (!db) return;
-
-    const q = query(collection(db, "broadcast_clicks"));
-    const unsubscribe = onSnapshot(
-      q,
-      { includeMetadataChanges: true },
-      (snapshot) => {
-        const logs: any[] = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-
-        logs.sort((a, b) => {
-          const timeA = a.clickedAt?.toDate?.() ? a.clickedAt.toDate().getTime() : Date.now();
-          const timeB = b.clickedAt?.toDate?.() ? b.clickedAt.toDate().getTime() : Date.now();
-          return timeB - timeA;
-        });
-
-        setClickLogs(logs);
-      },
-      (err) => console.error("[BroadcastAnalytics] Error:", err)
-    );
-
-    return () => unsubscribe();
-  }, []);
-
-  return (
-    <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
-      <div className="flex items-center justify-between pb-3 border-b border-border">
-        <div>
-          <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
-            <span>📊</span> Broadcast Link Click Analytics
-          </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Real-time tracking of students interacting with links inside broadcasts.
-          </p>
-        </div>
-        <span className="rounded-full bg-primary/10 text-primary font-bold px-3 py-1 text-xs">
-          Total Clicks: {clickLogs.length}
-        </span>
-      </div>
-
-      <div className="mt-4 overflow-x-auto">
-        {clickLogs.length === 0 ? (
-          <p className="py-6 text-center text-xs italic text-muted-foreground">
-            No link clicks recorded yet.
-          </p>
-        ) : (
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
-                <th className="py-2.5 px-2">Student Name</th>
-                <th className="py-2.5 px-2">Mess</th>
-                <th className="py-2.5 px-2">Broadcast Title</th>
-                <th className="py-2.5 px-2">Link Clicked</th>
-                <th className="py-2.5 px-2 text-right">Time</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/40">
-              {clickLogs.map((log) => (
-                <tr key={log.id} className="transition hover:bg-[#fbf7f2]">
-                  <td className="py-3 px-2 font-bold text-foreground">
-                    {log.userName}
-                  </td>
-                  <td className="py-3 px-2 font-bold uppercase text-[10px] text-red-500">
-                    {log.userMess}
-                  </td>
-                  <td className="py-3 px-2 text-muted-foreground max-w-[150px] truncate">
-                    {log.broadcastTitle}
-                  </td>
-                  <td className="py-3 px-2">
-                    <a
-                      href={log.clickedUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary underline max-w-[180px] truncate block font-medium"
-                    >
-                      {log.clickedUrl}
-                    </a>
-                  </td>
-                  <td className="py-3 px-2 text-right text-muted-foreground text-[10px]">
-                    {log.clickedAt?.toDate
-                      ? log.clickedAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                      : "Just now"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ---------------- 👑 PLATFORM MASTER DASHBOARD ---------------- */
-function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
+  // Local Action States
   const currentWeekday = new Date().getDay();
-
   const [selectedMealKey, setSelectedMealKey] = useState<MealKey>("lunch");
   const [isFiringMealAlert, setIsFiringMealAlert] = useState(false);
-
   const [targetMessId, setTargetMessId] = useState<string>("all");
   const [broadcastTitle, setBroadcastTitle] = useState("");
   const [broadcastBody, setBroadcastBody] = useState("");
   const [isBroadcastingCustom, setIsBroadcastingCustom] = useState(false);
-
-  const [broadcastList, setBroadcastList] = useState<any[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Live Firebase Sync Listeners
   useEffect(() => {
     if (!db) return;
-    const q = query(collection(db, "broadcasts"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const list = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setBroadcastList(list);
+
+    const unsubStudents = onSnapshot(collection(db, "registered_students"), (snap) => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      list.sort((a: any, b: any) => (b.lastActiveAt?.toDate?.()?.getTime() || 0) - (a.lastActiveAt?.toDate?.()?.getTime() || 0));
+      setStudents(list);
     });
-    return () => unsubscribe();
+
+    const unsubFeedbacks = onSnapshot(query(collection(db, "item_feedback"), orderBy("createdAt", "desc")), (snap) => {
+      setFeedbacks(snap.docs.map(d => ({ id: d.id, ...d.data() } as ItemFeedback)));
+    });
+
+    const unsubMenu = onSnapshot(query(collection(db, "mess_menus"), orderBy("updatedAt", "desc")), (snap) => {
+      setMenuLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => {}); // Fallback if composite index is pending
+
+    const unsubBroadcasts = onSnapshot(query(collection(db, "broadcasts"), orderBy("createdAt", "desc")), (snap) => {
+      setBroadcastList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
+    const unsubClicks = onSnapshot(query(collection(db, "broadcast_clicks")), (snap) => {
+      const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      logs.sort((a: any, b: any) => (b.clickedAt?.toDate?.()?.getTime() || 0) - (a.clickedAt?.toDate?.()?.getTime() || 0));
+      setClickLogs(logs);
+    });
+
+    return () => { unsubStudents(); unsubFeedbacks(); unsubMenu(); unsubBroadcasts(); unsubClicks(); };
   }, []);
+
+  const pendingFeedbacksCount = feedbacks.filter(f => f.status === "unsolved").length;
 
   const toggleSelectAll = () => {
     if (selectedIds.length === broadcastList.length) {
@@ -338,21 +184,18 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
   };
 
   const toggleSelectOne = (id: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]);
   };
 
-  const handleDeleteSelected = async () => {
+  const handleDeleteSelectedBroadcasts = async () => {
     if (selectedIds.length === 0) return;
-    if (!confirm(`Are you sure you want to delete ${selectedIds.length} broadcast(s)?`)) return;
+    if (!confirm(`Delete ${selectedIds.length} broadcast announcement(s)?`)) return;
 
     setIsDeleting(true);
     try {
       await deleteBroadcasts(selectedIds);
       setSelectedIds([]);
     } catch (err) {
-      console.error("Failed to delete broadcasts:", err);
       alert("Error deleting broadcasts.");
     } finally {
       setIsDeleting(false);
@@ -361,14 +204,10 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
 
   async function handleTriggerMealNotification() {
     if (!db) return;
-
     const selectedDef = MEAL_DEFS.find((m) => m.key === selectedMealKey);
     const mealName = selectedDef ? selectedDef.name : selectedMealKey;
 
-    const confirmation = window.confirm(
-      `🚨 ARE YOU SURE?\n\nThis will update the UI and send a live system notification to all student devices.`
-    );
-    if (!confirmation) return;
+    if (!window.confirm(`🚨 Transmit automated ${mealName} push alerts across all student endpoints?`)) return;
 
     setIsFiringMealAlert(true);
     try {
@@ -379,10 +218,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
         dinner: { title: "🌙 Dinner Window Open!", bodyPrefix: "Ready to wrap up your day? Tonight's spread: " },
       };
 
-      const template = pushTemplates[selectedMealKey] || { 
-        title: `🍽️ ${mealName} is Live!`, 
-        bodyPrefix: "Check out today's selections: " 
-      };
+      const template = pushTemplates[selectedMealKey] || { title: `🍽️ ${mealName} is Live!`, bodyPrefix: "Check out today's selections: " };
 
       for (const mess of MESSES) {
         const items = HARDCODED_WEEKLY_MENUS[mess.id]?.[currentWeekday]?.[selectedMealKey] ?? [];
@@ -397,17 +233,12 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
         });
 
         await sendFcmNotification({
-          data: {
-            topic: `mess_${mess.id}`,
-            title: template.title,
-            body: finalBodyText,
-          }
-        }).catch(err => console.error("FCM server function streaming error:", err));
+          data: { topic: `mess_${mess.id}`, title: template.title, body: finalBodyText }
+        }).catch(() => {});
       }
-
       alert(`🚀 Success! UI updated and background alerts dispatched!`);
     } catch (error) {
-      console.error("Meal transmission failure:", error);
+      alert("Meal transmission failure.");
     } finally {
       setIsFiringMealAlert(false);
     }
@@ -431,235 +262,609 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
       const targetUrl = detectedUrlMatch ? detectedUrlMatch[0] : "/";
 
       await sendFcmNotification({
-        data: {
-          topic: targetTopic,
-          title: broadcastTitle.trim(),
-          body: broadcastBody.trim(),
-          url: targetUrl,
-        }
+        data: { topic: targetTopic, title: broadcastTitle.trim(), body: broadcastBody.trim(), url: targetUrl }
       });
 
       setBroadcastTitle("");
       setBroadcastBody("");
-      alert(`⚡ Custom broadcast and native system push alert successfully deployed!`);
+      alert(`⚡ Custom broadcast successfully deployed!`);
     } catch (error) {
-      console.error("Custom broadcast failure:", error);
+      alert("Custom broadcast failure.");
     } finally {
       setIsBroadcastingCustom(false);
     }
   }
 
+  const NavButton = ({ id, icon: Icon, label, badge }: any) => (
+    <button
+      onClick={() => { setActiveTab(id); setIsMobileMenuOpen(false); }}
+      className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-bold transition-all text-xs cursor-pointer ${
+        activeTab === id
+          ? "bg-[#221510] text-white shadow-md"
+          : "text-zinc-500 hover:bg-zinc-100 hover:text-black"
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <Icon className="w-4 h-4" /> <span>{label}</span>
+      </div>
+      {badge > 0 && (
+        <span className="bg-red-500 text-white px-2 py-0.5 rounded-full text-[10px]">
+          {badge}
+        </span>
+      )}
+    </button>
+  );
+
   return (
-    <div className="min-h-screen bg-[#fbf7f2]">
-      <header className="safe-top border-b border-border bg-white/80 px-5 pb-4 pt-4 backdrop-blur sticky top-0 z-40 flex items-center justify-between">
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-red-500">Root Infrastructure</p>
-          <h1 className="text-xl font-black tracking-tight text-foreground mt-0.5">Platform Console</h1>
+    <div className="min-h-screen bg-[#fbf7f2] flex flex-col lg:flex-row font-sans selection:bg-orange-200">
+      
+      {/* 📱 MOBILE TOPBAR */}
+      <div className="lg:hidden flex items-center justify-between bg-white border-b px-5 py-4 sticky top-0 z-50">
+        <div className="flex items-center gap-2 font-black text-lg text-foreground">
+          <ShieldCheck className="w-6 h-6 text-primary" /> Master HQ
         </div>
-        <button 
-          onClick={() => { clearAdminSession(); onSignOut(); }} 
-          className="rounded-full border border-border bg-white px-3 py-1.5 text-xs font-bold shadow-card transition active:scale-95"
-        >
-          Exit Console
+        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 bg-zinc-100 rounded-xl">
+          {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
         </button>
-      </header>
+      </div>
 
-      <main className="mx-auto max-w-2xl px-5 py-6 space-y-6">
+      {/* 🖥️ SAAS SIDEBAR */}
+      <aside className={`
+        fixed lg:static inset-y-0 left-0 z-40 w-72 bg-white border-r border-border transform transition-transform duration-300 ease-in-out flex flex-col
+        ${isMobileMenuOpen ? "translate-x-0 top-[73px]" : "-translate-x-full lg:translate-x-0"}
+      `}>
+        <div className="hidden lg:flex items-center gap-2.5 font-black text-xl text-foreground p-6 border-b border-border">
+          <div className="h-9 w-9 rounded-xl gradient-warm flex items-center justify-center text-white shadow-sm">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+          <span>MessHub HQ</span>
+        </div>
         
-        {/* AUTOMATED MEAL ALERT PUSH */}
-        <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
-          <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
-            <span>🚀</span> Automated Meal Alert Push
-          </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Selects a current meal period, builds custom interactive notifications featuring today's menu choices automatically, and triggers them across ALL campus app sessions.
-          </p>
-
-          <div className="mt-4 flex flex-col gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1">Select Active Service Window:</label>
-              <select
-                value={selectedMealKey}
-                onChange={(e) => setSelectedMealKey(e.target.value as MealKey)}
-                className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2.5 text-xs font-bold outline-none focus:border-primary focus:bg-white transition"
-              >
-                {MEAL_DEFS.map((m) => (
-                  <option key={m.key} value={m.key}>
-                    {m.icon} {m.name} Setup Template
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleTriggerMealNotification}
-              disabled={isFiringMealAlert}
-              className="mt-1 w-full rounded-xl gradient-warm py-3 text-xs font-bold text-white shadow-card transition active:scale-[0.99] disabled:opacity-40"
-            >
-              {isFiringMealAlert ? "Syncing Menu Assets & Pushing..." : "Transmit Live Meal Alerts to All Devices"}
-            </button>
-          </div>
+        <div className="flex-1 p-4 space-y-1.5 overflow-y-auto">
+          <p className="px-4 text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2 mt-2">Infrastructure</p>
+          <NavButton id="overview" icon={Activity} label="HQ Overview" />
+          <NavButton id="feedbacks" icon={MessageSquare} label="Campus Feedback" badge={pendingFeedbacksCount} />
+          <NavButton id="broadcasts" icon={Megaphone} label="Broadcast Management" />
+          <NavButton id="students" icon={Users} label="Student Directory" />
+          <NavButton id="analytics" icon={TrendingUp} label="Click Analytics" />
         </div>
 
-        {/* CUSTOM CHANNEL BROADCAST */}
-        <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
-          <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
-            <span>📢</span> Custom Channel Broadcast
-          </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Draft a completely custom announcement notice and deliver it dynamically to either a single specific targeted hall or a universal global blast.
-          </p>
-
-          <form onSubmit={handleDeployCustomBroadcast} className="mt-4 space-y-3">
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1">Target Channel Node Destination:</label>
-              <select
-                value={targetMessId}
-                onChange={(e) => setTargetMessId(e.target.value)}
-                className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2.5 text-xs font-semibold outline-none focus:border-primary focus:bg-white transition"
-              >
-                <option value="all">🌍 All Messes (Global Broadcast)</option>
-                {MESSES.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    🏢 {m.name} {m.subtitle ? `(${m.subtitle})` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1">Broadcast Custom Heading:</label>
-              <input
-                required
-                type="text"
-                value={broadcastTitle}
-                onChange={(e) => setBroadcastTitle(e.target.value)}
-                placeholder="Enter alert header text..."
-                className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2 text-xs font-medium outline-none focus:border-primary focus:bg-white transition"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-muted-foreground mb-1">Message Text Body Content:</label>
-              <textarea
-                required
-                rows={3}
-                maxLength={500}
-                value={broadcastBody}
-                onChange={(e) => setBroadcastBody(e.target.value)}
-                placeholder="Type your message details here..."
-                className="w-full resize-none rounded-xl border border-border bg-[#fbf7f2] px-3 py-2 text-xs font-medium outline-none focus:border-primary focus:bg-white transition"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={isBroadcastingCustom || !broadcastTitle.trim() || !broadcastBody.trim()}
-              className="mt-1 w-full rounded-xl bg-black py-2.5 text-xs font-bold text-white shadow-card transition active:scale-[0.99] disabled:opacity-40"
-            >
-              {isBroadcastingCustom ? "Dispersing Packet Streams..." : "Disperse Custom Announcement"}
-            </button>
-          </form>
+        <div className="p-4 border-t border-border">
+          <button 
+            onClick={() => { clearAdminSession(); onSignOut(); }} 
+            className="w-full flex items-center gap-3 px-4 py-3 text-red-600 font-bold hover:bg-red-50 rounded-2xl transition text-xs cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" /> End Root Session
+          </button>
         </div>
+      </aside>
 
-        {/* ACTIVE BROADCAST CONTROL */}
-        <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
-          <div className="flex items-center justify-between pb-3 border-b border-border">
-            <div>
-              <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
-                <span>📋</span> Active Broadcast Control
-              </h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Select and remove active announcements in real time.
-              </p>
+      {/* 📊 MAIN CONTENT CONTAINER */}
+      <main className="flex-1 p-4 sm:p-8 lg:p-10 w-full max-w-[1600px] mx-auto overflow-y-auto h-screen">
+        
+        {/* ================= TAB 1: OVERVIEW ================= */}
+        {activeTab === "overview" && (
+          <div className="space-y-6 animate-fade-in pb-12">
+            <div className="flex items-center justify-between">
+  <div>
+    <h1 className="text-2xl sm:text-3xl font-black text-foreground">Infrastructure Overview</h1>
+    <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Real-time system telemetry and campus metrics.</p>
+  </div>
+  <button
+    onClick={() => setIsAddMessModalOpen(true)}
+    className="gradient-warm text-white px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-card transition active:scale-95 cursor-pointer"
+  >
+    <PlusCircle className="w-4 h-4" /> Add New Mess &amp; Menu
+  </button>
+</div>
+            
+            {/* KPI METRIC CARDS */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <MetricCard title="Registered Students" value={students.length} icon={Users} color="bg-blue-50 text-blue-600" />
+              <MetricCard title="Active Broadcasts" value={broadcastList.length} icon={Megaphone} color="bg-purple-50 text-purple-600" />
+              <MetricCard title="Pending Feedback" value={pendingFeedbacksCount} icon={MessageSquare} color="bg-amber-50 text-amber-600" alert={pendingFeedbacksCount > 0} />
+              <MetricCard title="Menu Audit Logs" value={menuLogs.length} icon={Activity} color="bg-emerald-50 text-emerald-600" />
             </div>
 
-            <button
-              type="button"
-              onClick={handleDeleteSelected}
-              disabled={selectedIds.length === 0 || isDeleting}
-              className="rounded-xl bg-red-500 px-3 py-2 text-xs font-bold text-white shadow-card transition active:scale-95 disabled:opacity-40 flex items-center gap-1.5"
-            >
-              <span>🗑️ Delete Selected</span>
-              {selectedIds.length > 0 && (
-                <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px]">
-                  {selectedIds.length}
-                </span>
-              )}
-            </button>
-          </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              
+              {/* 🕒 LIVE MENU AUDIT LOG */}
+              <div className="bg-white rounded-3xl border border-border p-5 shadow-card flex flex-col h-[460px]">
+                <div className="pb-3 border-b border-border flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-primary" /> Live Menu Audit Trail
+                  </h2>
+                  <span className="text-[10px] font-bold bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded-md">
+                    Last 30 Updates
+                  </span>
+                </div>
+                <div className="mt-3 overflow-y-auto flex-1 space-y-2 pr-1">
+                  {menuLogs.length === 0 ? (
+                    <p className="py-12 text-center text-xs italic text-muted-foreground">No menu modifications recorded yet.</p>
+                  ) : (
+                    menuLogs.map((log) => (
+                      <div key={log.id} className="bg-[#fbf7f2] border border-border/60 p-3 rounded-2xl flex items-start gap-3">
+                        <div className={`p-2 rounded-xl text-xs font-bold ${log.updatedByRole === "nutritionist" ? "bg-emerald-100 text-emerald-700" : "bg-orange-100 text-orange-700"}`}>
+                          <Activity className="w-4 h-4" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-foreground truncate">
+                            {log.updatedByRole === "nutritionist" ? "Nutritionist" : "Mess Admin"} modified schedule
+                          </p>
+                          <p className="text-[10px] font-semibold text-muted-foreground uppercase mt-0.5">
+                            Target Node: {log.id.replace(/_/g, " ").toUpperCase()}
+                          </p>
+                          <p className="text-[9px] text-zinc-400 mt-1 font-medium">
+                            {log.updatedAt?.seconds ? new Date(log.updatedAt.seconds * 1000).toLocaleString() : "Just now"}
+                          </p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
 
-          <div className="mt-4 overflow-x-auto">
-            {broadcastList.length === 0 ? (
-              <p className="py-6 text-center text-xs italic text-muted-foreground">
-                No active announcements found in Firestore.
-              </p>
-            ) : (
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
-                    <th className="py-2.5 px-2 w-8">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.length === broadcastList.length && broadcastList.length > 0}
-                        onChange={toggleSelectAll}
-                        className="h-3.5 w-3.5 rounded border-border text-primary"
-                      />
-                    </th>
-                    <th className="py-2.5 px-2">Target</th>
-                    <th className="py-2.5 px-2">Heading</th>
-                    <th className="py-2.5 px-2 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/40">
-                  {broadcastList.map((b) => {
-                    const isChecked = selectedIds.includes(b.id);
+              {/* 🏢 MESH UTILIZATION DEMOGRAPHICS */}
+              <div className="bg-white rounded-3xl border border-border p-5 shadow-card flex flex-col h-[460px]">
+                <div className="pb-3 border-b border-border flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
+                    <Users className="w-4 h-4 text-primary" /> Mess Facility Demographics
+                  </h2>
+                  <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-md">
+                    100% Active Sync
+                  </span>
+                </div>
+                <div className="mt-4 overflow-y-auto flex-1 space-y-4 pr-1">
+                  {MESSES.map((mess) => {
+                    const count = students.filter(s => s.messId === mess.id).length;
+                    const percentage = students.length > 0 ? Math.round((count / students.length) * 100) : 0;
                     return (
-                      <tr key={b.id} className={`transition hover:bg-[#fbf7f2] ${isChecked ? "bg-red-50/50" : ""}`}>
-                        <td className="py-3 px-2">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => toggleSelectOne(b.id)}
-                            className="h-3.5 w-3.5 rounded border-border text-primary"
-                          />
-                        </td>
-                        <td className="py-3 px-2 font-bold uppercase text-[10px] text-red-500">
-                          {b.messId}
-                        </td>
-                        <td className="py-3 px-2 font-medium text-foreground max-w-[180px] truncate">
-                          {b.title}
-                        </td>
-                        <td className="py-3 px-2 text-right">
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (confirm("Delete this broadcast announcement?")) {
-                                await deleteBroadcasts([b.id]);
-                              }
-                            }}
-                            className="rounded-lg bg-red-100 px-2 py-1 text-[10px] font-bold text-red-600 hover:bg-red-500 hover:text-white transition"
-                          >
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
+                      <div key={mess.id} className="space-y-1">
+                        <div className="flex justify-between text-xs font-bold text-foreground">
+                          <span>{mess.name} {mess.subtitle ? `(${mess.subtitle})` : ""}</span>
+                          <span className="text-muted-foreground">{count} Users ({percentage}%)</span>
+                        </div>
+                        <div className="w-full bg-zinc-100 rounded-full h-2.5 overflow-hidden border border-zinc-200">
+                          <div className="gradient-warm h-2.5 rounded-full transition-all duration-500" style={{ width: `${percentage}%` }}></div>
+                        </div>
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
-            )}
+                </div>
+              </div>
+
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* ONBOARDED STUDENTS DIRECTORY */}
-        <StudentDirectoryPanel />
+        {/* ================= TAB 2: CAMPUS FEEDBACK ================= */}
+        {activeTab === "feedbacks" && (
+          <div className="space-y-6 animate-fade-in pb-12">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-black text-foreground">Campus Feedback Hub</h1>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Track student dish quality ratings, comments, and issue resolution status.</p>
+            </div>
+            <SuperAdminFeedbackViewer feedbacks={feedbacks} />
+          </div>
+        )}
 
-        {/* LIVE LINK CLICK ANALYTICS */}
-        <BroadcastAnalyticsPanel />
+        {/* ================= TAB 3: BROADCAST MANAGEMENT ================= */}
+        {activeTab === "broadcasts" && (
+          <div className="space-y-6 animate-fade-in pb-12">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-black text-foreground">Broadcast Management Console</h1>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Deploy automated meal templates or custom alerts, and govern active notification feeds.</p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              
+              {/* AUTOMATED MEAL PUSH */}
+              <div className="rounded-3xl border border-border bg-white p-5 shadow-card flex flex-col justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
+                    <span>🚀</span> Automated Meal Alert Push
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Selects active service window, pulls current menu options, and triggers live system push notifications across campus.
+                  </p>
+
+                  <div className="mt-4 space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-muted-foreground mb-1">Active Service Window:</label>
+                      <select
+                        value={selectedMealKey}
+                        onChange={(e) => setSelectedMealKey(e.target.value as MealKey)}
+                        className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2.5 text-xs font-bold outline-none focus:border-primary focus:bg-white transition"
+                      >
+                        {MEAL_DEFS.map((m) => (
+                          <option key={m.key} value={m.key}>
+                            {m.icon} {m.name} Setup Template
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleTriggerMealNotification}
+                  disabled={isFiringMealAlert}
+                  className="mt-6 w-full rounded-2xl gradient-warm py-3.5 text-xs font-bold text-white shadow-card transition active:scale-[0.99] disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Send className="w-4 h-4" />
+                  {isFiringMealAlert ? "Syncing Menu Assets..." : "Transmit Live Meal Alerts to All Devices"}
+                </button>
+              </div>
+
+              {/* CUSTOM BROADCAST FORM */}
+              <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
+                <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
+                  <span>📢</span> Custom Channel Broadcast
+                </h2>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Draft announcements and deliver them dynamically to targeted dining facilities or a global campus blast.
+                </p>
+
+                <form onSubmit={handleDeployCustomBroadcast} className="mt-4 space-y-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-muted-foreground mb-1">Target Channel Node:</label>
+                    <select
+                      value={targetMessId}
+                      onChange={(e) => setTargetMessId(e.target.value)}
+                      className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2.5 text-xs font-semibold outline-none focus:border-primary focus:bg-white transition"
+                    >
+                      <option value="all">🌍 All Messes (Global Broadcast)</option>
+                      {MESSES.map((m) => (
+                        <option key={m.id} value={m.id}>🏢 {m.name} {m.subtitle ? `(${m.subtitle})` : ""}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-muted-foreground mb-1">Heading Title:</label>
+                    <input
+                      required
+                      type="text"
+                      value={broadcastTitle}
+                      onChange={(e) => setBroadcastTitle(e.target.value)}
+                      placeholder="Enter alert header text..."
+                      className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2 text-xs font-medium outline-none focus:border-primary focus:bg-white transition"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-muted-foreground mb-1">Message Content:</label>
+                    <textarea
+                      required
+                      rows={2}
+                      maxLength={500}
+                      value={broadcastBody}
+                      onChange={(e) => setBroadcastBody(e.target.value)}
+                      placeholder="Type your message details here..."
+                      className="w-full resize-none rounded-xl border border-border bg-[#fbf7f2] px-3 py-2 text-xs font-medium outline-none focus:border-primary focus:bg-white transition"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isBroadcastingCustom || !broadcastTitle.trim() || !broadcastBody.trim()}
+                    className="w-full rounded-2xl bg-black py-3 text-xs font-bold text-white shadow-card transition active:scale-[0.99] disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Send className="w-4 h-4" />
+                    {isBroadcastingCustom ? "Dispersing..." : "Disperse Custom Announcement"}
+                  </button>
+                </form>
+              </div>
+
+            </div>
+
+            {/* ACTIVE BROADCAST CONTROL TABLE */}
+            <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
+              <div className="flex items-center justify-between pb-3 border-b border-border">
+                <div>
+                  <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
+                    <span>📋</span> Active Broadcast Control Registry
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">Select and purge outdated broadcast logs in real time.</p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleDeleteSelectedBroadcasts}
+                  disabled={selectedIds.length === 0 || isDeleting}
+                  className="rounded-xl bg-red-500 px-3.5 py-2 text-xs font-bold text-white shadow-card transition active:scale-95 disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Delete Selected ({selectedIds.length})</span>
+                </button>
+              </div>
+
+              <div className="mt-4 overflow-x-auto max-h-[350px] overflow-y-auto pr-1">
+                {broadcastList.length === 0 ? (
+                  <p className="py-8 text-center text-xs italic text-muted-foreground">No active announcements found in Firestore.</p>
+                ) : (
+                  <table className="w-full text-left text-xs whitespace-nowrap">
+                    <thead className="bg-zinc-50 sticky top-0">
+                      <tr className="border-b border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
+                        <th className="py-2.5 px-3 w-8">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.length === broadcastList.length && broadcastList.length > 0}
+                            onChange={toggleSelectAll}
+                            className="h-3.5 w-3.5 rounded border-border text-primary cursor-pointer"
+                          />
+                        </th>
+                        <th className="py-2.5 px-3">Target Node</th>
+                        <th className="py-2.5 px-3">Heading</th>
+                        <th className="py-2.5 px-3 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/40">
+                      {broadcastList.map((b) => {
+                        const isChecked = selectedIds.includes(b.id);
+                        return (
+                          <tr key={b.id} className={`transition hover:bg-[#fbf7f2] ${isChecked ? "bg-red-50/50" : ""}`}>
+                            <td className="py-3 px-3">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleSelectOne(b.id)}
+                                className="h-3.5 w-3.5 rounded border-border text-primary cursor-pointer"
+                              />
+                            </td>
+                            <td className="py-3 px-3 font-bold uppercase text-[10px] text-red-500">
+                              {b.messId}
+                            </td>
+                            <td className="py-3 px-3 font-medium text-foreground max-w-[280px] truncate">
+                              {b.title}
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (confirm("Delete this broadcast announcement?")) {
+                                    await deleteBroadcasts([b.id]);
+                                  }
+                                }}
+                                className="rounded-lg bg-red-100 px-2.5 py-1 text-[10px] font-bold text-red-600 hover:bg-red-500 hover:text-white transition cursor-pointer"
+                              >
+                                Delete
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* ================= TAB 4: STUDENT DIRECTORY ================= */}
+        {activeTab === "students" && (
+          <div className="space-y-6 animate-fade-in pb-12">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-black text-foreground">Student Onboarding Directory</h1>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Comprehensive real-time directory of every student authenticated on MessHub.</p>
+            </div>
+
+            <div className="bg-white rounded-3xl border border-border p-5 shadow-card">
+              <div className="flex items-center justify-between pb-3 border-b border-border">
+                <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
+                  <span>👥</span> Active Onboarded Profiles
+                </h2>
+                <span className="rounded-full bg-emerald-100 text-emerald-700 font-bold px-3 py-1 text-xs">
+                  Total Students: {students.length}
+                </span>
+              </div>
+
+              <div className="mt-4 overflow-x-auto max-h-[500px] overflow-y-auto">
+                {students.length === 0 ? (
+                  <p className="py-12 text-center text-xs italic text-muted-foreground">No student onboarding entries recorded yet.</p>
+                ) : (
+                  <table className="w-full text-left text-xs whitespace-nowrap">
+                    <thead className="bg-zinc-50 sticky top-0">
+                      <tr className="border-b border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
+                        <th className="py-3 px-4">Student Name</th>
+                        <th className="py-3 px-4">Email</th>
+                        <th className="py-3 px-4">Assigned Mess</th>
+                        <th className="py-3 px-4 text-right">Joined / Last Active</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/40">
+                      {students.map((student, idx) => (
+                        <tr key={student.id || idx} className="transition hover:bg-[#fbf7f2]">
+                          <td className="py-3.5 px-4 font-bold text-foreground">{student.name || "Anonymous"}</td>
+                          <td className="py-3.5 px-4 text-muted-foreground">{student.email || "N/A"}</td>
+                          <td className="py-3.5 px-4 font-bold uppercase text-[10px] text-red-500">{student.messId || "N/A"}</td>
+                          <td className="py-3.5 px-4 text-right text-muted-foreground text-[10px]">
+                            {student.lastActiveAt?.toDate ? student.lastActiveAt.toDate().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : "Just now"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= TAB 5: CLICK ANALYTICS ================= */}
+        {activeTab === "analytics" && (
+          <div className="space-y-6 animate-fade-in pb-12">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-black text-foreground">Broadcast Link Click Analytics</h1>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Real-time telemetry tracking student interactions with links embedded in broadcasts.</p>
+            </div>
+
+            <div className="bg-white rounded-3xl border border-border p-5 shadow-card">
+              <div className="flex items-center justify-between pb-3 border-b border-border">
+                <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
+                  <span>📊</span> Engagement Telemetry
+                </h2>
+                <span className="rounded-full bg-primary/10 text-primary font-bold px-3 py-1 text-xs">
+                  Total Clicks: {clickLogs.length}
+                </span>
+              </div>
+
+              <div className="mt-4 overflow-x-auto max-h-[500px] overflow-y-auto">
+                {clickLogs.length === 0 ? (
+                  <p className="py-12 text-center text-xs italic text-muted-foreground">No link clicks recorded yet.</p>
+                ) : (
+                  <table className="w-full text-left text-xs whitespace-nowrap">
+                    <thead className="bg-zinc-50 sticky top-0">
+                      <tr className="border-b border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
+                        <th className="py-3 px-4">Student Name</th>
+                        <th className="py-3 px-4">Mess</th>
+                        <th className="py-3 px-4">Broadcast Title</th>
+                        <th className="py-3 px-4">Link Clicked</th>
+                        <th className="py-3 px-4 text-right">Time</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/40">
+                      {clickLogs.map((log) => (
+                        <tr key={log.id} className="transition hover:bg-[#fbf7f2]">
+                          <td className="py-3.5 px-4 font-bold text-foreground">{log.userName}</td>
+                          <td className="py-3.5 px-4 font-bold uppercase text-[10px] text-red-500">{log.userMess}</td>
+                          <td className="py-3.5 px-4 text-muted-foreground max-w-[150px] truncate">{log.broadcastTitle}</td>
+                          <td className="py-3.5 px-4">
+                            <a href={log.clickedUrl} target="_blank" rel="noreferrer" className="text-primary underline max-w-[200px] truncate block font-medium">
+                              {log.clickedUrl}
+                            </a>
+                          </td>
+                          <td className="py-3.5 px-4 text-right text-muted-foreground text-[10px]">
+                            {log.clickedAt?.toDate ? log.clickedAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
       </main>
+      {/* ⚡ 2. ADD THE MODAL COMPONENT HERE AT THE VERY BOTTOM */}
+      <AddMessAndMenuModal 
+        isOpen={isAddMessModalOpen} 
+        onClose={() => setIsAddMessModalOpen(false)} 
+      />
+    </div>
+  );
+}
+
+/* ---------------- 🧩 UI HELPER COMPONENTS ---------------- */
+
+function MetricCard({ title, value, icon: Icon, color, alert }: any) {
+  return (
+    <div className="bg-white p-5 rounded-3xl border border-border shadow-card flex items-center justify-between relative overflow-hidden">
+      {alert && <span className="absolute top-0 right-0 w-2 h-full bg-red-500 animate-pulse" />}
+      <div>
+        <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1">{title}</p>
+        <p className="text-3xl font-black text-foreground">{value}</p>
+      </div>
+      <div className={`p-3.5 rounded-2xl ${color}`}>
+        <Icon className="w-6 h-6" />
+      </div>
+    </div>
+  );
+}
+
+function SuperAdminFeedbackViewer({ feedbacks }: { feedbacks: ItemFeedback[] }) {
+  const [filter, setFilter] = useState<"all" | "unsolved" | "solved">("all");
+
+  const filtered = feedbacks.filter((f) => {
+    if (filter === "unsolved") return f.status === "unsolved";
+    if (filter === "solved") return f.status === "solved";
+    return true;
+  });
+
+  return (
+    <div className="bg-white border border-border rounded-3xl p-5 shadow-card space-y-4">
+      <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl border border-border w-fit">
+        {(["all", "unsolved", "solved"] as const).map((type) => (
+          <button
+            key={type}
+            onClick={() => setFilter(type)}
+            className={`px-4 py-1.5 text-[11px] font-bold rounded-lg capitalize transition cursor-pointer ${
+              filter === type ? "bg-foreground text-background shadow-xs" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {type}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1">
+        {filtered.length === 0 ? (
+          <p className="py-12 text-center text-xs italic text-muted-foreground">No feedback entries found matching filter.</p>
+        ) : (
+          filtered.map((item) => {
+            const isSolved = item.status === "solved";
+            return (
+              <div 
+                key={item.id} 
+                className={`p-4 rounded-2xl border transition-all flex items-start gap-4 ${
+                  isSolved ? "bg-emerald-50/40 border-emerald-300 opacity-70" : "bg-white border-border shadow-xs"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => item.id && toggleFeedbackStatus(item.id, item.status)}
+                  className="mt-1 shrink-0 text-primary hover:scale-110 transition cursor-pointer"
+                  title={isSolved ? "Mark Unsolved" : "Mark Solved"}
+                >
+                  {isSolved ? <CheckSquare className="w-5 h-5 text-emerald-600 fill-emerald-100" /> : <Square className="w-5 h-5 text-zinc-400" />}
+                </button>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`font-bold text-sm truncate ${isSolved ? "line-through text-muted-foreground" : "text-foreground"}`}>
+                      {item.itemName} <span className="uppercase text-[10px] text-muted-foreground ml-1 font-semibold">({item.mealKey})</span>
+                    </span>
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Star key={star} className={`w-3.5 h-3.5 ${star <= item.rating ? "fill-amber-500 text-amber-500" : "text-zinc-200"}`} />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="text-[11px] text-muted-foreground font-medium flex items-center gap-2 mt-1">
+                    <span>👤 {item.studentName} {item.studentEmail ? `(${item.studentEmail})` : ""}</span>
+                    <span className="w-1 h-1 rounded-full bg-zinc-300" />
+                    <span className="bg-zinc-100 text-zinc-700 px-2 py-0.5 rounded uppercase font-bold text-[9px] tracking-wider">{item.messId}</span>
+                  </div>
+
+                  {item.comment && (
+                    <p className={`text-xs italic p-2.5 rounded-xl mt-2 border ${isSolved ? "bg-zinc-50 text-zinc-400 line-through border-zinc-200" : "bg-[#fbf7f2] text-foreground border-border/60"}`}>
+                      "{item.comment}"
+                    </p>
+                  )}
+
+                  <div className="pt-2 flex justify-end">
+                    {isSolved ? (
+                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full">
+                        <CheckCircle className="w-3 h-3 text-emerald-600" /> Resolved & Solved
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full">
+                        <AlertCircle className="w-3 h-3 text-amber-600" /> Action Required (Pending)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }

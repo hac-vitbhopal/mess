@@ -11,12 +11,15 @@ import {
   greetingFor,
   mealStatus,
   HARDCODED_WEEKLY_MENUS,
+  getDynamicMessMenu,
   trackBroadcastClick,
   logStudentOnboarding,
+  submitItemFeedback,
   type MealKey,
   type StudentProfile,
 } from "@/lib/messhub";
 import { Link } from "@tanstack/react-router";
+import { Star } from "lucide-react";
 
 function buildDateStrip(center: Date, days = 21): Date[] {
   const start = new Date(center);
@@ -56,6 +59,31 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
   const [openMeal, setOpenMeal] = useState<MealKey | null>(null);
   const [broadcasts, setBroadcasts] = useState<{ id: string; title: string; body: string }[]>([]);
 
+  // ⚡ DYNAMIC NUTRITIONIST MENU STATE
+  const [dynamicMenu, setDynamicMenu] = useState<any>(null);
+
+  const activeWeekday = selectedDate.getDay();
+
+  // ⚡ FETCH LIVE MENU & NUTRITION FROM FIRESTORE
+  useEffect(() => {
+    async function loadNutritionistMenu() {
+      if (!profile?.messId) return;
+      const firestoreMenu = await getDynamicMessMenu(profile.messId, activeWeekday);
+      if (firestoreMenu) {
+        setDynamicMenu(firestoreMenu);
+      } else {
+        setDynamicMenu(null);
+      }
+    }
+    loadNutritionistMenu();
+  }, [profile.messId, activeWeekday]);
+
+  // Combine live Firestore menu with hardcoded fallback
+  const currentMenu = useMemo(() => {
+    if (dynamicMenu) return dynamicMenu;
+    return HARDCODED_WEEKLY_MENUS[profile.messId]?.[activeWeekday] || { breakfast: [], lunch: [], snacks: [], dinner: [] };
+  }, [profile.messId, activeWeekday, dynamicMenu]);
+
   useEffect(() => {
     async function syncToken() {
       if (!profile?.messId) return;
@@ -87,11 +115,6 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
   const activeMess = messMeta[profile.messId] || { name: profile.messId.toUpperCase() };
   const messLabelStr = `${activeMess.name}${activeMess.subtitle ? ` (${activeMess.subtitle})` : ""} Mess`;
 
-  const activeWeekday = selectedDate.getDay();
-  const currentMenu = useMemo(() => {
-    return HARDCODED_WEEKLY_MENUS[profile.messId]?.[activeWeekday] || { breakfast: [], lunch: [], snacks: [], dinner: [] };
-  }, [profile.messId, activeWeekday]);
-
   const { current, next } = useMemo(() => currentAndNextMeal(now), [now]);
   const focus = current ?? next ?? MEAL_DEFS[0];
   const focusIsLive = current !== null;
@@ -107,7 +130,10 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
 
     if (focusIsLive && focus && lastNotifiedKey !== focus.key) {
       const items = currentMenu[focus.key] ?? [];
-      const itemString = items.slice(0, 3).join(", ") + (items.length > 3 ? "..." : "");
+      const itemString = items
+        .slice(0, 3)
+        .map((i: any) => typeof i === "object" ? i.name : i)
+        .join(", ") + (items.length > 3 ? "..." : "");
 
       const pushTemplates: Record<string, { title: string; body: string }> = {
         breakfast: {
@@ -211,7 +237,6 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
     el?.scrollIntoView({ inline: "center", block: "nearest" });
   }, [today]);
 
-  // 📱 Permanent Direct PWA Install Handler
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   useEffect(() => {
@@ -249,7 +274,6 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
     }
   }
 
-  // Formspree Integration Handler
   async function handleFeedbackSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!feedbackMessage.trim()) return;
@@ -279,7 +303,6 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
     }
   }
 
-  // Helper function to render broadcast body links
   function renderBroadcastBody(b: { id: string; title: string; body: string }) {
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     const parts = b.body.split(urlRegex);
@@ -306,7 +329,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
   }
 
   return (
-    <div className="min-h-screen bg-background pb-28">
+    <div className="min-h-screen bg-background pb-28 font-sans">
       {/* Header */}
       <header className="safe-top px-5 pt-2 pb-4">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
@@ -391,12 +414,15 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
           </div>
           
           <ul className="mt-3.5 grid grid-cols-2 gap-x-6 gap-y-2 text-sm text-muted-foreground">
-            {(currentMenu[focus.key] ?? []).map((i) => (
-              <li key={i} className="truncate select-none font-medium flex items-center gap-2 text-muted-foreground">
-                <span className="h-1 w-1 rounded-full bg-muted-foreground/40" />
-                <span>{i}</span>
-              </li>
-            ))}
+            {(currentMenu[focus.key] ?? []).map((i: any, idx: number) => {
+              const name = typeof i === "object" ? i.name : i;
+              return (
+                <li key={idx} className="truncate select-none font-medium flex items-center gap-2 text-muted-foreground">
+                  <span className="h-1 w-1 rounded-full bg-muted-foreground/40" />
+                  <span>{name}</span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       </section>
@@ -469,11 +495,14 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
 
                 <div className="mt-2 space-y-0.5 border-t border-border/60 pt-1.5 w-full overflow-hidden">
                   {mealItems.length > 0 ? (
-                    mealItems.slice(0, 2).map((item, idx) => (
-                      <div key={idx} className="text-[11px] text-muted-foreground truncate block">
-                        • {item}
-                      </div>
-                    ))
+                    mealItems.slice(0, 2).map((item: any, idx: number) => {
+                      const itemName = typeof item === "object" ? item.name : item;
+                      return (
+                        <div key={idx} className="text-[11px] text-muted-foreground truncate block">
+                          • {itemName}
+                        </div>
+                      );
+                    })
                   ) : (
                     <div className="text-[11px] italic text-muted-foreground/70">No menu items</div>
                   )}
@@ -508,7 +537,12 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
         </div>
       </section>
 
-      {/* Feedback Form */}
+      {/* 🍲 DAILY ITEM-LEVEL DISH RATING & FEEDBACK CARD */}
+      <section className="mt-8 px-5">
+        <DailyItemFeedbackCard profile={profile} currentMenu={currentMenu} />
+      </section>
+
+      {/* General Bug / Issue Feedback Form */}
       <section className="mt-8 px-5">
         <div className="rounded-2xl border border-border bg-card p-5 shadow-card w-full">
           <h3 className="font-bold text-foreground text-sm tracking-tight">Report an Issue or Feedback</h3>
@@ -579,7 +613,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
         </p>
       </footer>
 
-      {/* Bottom sheet */}
+      {/* ⚡ Bottom sheet (Renders Nutrition Badges) */}
       {openMeal && (
         <MealSheet
           mealKey={openMeal}
@@ -592,8 +626,164 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
   );
 }
 
-function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items: string[]; date: Date; onClose: () => void }) {
+{/* 🍲 COMPONENT: Daily Item Feedback Card */}
+function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfile; currentMenu: any }) {
+  const [selectedMeal, setSelectedMeal] = useState<MealKey>("lunch");
+  const [selectedItem, setSelectedItem] = useState<string>("");
+  const [rating, setRating] = useState<number>(5);
+  const [comment, setComment] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Dynamic Dish list from live menu
+  const rawItems = currentMenu[selectedMeal] || [];
+  const availableItems = useMemo(() => {
+    return rawItems.map((item: any) => (typeof item === "object" ? item.name : item));
+  }, [rawItems]);
+
+  // Default select first item on meal or menu change
+  useEffect(() => {
+    if (availableItems.length > 0) {
+      setSelectedItem(availableItems[0]);
+    } else {
+      setSelectedItem("");
+    }
+  }, [selectedMeal, availableItems]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedItem) {
+      alert("Please select a dish to rate!");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await submitItemFeedback({
+        studentName: profile.name,
+        studentEmail: profile.email,
+        messId: profile.messId,
+        mealKey: selectedMeal,
+        itemName: selectedItem,
+        rating,
+        comment: comment.trim(),
+        status: "unsolved", // ⚡ Explicitly passes default unsolved status
+      });
+
+      alert(`⭐ Thank you ${profile.name.split(" ")[0]}! Your feedback for "${selectedItem}" has been logged.`);
+      setComment("");
+      setRating(5);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to submit feedback. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5 shadow-card w-full text-foreground">
+      <h3 className="font-extrabold text-foreground text-sm tracking-tight flex items-center gap-2">
+        <span>🍲</span> Rate Today's Dishes
+      </h3>
+      <p className="text-[11px] text-muted-foreground mt-0.5 font-medium">
+        Share taste & quality feedback on specific items directly with your mess admin.
+      </p>
+
+      <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+        {/* Meal Selector */}
+        <div className="grid grid-cols-4 gap-1 bg-muted/40 p-1 rounded-xl border border-border/40">
+          {MEAL_DEFS.map((m) => (
+            <button
+              key={m.key}
+              type="button"
+              onClick={() => setSelectedMeal(m.key)}
+              className={`py-1.5 text-[10px] font-bold rounded-lg capitalize transition ${
+                selectedMeal === m.key
+                  ? "bg-primary text-primary-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {m.key}
+            </button>
+          ))}
+        </div>
+
+        {/* Dish Selector */}
+        <div>
+          <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">
+            Select Dish
+          </label>
+          {availableItems.length > 0 ? (
+            <select
+              value={selectedItem}
+              onChange={(e) => setSelectedItem(e.target.value)}
+              className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs font-bold text-foreground focus:outline-none focus:border-primary transition"
+            >
+              {availableItems.map((dish: string, idx: number) => (
+                <option key={idx} value={dish}>
+                  {dish}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className="text-xs italic text-muted-foreground/70 py-1">No items listed for {selectedMeal} today.</p>
+          )}
+        </div>
+
+        {/* Star Rating Bar */}
+        <div>
+          <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">
+            Taste & Quality Rating
+          </label>
+          <div className="flex items-center gap-1.5 bg-muted/30 p-2 rounded-xl border border-border/40 justify-center">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                type="button"
+                onClick={() => setRating(star)}
+                className="p-1 transition active:scale-125"
+              >
+                <Star
+                  className={`w-6 h-6 ${
+                    star <= rating ? "fill-amber-500 text-amber-500" : "text-muted-foreground/30"
+                  }`}
+                />
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Optional Comment */}
+        <div>
+          <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">
+            Specific Comments
+          </label>
+          <textarea
+            rows={2}
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="e.g. Paneer was soft, too salty, good portion..."
+            className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium outline-none focus:border-primary transition"
+          />
+        </div>
+
+        {/* Submit */}
+        <button
+          type="submit"
+          disabled={isSubmitting || !selectedItem}
+          className="w-full rounded-xl bg-primary text-primary-foreground py-2.5 text-xs font-bold shadow-md active:scale-[0.99] transition disabled:opacity-40"
+        >
+          {isSubmitting ? "Submitting Rating..." : "Send Dish Rating"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+{/* ⚡ MEAL SHEET MODAL DISPLAYING LIVE NUTRITION BADGES */}
+function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items: any[]; date: Date; onClose: () => void }) {
   const def = MEAL_DEFS.find((m) => m.key === mealKey)!;
+
   useEffect(() => {
     function onEsc(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
     window.addEventListener("keydown", onEsc);
@@ -603,6 +793,7 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
       document.body.style.overflow = "";
     };
   }, [onClose]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal="true">
       <button aria-label="Close" onClick={onClose} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
@@ -619,15 +810,31 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
         </div>
 
         <div className="mt-5">
-          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Menu Items</div>
-          <ul className="mt-2 space-y-2">
+          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Menu Items & Nutrition</div>
+          <ul className="mt-2 space-y-2.5">
             {items.length > 0 ? (
-              items.map((i) => (
-                <li key={i} className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm break-words">
-                  <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
-                  <span className="text-foreground font-medium">{i}</span>
-                </li>
-              ))
+              items.map((item, idx) => {
+                const isObject = typeof item === "object";
+                const name = isObject ? item.name : item;
+
+                return (
+                  <li key={idx} className="flex flex-col gap-1 rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+                      <span className="text-foreground font-bold">{name}</span>
+                    </div>
+
+                    {/* Macro Badges dynamically rendered from Nutritionist Firestore data */}
+                    {isObject && (item.calories || item.protein || item.carbs) && (
+                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-semibold pl-3.5 pt-1 flex-wrap">
+                        {item.calories && <span className="bg-orange-50 text-orange-700 px-2 py-0.5 rounded-md border border-orange-200">🔥 {item.calories} kcal</span>}
+                        {item.protein && <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md border border-emerald-200">💪 {item.protein}g Protein</span>}
+                        {item.carbs && <span className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded-md border border-amber-200">🌾 {item.carbs}g Carbs</span>}
+                      </div>
+                    )}
+                  </li>
+                );
+              })
             ) : (
               <li className="text-sm text-muted-foreground italic py-4 text-center">No items designated for this meal.</li>
             )}
