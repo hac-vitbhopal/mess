@@ -4,11 +4,14 @@ import {
   addDoc, 
   doc, 
   setDoc, 
+  updateDoc,
   deleteDoc, 
   writeBatch, 
   serverTimestamp 
+  
 } from "firebase/firestore";
-
+import { getDoc } from "firebase/firestore";
+// import { serverTimestamp } from "firebase/firestore";
 export type MessId = "crcl" | "jmb" | "mayuri_boys" | "mayuri_girls" | "safal" | "ab_catering";
 
 export interface Mess {
@@ -33,6 +36,7 @@ export function messLabel(id: MessId) {
 
 export interface StudentProfile {
   name: string;
+  email?: string; // ⚡ ADDED for VIT Bhopal validation
   messId: MessId;
 }
 
@@ -45,7 +49,7 @@ export function getProfile(): StudentProfile | null {
     if (!raw) return null;
     const p = JSON.parse(raw);
     if (p && typeof p.name === "string" && typeof p.messId === "string") {
-      return { name: p.name, messId: p.messId };
+      return { name: p.name, email: p.email || "", messId: p.messId };
     }
     return null;
   } catch {
@@ -470,12 +474,12 @@ export async function logStudentOnboarding(profile: StudentProfile) {
   if (!db || !profile.name.trim() || !profile.messId) return;
 
   try {
-    // ⚡ Keying by normalized student name ensures switching messes updates their SINGLE record
     const normalizedName = profile.name.trim().toLowerCase().replace(/\s+/g, '_');
     const studentRef = doc(db, "registered_students", normalizedName);
 
     await setDoc(studentRef, {
       name: profile.name.trim(),
+      email: profile.email || "", // ⚡ SAVES VIT EMAIL IN FIRESTORE
       messId: profile.messId,
       lastActiveAt: serverTimestamp(),
     }, { merge: true });
@@ -578,20 +582,21 @@ export const MEALS = MEAL_DEFS;
 
 /* ---------------- Role Security & Gatekeeping ---------------- */
 
-export const ADMIN_AUTH_KEYS: Record<string, { role: "admin" | "super-admin"; messId?: MessId }> = {
+export const ADMIN_AUTH_KEYS: Record<string, { role: "admin" | "super-admin" | "nutritionist"; messId?: MessId }> = {
   "MeranaamJMB@2026": { role: "admin", messId: "jmb" },
   "MeranaamCRCL@2026": { role: "admin", messId: "crcl" },
   "MeranaamMAYURIB@2026": { role: "admin", messId: "mayuri_boys" },
   "MeranaamMAYURIG@2026": { role: "admin", messId: "mayuri_girls" },
   "MeranaamSAFAL@2026": { role: "admin", messId: "safal" },
   "MeranaamABCAT@2026": { role: "admin", messId: "ab_catering" },
-  "Meranaammesshai#99": { role: "super-admin" } 
+  "Meranaammesshai#99": { role: "super-admin" } ,
+  "VITBNutri@2026": { role: "nutritionist" }
 };
 
 const ADMIN_SESSION_KEY = "messhub.admin.session";
 
 export interface AdminSession {
-  role: "admin" | "super-admin";
+  role: "admin" | "super-admin" | "nutritionist";
   messId?: MessId;
 }
 
@@ -612,3 +617,183 @@ export function saveAdminSession(session: AdminSession) {
 export function clearAdminSession() {
   localStorage.removeItem(ADMIN_SESSION_KEY);
 }
+
+/* ---------------- 🥗 PHASE 2: NUTRITION & DYNAMIC MENUS ---------------- */
+
+// import { getDoc } from "firebase/firestore";
+
+// 1. Dynamic Item with Macros
+export interface MenuItemWithNutrition {
+  name: string;
+  calories?: number; // kcal
+  protein?: number;  // grams
+  carbs?: number;    // grams
+  fat?: number;      // grams
+}
+
+export interface DayMenuWithNutrition {
+  breakfast: MenuItemWithNutrition[];
+  lunch: MenuItemWithNutrition[];
+  snacks: MenuItemWithNutrition[];
+  dinner: MenuItemWithNutrition[];
+}
+
+// 2. Fetch Dynamic Menu from Firestore (or fallback to empty structure)
+export async function getDynamicMessMenu(messId: string, dayIndex: number): Promise<DayMenuWithNutrition | null> {
+  if (!db) return null;
+  try {
+    const docRef = doc(db, "mess_menus", `${messId}_day_${dayIndex}`);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return snap.data() as DayMenuWithNutrition;
+    }
+  } catch (err) {
+    console.error("[MessHub] Error fetching dynamic menu:", err);
+  }
+  return null;
+}
+
+// 3. Save Menu & Nutrition Details from Nutritionist Admin Portal
+export async function saveDynamicMessMenu(messId: MessId, dayIndex: number, menuData: DayMenuWithNutrition) {
+  if (!db) return;
+  const docId = `${messId}_day_${dayIndex}`;
+  const session = getAdminSession(); // Grab current logged-in role
+  
+  try {
+    await setDoc(doc(db, "mess_menus", docId), {
+      ...menuData,
+      updatedAt: serverTimestamp(),
+      updatedByRole: session?.role || "unknown", // Tracks if 'admin' or 'nutritionist' saved it
+      messId: messId,
+      dayIndex: dayIndex
+    }, { merge: true });
+    console.info(`[Firestore] Menu saved for ${docId}`);
+  } catch (error) {
+    console.error("[Firestore] Error saving dynamic menu:", error);
+    throw error;
+  }
+}
+
+/* ---------------- ⭐ ITEM FEEDBACK SYSTEM ---------------- */
+
+export interface ItemFeedback {
+  id?: string;
+  studentName: string;
+  studentEmail?: string;
+  messId: MessId;
+  mealKey: MealKey;
+  itemName: string;
+  rating: number; // 1 to 5
+  comment?: string;
+  createdAt?: any;
+}
+
+/**
+ * 📝 Submit daily item feedback to Firestore
+ */
+export async function submitItemFeedback(feedback: Omit<ItemFeedback, "id" | "createdAt" | "status">) {
+  if (!db) return;
+  try {
+    await addDoc(collection(db, "item_feedback"), {
+      ...feedback,
+      status: "unsolved", // Default status upon submission
+      createdAt: serverTimestamp(),
+    });
+    console.info(`[Firestore] Item feedback submitted for ${feedback.itemName}`);
+  } catch (error) {
+    console.error("[Firestore] Error submitting item feedback:", error);
+    throw error;
+  }
+}
+
+/**
+ * 🚀 One-click script to seed ALL messes and days into Firestore `mess_menus`
+ */
+export async function seedAllMenusToFirestore() {
+  if (!db) return;
+
+  const messIds = Object.keys(HARDCODED_WEEKLY_MENUS) as MessId[];
+  let totalSeeded = 0;
+
+  for (const messId of messIds) {
+    for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+      const defaultMenu = HARDCODED_WEEKLY_MENUS[messId]?.[dayIndex];
+
+      if (defaultMenu) {
+        const menuWithNutrition: DayMenuWithNutrition = {
+          breakfast: (defaultMenu.breakfast || []).map((name) => ({
+            name,
+            calories: 220,
+            protein: 6,
+            carbs: 30,
+            fat: 5,
+          })),
+          lunch: (defaultMenu.lunch || []).map((name) => ({
+            name,
+            calories: 380,
+            protein: 12,
+            carbs: 50,
+            fat: 8,
+          })),
+          snacks: (defaultMenu.snacks || []).map((name) => ({
+            name,
+            calories: 180,
+            protein: 4,
+            carbs: 25,
+            fat: 6,
+          })),
+          dinner: (defaultMenu.dinner || []).map((name) => ({
+            name,
+            calories: 420,
+            protein: 15,
+            carbs: 55,
+            fat: 10,
+          })),
+        };
+
+        await saveDynamicMessMenu(messId, dayIndex, menuWithNutrition);
+        totalSeeded++;
+      }
+    }
+  }
+
+  console.info(`[Seeder] Successfully populated ${totalSeeded} menu documents into Firestore!`);
+  alert(`✅ Done! Created ${totalSeeded} mess menu documents across all facilities in Firestore.`);
+}
+
+/* ---------------- ⭐ ITEM FEEDBACK SYSTEM ---------------- */
+
+export interface ItemFeedback {
+  id?: string;
+  studentName: string;
+  studentEmail?: string;
+  messId: MessId;
+  mealKey: MealKey;
+  itemName: string;
+  rating: number; // 1 to 5
+  comment?: string;
+  status: "solved" | "unsolved"; // ⚡ Solved/Unsolved tracker flag
+  createdAt?: any;
+}
+
+/**
+ * 📝 Submit daily item feedback to Firestore
+ */
+
+
+/**
+ * ✅ Toggle Feedback Solved/Unsolved status
+ */
+export async function toggleFeedbackStatus(feedbackId: string, currentStatus: "solved" | "unsolved") {
+  if (!db || !feedbackId) return;
+  try {
+    const docRef = doc(db, "item_feedback", feedbackId);
+    const newStatus = currentStatus === "solved" ? "unsolved" : "solved";
+    await updateDoc(docRef, { status: newStatus });
+    console.info(`[Firestore] Feedback ${feedbackId} updated to ${newStatus}`);
+  } catch (error) {
+    console.error("[Firestore] Error updating feedback status:", error);
+    throw error;
+  }
+}
+

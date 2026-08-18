@@ -36,8 +36,12 @@ function getAdminApp() {
 const app = getAdminApp();
 const firestore = admin.firestore(app);
 
-// Use REST in serverless or local dev if gRPC bindings fail
-firestore.settings({ preferRest: true });
+// ⚡ SAFE CHECK: Wrap settings() to prevent re-initialization crashes during Vite reloads
+try {
+  firestore.settings({ preferRest: true });
+} catch (e) {
+  // Ignore duplicate settings application during Vite HMR reloads
+}
 
 export const adminDb = firestore;
 export const adminMessaging = admin.messaging(app);
