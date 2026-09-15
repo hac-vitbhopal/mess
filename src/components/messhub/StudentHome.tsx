@@ -20,7 +20,7 @@ import {
   type SpecialOverride,
 } from "@/lib/messhub";
 import { Link } from "@tanstack/react-router";
-import { Star, Clock, Sparkles, ChevronDown, ChevronUp, Flame, Dumbbell, Wheat, ChefHat, Info } from "lucide-react";
+import { Star, Clock, Sparkles, ChevronDown, ChevronUp, Flame, Dumbbell, Wheat, ChefHat, Info, Download, X } from "lucide-react";
 
 const CATEGORIES = ["Food quality", "Hygiene", "Timing", "Staff behavior", "Other"] as const;
 
@@ -31,6 +31,38 @@ const complaintSchema = z.object({
 
 export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; onSignOut: () => void }) {
   const [now, setNow] = useState(() => new Date());
+
+  // 📱 PWA Install Prompt State
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallable, setIsInstallable] = useState(false);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", () => {
+      setIsInstallable(false);
+      setDeferredPrompt(null);
+    });
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === "accepted") {
+      setDeferredPrompt(null);
+      setIsInstallable(false);
+    }
+  };
 
   useEffect(() => {
     if (profile?.name && profile?.messId) {
@@ -295,7 +327,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
   }
 
   return (
-    <div className="min-h-screen bg-background pb-28 font-sans select-none">
+    <div className="min-h-screen bg-background pb-28 font-sans select-none relative">
       {/* Header */}
       <header className="safe-top px-5 pt-2 pb-4">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
@@ -545,6 +577,30 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
           )}
         </div>
       </section>
+
+      {/* 📱 PWA Install Floating Banner / Button (Renders when browser allows installation) */}
+      {isInstallable && (
+        <div className="my-6 px-5">
+          <div className="rounded-2xl border border-primary/30 bg-primary/10 p-4 flex items-center justify-between gap-3 shadow-md">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl gradient-warm flex items-center justify-center text-white shrink-0 shadow-sm">
+                <Download className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-foreground">Install MessHub App</h4>
+                <p className="text-[11px] text-muted-foreground">Add to home screen for offline support &amp; fast access.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleInstallClick}
+              className="bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-xs font-bold shadow-xs transition hover:opacity-90 cursor-pointer shrink-0"
+            >
+              Install App
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 🚀 Professional Footer */}
       <footer className="mt-12 px-5 py-6 border-t border-border/60 text-center text-xs text-muted-foreground space-y-1">
@@ -882,9 +938,7 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
             )}
           </ul>
         </div>
-        
       </div>
-      
     </div>
   );
 }
