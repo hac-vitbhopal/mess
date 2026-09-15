@@ -248,7 +248,6 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
     formData.append("name", profile.name || "VIT Student");
     formData.append("email", profile.email || "N/A");
     formData.append("mess", messLabelStr);
-    // Combine category and message so it formats cleanly in your "Issue / Feedback" sheet column
     formData.append("message", `[Complaint - ${category.toUpperCase()}] ${feedbackMessage.trim()}`);
 
     try {
@@ -546,6 +545,32 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
           )}
         </div>
       </section>
+
+      {/* 🚀 Professional Footer */}
+      <footer className="mt-12 px-5 py-6 border-t border-border/60 text-center text-xs text-muted-foreground space-y-1">
+        <p>
+          Designed &amp; Built by{" "}
+          <a
+            href="https://itsmeishaan.vercel.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-bold text-foreground underline hover:text-primary transition"
+          >
+            Ishaan Mittal
+          </a>{" "}
+          × <a
+            href="https://vitbhopal.ac.in/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-bold text-foreground underline hover:text-primary transition"
+          >
+            VIT Bhopal University
+          </a>
+        </p>
+        <p className="text-[11px] opacity-80">
+          &copy; {new Date().getFullYear()} MessHub. All rights reserved.
+        </p>
+      </footer>
 
       {/* Bottom sheet for meal items and nutrition badges */}
       {openMeal && (
@@ -857,7 +882,9 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
             )}
           </ul>
         </div>
+        
       </div>
+      
     </div>
   );
 }
