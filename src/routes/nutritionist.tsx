@@ -1,13 +1,15 @@
 import { useState, useEffect, useMemo } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp, addDoc, collection } from "firebase/firestore";
 import { 
   MESSES, 
   saveDynamicMessMenu, 
   getDynamicMessMenu, 
   ADMIN_AUTH_KEYS,
-  seedAllNutritionMenusToFirestore,
+  getAdminSession,
+  saveAdminSession,
+  clearAdminSession,
   type MessId, 
   type DayMenuWithNutrition, 
   type NutritionDishItem,
@@ -126,11 +128,14 @@ function NutritionistPortalPage() {
   });
   const [initialLoadedMenu, setInitialLoadedMenu] = useState<StudioDayMenu | null>(null);
 
-  // Check saved session on load
+  // 🔒 Secure Session Initialization on Mount (Browser-close safe via sessionStorage)
   useEffect(() => {
-    const savedRole = localStorage.getItem("messhub.nutritionist.auth");
-    if (savedRole === "true") {
+    const activeSession = getAdminSession();
+    if (activeSession && (activeSession.role === "nutritionist" || activeSession.role === "super-admin")) {
       setIsAuthenticated(true);
+    } else {
+      clearAdminSession();
+      setIsAuthenticated(false);
     }
   }, []);
 
@@ -239,6 +244,40 @@ function NutritionistPortalPage() {
     return JSON.stringify(menu) !== JSON.stringify(initialLoadedMenu);
   }, [menu, initialLoadedMenu]);
 
+  // Compute exact human-readable diff changes between initial loaded state and current draft state
+  const detailedChangesSummary = useMemo(() => {
+    if (!initialLoadedMenu) return [];
+    const diffs: string[] = [];
+
+    MEAL_TYPES.forEach((meal) => {
+      const oldList = initialLoadedMenu[meal] || [];
+      const newList = menu[meal] || [];
+
+      if (oldList.length !== newList.length) {
+        diffs.push(`• [${meal.toUpperCase()}] Item count changed from ${oldList.length} to ${newList.length}.`);
+      }
+
+      newList.forEach((item, idx) => {
+        const prevItem = oldList[idx];
+        if (!prevItem) {
+          diffs.push(`  + Added new dish: "${item.name || 'Untitled'}"`);
+        } else {
+          if (prevItem.name !== item.name) {
+            diffs.push(`  ~ Renamed dish "${prevItem.name}" to "${item.name}"`);
+          }
+          if (prevItem.calories !== item.calories || prevItem.protein !== item.protein || prevItem.carbs !== item.carbs) {
+            diffs.push(`  ~ Calibrated macros for "${item.name || 'Dish'}": Energy ${prevItem.calories}→${item.calories} kcal, Protein ${prevItem.protein}→${item.protein}g`);
+          }
+          if (prevItem.regionalTag !== item.regionalTag && item.regionalTag) {
+            diffs.push(`  ~ Updated regional tag for "${item.name}": ${item.regionalTag}`);
+          }
+        }
+      });
+    });
+
+    return diffs;
+  }, [menu, initialLoadedMenu]);
+
   const totalDishesCount = useMemo(() => {
     return menu.breakfast.length + menu.lunch.length + menu.snacks.length + menu.dinner.length;
   }, [menu]);
@@ -260,20 +299,22 @@ function NutritionistPortalPage() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    const match = ADMIN_AUTH_KEYS[passwordInput.trim()];
+    const cleanKey = passwordInput.trim();
+    const match = ADMIN_AUTH_KEYS[cleanKey];
 
     if (match && (match.role === "nutritionist" || match.role === "super-admin")) {
+      saveAdminSession({ role: match.role });
       setIsAuthenticated(true);
-      localStorage.setItem("messhub.nutritionist.auth", "true");
       setAuthError("");
     } else {
       setAuthError("Invalid Nutritionist Authorization Key");
+      if ("vibrate" in navigator) navigator.vibrate(200);
     }
   };
 
   const handleLogout = () => {
+    clearAdminSession();
     setIsAuthenticated(false);
-    localStorage.removeItem("messhub.nutritionist.auth");
   };
 
   const toggleDetails = (id: string) => {
@@ -371,6 +412,16 @@ function NutritionistPortalPage() {
     }
 
     if (!db || !selectedDate) return;
+
+    // Build clear confirmation prompt detailing detected changes
+    const diffMessage = detailedChangesSummary.length > 0 
+      ? `\n\nDetected Modifications:\n` + detailedChangesSummary.slice(0, 8).join("\n") + (detailedChangesSummary.length > 8 ? "\n  ...and more updates" : "")
+      : "";
+
+    if (!confirm(`🚀 Publish changes for ${selectedMess.toUpperCase()} on ${selectedDate}?${diffMessage}`)) {
+      return;
+    }
+
     const firestoreDb = db;
     setIsSaving(true);
 
@@ -389,6 +440,15 @@ function NutritionistPortalPage() {
       // Also persist to recurring weekday template for backward compatibility
       const dayIndex = new Date(selectedDate + "T00:00:00").getDay();
       await saveDynamicMessMenu(selectedMess, dayIndex, menu as DayMenuWithNutrition);
+
+      // Create an audit log record for tracking what was changed
+      await addDoc(collection(firestoreDb, "admin_audit_logs"), {
+        messId: selectedMess,
+        action: "Nutrition Studio Menu Updated",
+        details: `Updated nutrition profile for date ${selectedDate}. Changes: ${detailedChangesSummary.length} adjustments made.`,
+        operatorRole: "nutritionist",
+        timestamp: serverTimestamp(),
+      });
 
       setInitialLoadedMenu(JSON.parse(JSON.stringify(menu)));
       alert(`✅ Nutrition Studio Published!\n\nAll primary macros, recipes, and nutritional profiles for date ${selectedDate} are live in Firebase.`);
@@ -534,29 +594,6 @@ function NutritionistPortalPage() {
             </div>
           </div>
 
-          {/* Sync & Seeder Action Card */}
-          <div className="rounded-2xl border border-border bg-[#fbf7f2] p-3.5 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Database Seeder
-              </span>
-            </div>
-            <p className="text-[11px] text-muted-foreground leading-snug">
-              Auto-generate regional cuisine tags, macro calibrations, and origin profiles across all facilities.
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                if (confirm("Populate all official messes & dates with enriched regional tags and macro/micro breakdowns in Firestore?")) {
-                  seedAllNutritionMenusToFirestore();
-                }
-              }}
-              className="w-full bg-white border border-border hover:border-emerald-500 hover:text-emerald-700 text-slate-700 font-bold py-2 rounded-xl text-[11px] transition shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <span>⚡</span> Auto-Seed All Facilities
-            </button>
-          </div>
-
         </div>
 
         {/* Sidebar Footer Controls */}
@@ -661,20 +698,38 @@ function NutritionistPortalPage() {
           ))}
         </div>
 
-        {/* Change Indicator Status Banner */}
-        <div className="flex items-center justify-between mb-5 px-1">
-          <span className="text-xs font-bold text-muted-foreground">
-            Configuring Date: <span className="text-foreground underline">{selectedDate}</span> ({totalDishesCount} Registered Dishes)
-          </span>
+        {/* Change Indicator Status Banner & Diff Inspector */}
+        <div className="bg-white border border-border rounded-2xl p-4 mb-6 shadow-2xs space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-muted-foreground">
+              Configuring Date: <span className="text-foreground underline">{selectedDate}</span> ({totalDishesCount} Registered Dishes)
+            </span>
 
-          {hasUnsavedChanges ? (
-            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-300 px-2.5 py-0.5 rounded-full animate-pulse">
-              <AlertCircle className="w-3.5 h-3.5 text-amber-600" /> Pending Changes Unsaved
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-0.5 rounded-full">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Synced with Live Platform
-            </span>
+            {hasUnsavedChanges ? (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-300 px-2.5 py-0.5 rounded-full animate-pulse">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-600" /> {detailedChangesSummary.length} Unsaved Adjustment(s) Pending
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-0.5 rounded-full">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Synced with Live Platform
+              </span>
+            )}
+          </div>
+
+          {/* Detailed Changes Inspector Box */}
+          {hasUnsavedChanges && detailedChangesSummary.length > 0 && (
+            <div className="mt-2 bg-[#fbf7f2] border border-amber-200/80 p-3 rounded-xl space-y-1">
+              <span className="text-[10px] font-black uppercase text-amber-900 tracking-wider block mb-1">
+                🔍 Live Diff Inspector (Pending Changes):
+              </span>
+              <ul className="space-y-0.5 max-h-28 overflow-y-auto">
+                {detailedChangesSummary.map((diffLine, i) => (
+                  <li key={i} className="text-[11px] font-medium text-slate-700 font-mono">
+                    {diffLine}
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
 
