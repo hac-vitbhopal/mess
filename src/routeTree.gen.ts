@@ -12,7 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SuperAdminRouteImport } from './routes/super-admin'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as NutritionistRouteImport } from './routes/nutritionist'
-import { Route as ComplaintsRouteImport } from './routes/complaints'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AddMessRouteImport } from './routes/add-mess'
 import { Route as AdminNotificationsRouteImport } from './routes/AdminNotifications'
@@ -31,11 +30,6 @@ const PrivacyRoute = PrivacyRouteImport.update({
 const NutritionistRoute = NutritionistRouteImport.update({
   id: '/nutritionist',
   path: '/nutritionist',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ComplaintsRoute = ComplaintsRouteImport.update({
-  id: '/complaints',
-  path: '/complaints',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -64,7 +58,6 @@ export interface FileRoutesByFullPath {
   '/AdminNotifications': typeof AdminNotificationsRoute
   '/add-mess': typeof AddMessRoute
   '/admin': typeof AdminRoute
-  '/complaints': typeof ComplaintsRoute
   '/nutritionist': typeof NutritionistRoute
   '/privacy': typeof PrivacyRoute
   '/super-admin': typeof SuperAdminRoute
@@ -74,7 +67,6 @@ export interface FileRoutesByTo {
   '/AdminNotifications': typeof AdminNotificationsRoute
   '/add-mess': typeof AddMessRoute
   '/admin': typeof AdminRoute
-  '/complaints': typeof ComplaintsRoute
   '/nutritionist': typeof NutritionistRoute
   '/privacy': typeof PrivacyRoute
   '/super-admin': typeof SuperAdminRoute
@@ -85,7 +77,6 @@ export interface FileRoutesById {
   '/AdminNotifications': typeof AdminNotificationsRoute
   '/add-mess': typeof AddMessRoute
   '/admin': typeof AdminRoute
-  '/complaints': typeof ComplaintsRoute
   '/nutritionist': typeof NutritionistRoute
   '/privacy': typeof PrivacyRoute
   '/super-admin': typeof SuperAdminRoute
@@ -97,7 +88,6 @@ export interface FileRouteTypes {
     | '/AdminNotifications'
     | '/add-mess'
     | '/admin'
-    | '/complaints'
     | '/nutritionist'
     | '/privacy'
     | '/super-admin'
@@ -107,7 +97,6 @@ export interface FileRouteTypes {
     | '/AdminNotifications'
     | '/add-mess'
     | '/admin'
-    | '/complaints'
     | '/nutritionist'
     | '/privacy'
     | '/super-admin'
@@ -117,7 +106,6 @@ export interface FileRouteTypes {
     | '/AdminNotifications'
     | '/add-mess'
     | '/admin'
-    | '/complaints'
     | '/nutritionist'
     | '/privacy'
     | '/super-admin'
@@ -128,7 +116,6 @@ export interface RootRouteChildren {
   AdminNotificationsRoute: typeof AdminNotificationsRoute
   AddMessRoute: typeof AddMessRoute
   AdminRoute: typeof AdminRoute
-  ComplaintsRoute: typeof ComplaintsRoute
   NutritionistRoute: typeof NutritionistRoute
   PrivacyRoute: typeof PrivacyRoute
   SuperAdminRoute: typeof SuperAdminRoute
@@ -155,13 +142,6 @@ declare module '@tanstack/react-router' {
       path: '/nutritionist'
       fullPath: '/nutritionist'
       preLoaderRoute: typeof NutritionistRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/complaints': {
-      id: '/complaints'
-      path: '/complaints'
-      fullPath: '/complaints'
-      preLoaderRoute: typeof ComplaintsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -200,7 +180,6 @@ const rootRouteChildren: RootRouteChildren = {
   AdminNotificationsRoute: AdminNotificationsRoute,
   AddMessRoute: AddMessRoute,
   AdminRoute: AdminRoute,
-  ComplaintsRoute: ComplaintsRoute,
   NutritionistRoute: NutritionistRoute,
   PrivacyRoute: PrivacyRoute,
   SuperAdminRoute: SuperAdminRoute,

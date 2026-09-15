@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { db } from "@/lib/firebase";
-import { StudentFeedbackSchema, DishFeedbackSchema, checkRateLimit } from "@/lib/security";
-import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore";
+import { DishFeedbackSchema, checkRateLimit } from "@/lib/security";
+import { collection, query, where, orderBy, onSnapshot, doc, getDoc, addDoc, serverTimestamp } from "firebase/firestore";
+import { z } from "zod";
 import {
   MEAL_DEFS,
   clearProfile,
   countdownTo,
   currentAndNextMeal,
-  dateKey,
   formatTime,
   greetingFor,
   mealStatus,
@@ -21,6 +21,13 @@ import {
 } from "@/lib/messhub";
 import { Link } from "@tanstack/react-router";
 import { Star, Clock, Sparkles, ChevronDown, ChevronUp, Flame, Dumbbell, Wheat, ChefHat, Info } from "lucide-react";
+
+const CATEGORIES = ["Food quality", "Hygiene", "Timing", "Staff behavior", "Other"] as const;
+
+const complaintSchema = z.object({
+  category: z.enum(CATEGORIES),
+  message: z.string().trim().min(10, "Please describe the issue (min 10 chars)").max(3000),
+});
 
 export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; onSignOut: () => void }) {
   const [now, setNow] = useState(() => new Date());
@@ -138,8 +145,12 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
     syncToken();
   }, [profile.messId, profile.name]);
 
+  // Complaint / Issue form state variables
+  const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("Food quality");
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [complaintError, setComplaintError] = useState<string | null>(null);
+  const [complaintSent, setComplaintSent] = useState(false);
 
   const messMeta: Record<string, { name: string; subtitle?: string }> = {
     jmb: { name: "JMB", subtitle: "Boys" },
@@ -222,7 +233,13 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
 
   async function handleFeedbackSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!feedbackMessage.trim()) return;
+    setComplaintError(null);
+
+    const parsed = complaintSchema.safeParse({ category, message: feedbackMessage });
+    if (!parsed.success) {
+      setComplaintError(parsed.error.issues[0]?.message ?? "Invalid input");
+      return;
+    }
 
     setIsSubmittingFeedback(true);
     const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyqJc_wS6XcWnqCjetwPtnTD-OMePvEu0NoI64EbEBxG1p2Jx5mL_iTtWgvx4MsKMb2/exec";
@@ -231,7 +248,8 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
     formData.append("name", profile.name || "VIT Student");
     formData.append("email", profile.email || "N/A");
     formData.append("mess", messLabelStr);
-    formData.append("message", feedbackMessage.trim());
+    // Combine category and message so it formats cleanly in your "Issue / Feedback" sheet column
+    formData.append("message", `[Complaint - ${category.toUpperCase()}] ${feedbackMessage.trim()}`);
 
     try {
       await fetch(GOOGLE_SCRIPT_URL, {
@@ -241,11 +259,14 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
         body: formData.toString(),
       });
 
-      alert("Thank you! Your feedback has been recorded and sent to the administration.");
+      setComplaintSent(true);
       setFeedbackMessage("");
+      setTimeout(() => {
+        setComplaintSent(false);
+      }, 4000);
     } catch (err) {
-      console.error("Feedback submission error:", err);
-      alert("Network error. Could not connect to the feedback server.");
+      console.error("Failed to submit complaint:", err);
+      setComplaintError("Failed to send complaint. Please check your network connection.");
     } finally {
       setIsSubmittingFeedback(false);
     }
@@ -464,40 +485,65 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
         <DailyItemFeedbackCard profile={profile} currentMenu={currentMenu} />
       </section>
 
-      {/* General Bug / Issue Feedback Form */}
+      {/* General Bug / Issue Feedback & Complaint Form */}
       <section className="mt-8 px-5">
         <div className="rounded-2xl border border-border bg-card p-5 shadow-card w-full">
-          <h3 className="font-bold text-foreground text-sm tracking-tight">Report an Issue or Feedback</h3>
-          <p className="text-[11px] text-muted-foreground mt-0.5">Noticed a menu glitch, layout bug, or want to suggest a feature? Let us know.</p>
+          <h3 className="font-bold text-foreground text-sm tracking-tight">Submit a Complaint / Report Issue</h3>
+          <p className="text-[11px] text-muted-foreground mt-0.5">Only your mess admin sees this. Be respectful.</p>
           
-          <form onSubmit={handleFeedbackSubmit} className="mt-3.5 space-y-2">
-            <div>
-              <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Reporter</span>
-              <div className="text-xs font-semibold text-foreground mt-0.5 bg-muted/40 rounded-lg px-3 py-2 border border-border/40">
-                {profile.name} <span className="opacity-50 font-normal">({activeMess.name})</span>
+          {complaintSent ? (
+            <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-5 text-center">
+              <div className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-emerald-500 text-lg text-white font-bold">✓</div>
+              <h4 className="mt-2 text-sm font-bold text-foreground">Complaint received</h4>
+              <p className="mt-0.5 text-xs text-muted-foreground">Your mess admin has been notified.</p>
+            </div>
+          ) : (
+            <form onSubmit={handleFeedbackSubmit} className="mt-4 space-y-3.5">
+              <div>
+                <span className="mb-2 block text-xs font-semibold text-foreground">Category</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {CATEGORIES.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setCategory(c)}
+                      className={`rounded-full border px-3 py-1 text-xs transition cursor-pointer ${
+                        category === c ? "border-primary bg-primary text-primary-foreground font-bold" : "border-border bg-background text-muted-foreground"
+                      }`}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-            
-            <div>
-              <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Query / Description</span>
-              <textarea
-                rows={3}
-                required
-                value={feedbackMessage}
-                onChange={(e) => setFeedbackMessage(e.target.value)}
-                placeholder="Describe the bug, wrong menu item, or feedback request..."
-                className="mt-1 w-full resize-none rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium outline-none focus:border-primary transition"
-              />
-            </div>
-            
-            <button
-              type="submit"
-              disabled={isSubmittingFeedback || !feedbackMessage.trim()}
-              className="w-full rounded-xl bg-foreground text-background px-3 py-2.5 text-xs font-bold active:scale-[0.99] transition disabled:opacity-40 cursor-pointer"
-            >
-              {isSubmittingFeedback ? "Submitting Ticket..." : "Submit Response"}
-            </button>
-          </form>
+
+              <div>
+                <span className="mb-1.5 block text-xs font-semibold text-foreground">What happened?</span>
+                <textarea
+                  rows={4}
+                  value={feedbackMessage}
+                  onChange={(e) => setFeedbackMessage(e.target.value.slice(0, 3000))}
+                  placeholder="Describe the issue (min 10 chars)…"
+                  className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2.5 text-xs font-medium outline-none focus:border-primary transition"
+                />
+                <div className="mt-1 text-right text-[10px] text-muted-foreground">{feedbackMessage.length} / 3000</div>
+              </div>
+
+              {complaintError && (
+                <div role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive font-medium">
+                  {complaintError}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isSubmittingFeedback || feedbackMessage.trim().length < 10}
+                className="w-full rounded-xl bg-foreground text-background px-3 py-2.5 text-xs font-bold active:scale-[0.99] transition disabled:opacity-40 cursor-pointer shadow-sm"
+              >
+                {isSubmittingFeedback ? "Sending..." : "Send complaint"}
+              </button>
+            </form>
+          )}
         </div>
       </section>
 
@@ -700,7 +746,6 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
   );
 }
 
-// 🍲 UPDATED MEAL SHEET MODAL WITH DYNAMIC "KNOW MORE" DROPDOWN
 function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items: any[]; date: Date; onClose: () => void }) {
   const def = MEAL_DEFS.find((m) => m.key === mealKey)!;
   const [expandedDishes, setExpandedDishes] = useState<Record<number, boolean>>({});
@@ -743,7 +788,6 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
                 const name = isObject ? item.name : item;
                 const isExpanded = !!expandedDishes[idx];
 
-                // Filter micronutrients that have a value > 0
                 const activeMicronutrients = isObject && item.micronutrients ? Object.entries(item.micronutrients).filter(([_, val]) => typeof val === "number" && val > 0) : [];
 
                 return (
@@ -766,7 +810,6 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
                       )}
                     </div>
 
-                    {/* Primary 3 Macros Display (Energy, Protein, Carbs) + Serving Size */}
                     {isObject && (
                       <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-semibold pt-0.5 flex-wrap">
                         {item.servingSize && <span className="bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-md border border-slate-200">🍽️ {item.servingSize}</span>}
@@ -776,11 +819,8 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
                       </div>
                     )}
 
-                    {/* Expanded Know More Dropdown */}
                     {isExpanded && isObject && (
                       <div className="mt-2 pt-3 border-t border-border/80 space-y-3 text-xs animate-fade-in bg-card p-3 rounded-xl border">
-                        
-                        {/* Cultural Profile / Trivia */}
                         {(item.description || item.originStory || item.funFact || item.regionalTag) && (
                           <div className="space-y-1">
                             <span className="text-[9px] uppercase font-bold text-muted-foreground flex items-center gap-1">
@@ -793,18 +833,6 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
                           </div>
                         )}
 
-                        {/* Kitchen Recipe / Ingredients View
-                        {item.recipe && (item.recipe.ingredients || item.recipe.method) && (
-                          <div className="space-y-1 pt-2 border-t border-border/60">
-                            <span className="text-[9px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                              <ChefHat className="w-3 h-3 text-amber-600" /> Kitchen Preparation Specs
-                            </span>
-                            {item.recipe.ingredients && <p className="text-[11px] text-foreground"><strong>Ingredients:</strong> {item.recipe.ingredients}</p>}
-                            {item.recipe.method && <p className="text-[11px] text-muted-foreground"><strong>Method:</strong> {item.recipe.method}</p>}
-                          </div>
-                        )} */}
-
-                        {/* Filtered Active Micronutrients */}
                         {activeMicronutrients.length > 0 && (
                           <div className="space-y-1 pt-2 border-t border-border/60">
                             <span className="text-[9px] uppercase font-bold text-muted-foreground flex items-center gap-1">
@@ -819,7 +847,6 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
                             </div>
                           </div>
                         )}
-
                       </div>
                     )}
                   </li>

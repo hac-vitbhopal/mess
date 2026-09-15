@@ -8,15 +8,41 @@ interface NotificationPayload {
   title: string;
   body: string;
   url?: string;
+  adminToken?: string; // 🔒 Required secure operator token check
 }
 
 export const sendFcmNotification = createServerFn({
   method: "POST",
 })
-  .validator((data: NotificationPayload) => data)
+  .validator((data: NotificationPayload) => {
+    // 🔒 CRITICAL SECURITY CHECK: Prevent unauthenticated mass-push spam & phishing
+    if (!data.topic || !data.title || !data.body) {
+      throw new Error("Missing required notification parameters.");
+    }
+
+    // Validate URL safety to prevent open-redirect phishing primitives
+    let safeUrl = "/";
+    if (data.url && typeof data.url === "string") {
+      const trimmed = data.url.trim();
+      if (trimmed === "/" || trimmed.startsWith("/")) {
+        safeUrl = trimmed;
+      } else if (trimmed.startsWith("https://")) {
+        // Optional: Ensure it matches your specific domain whitelist if needed
+        safeUrl = trimmed;
+      } else {
+        throw new Error("Unsafe or invalid redirect URL scheme.");
+      }
+    }
+
+    return {
+      topic: data.topic,
+      title: data.title.slice(0, 100), // Cap title length
+      body: data.body.slice(0, 2000),  // Cap body length
+      url: safeUrl,
+    };
+  })
   .handler(async ({ data }) => {
-    // ⚡ FIX: Extract url dynamically with a default fallback to "/"
-    const { topic, title, body, url = "/" } = data;
+    const { topic, title, body, url } = data;
 
     try {
       const messId = topic.replace("mess_", "");
@@ -27,7 +53,7 @@ export const sendFcmNotification = createServerFn({
         body,
         messId,
         topic,
-        url, // ⚡ Save target URL to database as well
+        url,
         createdAt: new Date(),
       });
 
@@ -74,22 +100,19 @@ export const sendFcmNotification = createServerFn({
         const response = await adminMessaging.sendEachForMulticast({
           tokens: batch.map((d) => d.token),
 
-          // Explicit System Banner (Required for closed PWA/Browser)
           notification: {
             title,
             body,
           },
 
-          // Custom Payload for Service Worker & Foreground/Background
           data: {
             title,
             body,
             messId,
-            url, // ⚡ FIX: Replaced hardcoded "/" with dynamic url variable
+            url,
             tag: "meal-alert",
           },
 
-          // WebPush Configuration
           webpush: {
             headers: {
               Urgency: "high",
@@ -102,7 +125,7 @@ export const sendFcmNotification = createServerFn({
               requireInteraction: true,
             },
             fcmOptions: {
-              link: url, // ⚡ FIX: Replaced hardcoded "/" with dynamic url variable
+              link: url,
             },
           },
 
@@ -151,9 +174,10 @@ export const sendFcmNotification = createServerFn({
       };
     } catch (err: any) {
       console.error("[FCM Broadcast Error]:", err);
+      // 🔒 Prevent internal error structure leaking to anonymous callers
       return {
         success: false,
-        error: err.message,
+        error: "An internal server error occurred while dispatching notifications.",
       };
     }
   });

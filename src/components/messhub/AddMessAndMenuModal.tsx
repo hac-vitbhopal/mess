@@ -52,13 +52,14 @@ export function AddMessAndMenuModal({ isOpen, onClose }: { isOpen: boolean; onCl
       // Save menu item document to Firestore using standard messhub convention
       const docId = `${messId.toLowerCase().trim()}_day_${selectedDay}`;
       if (db) {
+        // ⚡ FIX: Added { merge: true } to prevent wiping out other meals in the day's menu document
         await setDoc(doc(db, "mess_menus", docId), {
           ...currentDayMenu,
           messId: messId.toLowerCase().trim(),
           dayIndex: selectedDay,
           updatedAt: serverTimestamp(),
           updatedByRole: "super-admin"
-        });
+        }, { merge: true });
       }
 
       alert(`✅ Successfully created/updated menu for ${messName} (${selectedDay === 1 ? "Monday" : "Day " + selectedDay})!`);

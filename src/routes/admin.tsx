@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState, useEffect, useRef } from "react";
 import * as XLSX from "xlsx";
 import {
-  DEFAULT_WEEKLY,
+  // DEFAULT_WEEKLY,
   MEAL_DEFS,
   MESSES,
   dateKey,
@@ -11,9 +11,9 @@ import {
   getAdminSession,
   saveAdminSession,
   clearAdminSession,
-  ADMIN_AUTH_KEYS,
+  verifyAdminPasscode,
   sendBroadcast,
-  HARDCODED_WEEKLY_MENUS,
+  // HARDCODED_WEEKLY_MENUS,
   toggleFeedbackStatus,
   saveFirestoreOverride,
   deleteFirestoreOverride,
@@ -24,6 +24,7 @@ import {
   type ItemFeedback,
   type SpecialOverride,
   type NutritionDishItem,
+  type Overrides,
 } from "@/lib/messhub";
 import { db } from "@/lib/firebase";
 import { 
@@ -78,8 +79,6 @@ export const Route = createFileRoute("/admin")({
   }),
   component: AdminGatekeeper,
 });
-
-export type Overrides = Record<string, { label: string; menu: DayMenu }>;
 
 const MEAL_TYPES = ["breakfast", "lunch", "snacks", "dinner"] as const;
 
@@ -158,8 +157,7 @@ function AdminGatekeeper() {
 
   function handleVerifyPasscode(e: React.FormEvent) {
     e.preventDefault();
-    const cleanKey = passcode.trim();
-    const matchedAuth = ADMIN_AUTH_KEYS[cleanKey];
+    const matchedAuth = verifyAdminPasscode(passcode);
 
     if (matchedAuth) {
       setAuthError(false);
@@ -240,9 +238,11 @@ function AdminGatekeeper() {
 /* ---------------- Sidebar Dashboard Layout ---------------- */
 
 function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut: () => void }) {
-  const [overrides, setOverrides] = useState<Overrides>(() => getOverrides(messId));
+  const [overrides, setOverrides] = useState<Record<string, { label: string; menu: DayMenu }>>(() => {
+    const raw = getOverrides(messId);
+    return raw && typeof raw === "object" ? (raw as Record<string, { label: string; menu: DayMenu }>) : {};
+  });
 
-  // Date selection state
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -255,11 +255,9 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
   const [isImportingExcel, setIsImportingExcel] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Firestore Real-Time Subscriptions
   const [firestoreOverrides, setFirestoreOverrides] = useState<SpecialOverride[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
-  // Menu States
   const [menu, setMenu] = useState<AdminDayMenu>({
     breakfast: [],
     lunch: [],
@@ -270,14 +268,12 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
   const [isLoadingMenu, setIsLoadingMenu] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Broadcast States
   const [broadcastTitle, setBroadcastTitle] = useState("");
   const [broadcastBody, setBroadcastBody] = useState("");
   const [isBroadcasting, setIsBroadcasting] = useState(false);
 
   const mess = MESSES.find((m) => m.id === messId) || { id: messId, name: messId };
 
-  // Pending Changes Calculation
   const pendingSummary = useMemo(() => {
     if (!initialLoadedMenu) return [];
     const changes: { meal: string; text: string }[] = [];
@@ -303,7 +299,6 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
 
   const hasUnsavedChanges = pendingSummary.length > 0;
 
-  // Real-time onSnapshot for Special Overrides
   useEffect(() => {
     if (!db) return;
     const firestoreDb = db;
@@ -311,7 +306,7 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const list: SpecialOverride[] = [];
-      const overrideObj: Overrides = {};
+      const overrideObj: Record<string, { label: string; menu: DayMenu }> = {};
       
       snapshot.forEach((doc) => {
         const data = doc.data() as SpecialOverride;
@@ -326,7 +321,6 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
     return () => unsubscribe();
   }, [messId]);
 
-  // Real-time onSnapshot for Admin Activity Logs
   useEffect(() => {
     if (!db) return;
     const firestoreDb = db;
@@ -345,10 +339,11 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
     return () => unsub();
   }, [messId]);
 
-  // Load Menu strictly by selectedDate (YYYY-MM-DD) from `daily_menus`
+  // Load Menu strictly by selectedDate with race condition protection
   useEffect(() => {
     if (!db || !selectedDate || !messId) return;
     const firestoreDb = db;
+    let isMounted = true;
 
     async function loadDailyMenu() {
       setIsLoadingMenu(true);
@@ -356,6 +351,8 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
         const docId = `${messId}_${selectedDate}`;
         const dailyDocRef = doc(firestoreDb, "daily_menus", docId);
         const dailySnap = await getDoc(dailyDocRef);
+
+        if (!isMounted) return;
 
         if (dailySnap.exists()) {
           const data = dailySnap.data();
@@ -373,13 +370,17 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
           setInitialLoadedMenu(JSON.parse(JSON.stringify(emptyMenu)));
         }
       } catch (err) {
-        console.error("Error loading daily menu from Firestore:", err);
+        if (isMounted) console.error("Error loading daily menu from Firestore:", err);
       } finally {
-        setIsLoadingMenu(false);
+        if (isMounted) setIsLoadingMenu(false);
       }
     }
 
     loadDailyMenu();
+
+    return () => {
+      isMounted = false;
+    };
   }, [messId, selectedDate]);
 
   function sanitizeItem(item: any): AdminDishItem {
@@ -503,7 +504,6 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
     }
   }
 
-  // 📂 Excel / CSV Import Function
   async function handleExcelImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !db) return;
@@ -686,7 +686,7 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
         <div className="flex items-center gap-2.5">
           <button
             onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
-            className="p-1.5 rounded-xl border border-border bg-background"
+            className="p-1.5 rounded-xl border border-border bg-background cursor-pointer"
             aria-label="Toggle Navigation"
           >
             {isMobileSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -699,7 +699,7 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
 
         <button
           onClick={() => { clearAdminSession(); onSignOut(); }}
-          className="text-xs font-bold text-destructive flex items-center gap-1 border border-border px-2.5 py-1 rounded-xl"
+          className="text-xs font-bold text-destructive flex items-center gap-1 border border-border px-2.5 py-1 rounded-xl cursor-pointer"
         >
           <LogOut className="w-3.5 h-3.5" /> Exit
         </button>
@@ -726,7 +726,7 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
             </div>
             <button
               onClick={() => setIsMobileSidebarOpen(false)}
-              className="md:hidden p-1 rounded-lg border border-border text-muted-foreground"
+              className="md:hidden p-1 rounded-lg border border-border text-muted-foreground cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -1300,6 +1300,7 @@ function AdminDishFeedbackViewer({ messId }: { messId: MessId }) {
   useEffect(() => {
     if (!db) return;
     const firestoreDb = db;
+    let fallbackUnsub: (() => void) | null = null;
 
     const indexedQuery = query(
       collection(firestoreDb, "item_feedback"),
@@ -1307,7 +1308,7 @@ function AdminDishFeedbackViewer({ messId }: { messId: MessId }) {
       orderBy("createdAt", "desc")
     );
 
-    const unsub = onSnapshot(
+    const primaryUnsub = onSnapshot(
       indexedQuery,
       (snap) => {
         const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as ItemFeedback));
@@ -1319,7 +1320,7 @@ function AdminDishFeedbackViewer({ messId }: { messId: MessId }) {
           collection(firestoreDb, "item_feedback"),
           where("messId", "==", messId)
         );
-        onSnapshot(fallbackQuery, (snap) => {
+        fallbackUnsub = onSnapshot(fallbackQuery, (snap) => {
           const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as ItemFeedback));
           list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
           setFeedbacks(list);
@@ -1327,7 +1328,10 @@ function AdminDishFeedbackViewer({ messId }: { messId: MessId }) {
       }
     );
 
-    return () => unsub();
+    return () => {
+      primaryUnsub();
+      if (fallbackUnsub) fallbackUnsub();
+    };
   }, [messId]);
 
   const filteredFeedbacks = feedbacks.filter((f) => {
@@ -1509,7 +1513,7 @@ function OverrideEditor({
   const [label, setLabel] = useState(existing?.label ?? "Special menu");
   const [startTime, setStartTime] = useState(existingOverrideData?.startTime || "07:30");
   const [endTime, setEndTime] = useState(existingOverrideData?.endTime || "22:00");
-  const initialMenu: DayMenu = existing?.menu ?? DEFAULT_WEEKLY[0];
+  const initialMenu: DayMenu = existing?.menu ?? { breakfast: [], lunch: [], snacks: [], dinner: [] };
   const [menu, setMenu] = useState<DayMenu>(initialMenu);
 
   function setItems(meal: MealKey, text: string) {

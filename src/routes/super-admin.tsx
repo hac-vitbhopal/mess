@@ -2,15 +2,14 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp, query, onSnapshot, orderBy } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, limit, doc, getDoc } from "firebase/firestore";
 import { 
   getAdminSession, 
   saveAdminSession, 
   clearAdminSession, 
-  ADMIN_AUTH_KEYS,
+  verifyAdminPasscode,
   MESSES as DEFAULT_STATIC_MESSES,
   MEAL_DEFS,
-  HARDCODED_WEEKLY_MENUS,
   deleteBroadcasts,
   toggleFeedbackStatus,
   type MealKey,
@@ -34,7 +33,6 @@ export const Route = createFileRoute("/super-admin")({
   component: SuperAdminGatekeeper,
 });
 
-// Helper to log Super Admin root activity into Firestore
 async function logSuperAdminActivity(messId: string, action: string, details: string) {
   if (!db) return;
   try {
@@ -60,7 +58,6 @@ function SuperAdminGatekeeper() {
 
   useEffect(() => {
     const activeSession = getAdminSession();
-    // 🔒 Enforce role isolation: If an admin or nutritionist tries to use super-admin route, clear session
     if (activeSession && activeSession.role !== "super-admin") {
       clearAdminSession();
       setSession(null);
@@ -78,8 +75,7 @@ function SuperAdminGatekeeper() {
 
   function handleVerifyPasscode(e: React.FormEvent) {
     e.preventDefault();
-    const cleanKey = passcode.trim();
-    const matchedAuth = ADMIN_AUTH_KEYS[cleanKey];
+    const matchedAuth = verifyAdminPasscode(passcode);
 
     if (matchedAuth && matchedAuth.role === "super-admin") {
       setAuthError(false);
@@ -170,7 +166,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // ⚡ Live Firebase Sync Listeners
+  // ⚡ Bounded Firebase Sync Listeners
   useEffect(() => {
     if (!db) return;
 
@@ -179,31 +175,37 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
       setDynamicMesses(list);
     });
 
-    const unsubStudents = onSnapshot(collection(db, "registered_students"), (snap) => {
+    const studentsQuery = query(collection(db, "registered_students"), limit(100));
+    const unsubStudents = onSnapshot(studentsQuery, (snap) => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       list.sort((a: any, b: any) => (b.lastActiveAt?.toDate?.()?.getTime() || 0) - (a.lastActiveAt?.toDate?.()?.getTime() || 0));
       setStudents(list);
     });
 
-    const unsubFeedbacks = onSnapshot(query(collection(db, "item_feedback"), orderBy("createdAt", "desc")), (snap) => {
+    const feedbacksQuery = query(collection(db, "item_feedback"), orderBy("createdAt", "desc"), limit(100));
+    const unsubFeedbacks = onSnapshot(feedbacksQuery, (snap) => {
       setFeedbacks(snap.docs.map(d => ({ id: d.id, ...d.data() } as ItemFeedback)));
     });
 
-    const unsubMenu = onSnapshot(query(collection(db, "mess_menus"), orderBy("updatedAt", "desc")), (snap) => {
+    const menuQuery = query(collection(db, "mess_menus"), orderBy("updatedAt", "desc"), limit(50));
+    const unsubMenu = onSnapshot(menuQuery, (snap) => {
       setMenuLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }, () => {});
 
-    const unsubBroadcasts = onSnapshot(query(collection(db, "broadcasts"), orderBy("createdAt", "desc")), (snap) => {
+    const broadcastsQuery = query(collection(db, "broadcasts"), orderBy("createdAt", "desc"), limit(50));
+    const unsubBroadcasts = onSnapshot(broadcastsQuery, (snap) => {
       setBroadcastList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    const unsubClicks = onSnapshot(query(collection(db, "broadcast_clicks")), (snap) => {
+    const clicksQuery = query(collection(db, "broadcast_clicks"), limit(100));
+    const unsubClicks = onSnapshot(clicksQuery, (snap) => {
       const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       logs.sort((a: any, b: any) => (b.clickedAt?.toDate?.()?.getTime() || 0) - (a.clickedAt?.toDate?.()?.getTime() || 0));
       setClickLogs(logs);
     });
 
-    const unsubAudit = onSnapshot(query(collection(db, "admin_audit_logs"), orderBy("timestamp", "desc")), (snap) => {
+    const auditQuery = query(collection(db, "admin_audit_logs"), orderBy("timestamp", "desc"), limit(100));
+    const unsubAudit = onSnapshot(auditQuery, (snap) => {
       setAuditLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }, (err) => {
       console.warn("Audit logs listener fallback:", err);
@@ -280,28 +282,58 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
         dinner: { title: "🌙 Dinner Window Open!", bodyPrefix: "Ready to wrap up your day? Tonight's spread: " },
       };
 
-      const template = pushTemplates[selectedMealKey] || { title: `🍽️ ${mealName} is Live!`, bodyPrefix: "Check out today's selections: " };
+      const template = pushTemplates[selectedMealKey] || { 
+        title: `🍽️ ${mealName} is Live!`, 
+        bodyPrefix: "Check out today's selections: " 
+      };
+
+      const now = new Date();
+      const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
       for (const mess of allMesses) {
-        const items = HARDCODED_WEEKLY_MENUS[mess.id]?.[currentWeekday]?.[selectedMealKey] ?? [];
-        const itemString = items.slice(0, 3).join(", ") + (items.length > 3 ? "..." : "");
-        const finalBodyText = `${template.bodyPrefix}${itemString || "Freshly cooked menu choices"}. Come down to the hall!`;
+        let items: string[] = [];
 
-        await addDoc(collection(db, "broadcasts"), {
-          messId: mess.id,
-          title: template.title,
-          body: finalBodyText,
-          createdAt: serverTimestamp(),
-        });
+        // 1. Try pulling from live daily_menus first
+        try {
+          const dailyDoc = await getDoc(doc(db, "daily_menus", `${mess.id}_${todayDateStr}`));
+          if (dailyDoc.exists()) {
+            const data = dailyDoc.data();
+            const mealList = data?.[selectedMealKey] || [];
+            items = mealList.map((d: any) => (typeof d === "string" ? d : d.name)).filter(Boolean);
+          }
+        } catch (e) {
+          console.warn(`Could not fetch daily menu for ${mess.id}:`, e);
+        }
+
+        // 2. Fallback to recurring template mess_menus
+        if (items.length === 0) {
+          try {
+            const recurringDoc = await getDoc(doc(db, "mess_menus", `${mess.id}_day_${currentWeekday}`));
+            if (recurringDoc.exists()) {
+              const data = recurringDoc.data();
+              const mealList = data?.[selectedMealKey] || [];
+              items = mealList.map((d: any) => (typeof d === "string" ? d : d.name)).filter(Boolean);
+            }
+          } catch (e) {
+            console.warn(`Could not fetch recurring menu for ${mess.id}:`, e);
+          }
+        }
+
+        const itemSummary = items.length > 0
+          ? items.slice(0, 3).join(", ") + (items.length > 3 ? "..." : "")
+          : "Freshly cooked menu choices";
+
+        const finalBodyText = `${template.bodyPrefix}${itemSummary}. Come down to the hall!`;
 
         await sendFcmNotification({
-          data: { topic: `mess_${mess.id}`, title: template.title, body: finalBodyText }
-        }).catch(() => {});
+          data: { topic: `mess_${mess.id}`, title: template.title, body: finalBodyText, url: "/" }
+        }).catch((e) => console.error("Notification push warning:", e));
       }
 
       await logSuperAdminActivity("all", "Automated Meal Push", `Fired live alert for ${mealName} across all messes`);
-      alert(`🚀 Success! UI updated and background alerts dispatched!`);
+      alert(`🚀 Success! Menu notification dispatched across all devices!`);
     } catch (error) {
+      console.error(error);
       alert("Meal transmission failure.");
     } finally {
       setIsFiringMealAlert(false);
@@ -314,16 +346,15 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
 
     setIsBroadcastingCustom(true);
     try {
-      await addDoc(collection(db, "broadcasts"), {
-        messId: targetMessId,
-        title: broadcastTitle.trim(),
-        body: broadcastBody.trim(),
-        createdAt: serverTimestamp(),
-      });
-
       const targetTopic = targetMessId === "all" ? "mess_all" : `mess_${targetMessId}`;
       const detectedUrlMatch = broadcastBody.match(/(https?:\/\/[^\s]+)/);
-      const targetUrl = detectedUrlMatch ? detectedUrlMatch[0] : "/";
+      let targetUrl = "/";
+      if (detectedUrlMatch) {
+        const candidate = detectedUrlMatch[0];
+        if (candidate.startsWith("https://") || candidate.startsWith("http://")) {
+          targetUrl = candidate;
+        }
+      }
 
       await sendFcmNotification({
         data: { topic: targetTopic, title: broadcastTitle.trim(), body: broadcastBody.trim(), url: targetUrl }
@@ -433,7 +464,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
               </Link>
             </div>
             
-            {/* KPI METRIC CARDS */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <MetricCard title="Registered Students" value={students.length} icon={Users} color="bg-blue-50 text-blue-600" />
               <MetricCard title="Mess Facilities" value={allMesses.length} icon={Utensils} color="bg-purple-50 text-purple-600" />
@@ -443,7 +473,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               
-              {/* 🏢 MESS FACILITY & ASSIGNED ADMINS DIRECTORY */}
               <div className="bg-white rounded-3xl border border-border p-5 shadow-card flex flex-col h-[460px]">
                 <div className="pb-3 border-b border-border flex items-center justify-between">
                   <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
@@ -456,8 +485,8 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                 <div className="mt-3 overflow-y-auto flex-1 space-y-3 pr-1">
                   {allMesses.map((mess) => {
                     const userCount = students.filter(s => s.messId === mess.id).length;
-                    const authKeyEntry = Object.entries(ADMIN_AUTH_KEYS).find(([_, auth]) => auth.messId === mess.id);
-                    const adminRole = authKeyEntry ? authKeyEntry[1].role : "Unassigned";
+                    const authKeyEntry = DEFAULT_STATIC_MESSES.find((m) => m.id === mess.id);
+                    const adminRole = authKeyEntry ? "admin" : "Unassigned";
 
                     return (
                       <div key={mess.id} className="bg-[#fbf7f2] border border-border/70 p-3.5 rounded-2xl flex items-center justify-between gap-3">
@@ -480,7 +509,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                 </div>
               </div>
 
-              {/* 🕒 LIVE MENU AUDIT LOG */}
               <div className="bg-white rounded-3xl border border-border p-5 shadow-card flex flex-col h-[460px]">
                 <div className="pb-3 border-b border-border flex items-center justify-between">
                   <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
@@ -541,7 +569,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               
-              {/* AUTOMATED MEAL PUSH */}
               <div className="rounded-3xl border border-border bg-white p-5 shadow-card flex flex-col justify-between">
                 <div>
                   <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
@@ -580,7 +607,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                 </button>
               </div>
 
-              {/* CUSTOM BROADCAST FORM */}
               <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
                 <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
                   <span>📢</span> Custom Channel Broadcast
@@ -642,7 +668,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
 
             </div>
 
-            {/* ACTIVE BROADCAST CONTROL TABLE */}
             <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
               <div className="flex items-center justify-between pb-3 border-b border-border">
                 <div>
@@ -835,21 +860,33 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/40">
-                      {clickLogs.map((log) => (
-                        <tr key={log.id} className="transition hover:bg-[#fbf7f2]">
-                          <td className="py-3.5 px-4 font-bold text-foreground">{log.userName}</td>
-                          <td className="py-3.5 px-4 font-bold uppercase text-[10px] text-red-500">{log.userMess}</td>
-                          <td className="py-3.5 px-4 text-muted-foreground max-w-[150px] truncate">{log.broadcastTitle}</td>
-                          <td className="py-3.5 px-4">
-                            <a href={log.clickedUrl} target="_blank" rel="noreferrer" className="text-primary underline max-w-[200px] truncate block font-medium">
-                              {log.clickedUrl}
-                            </a>
-                          </td>
-                          <td className="py-3.5 px-4 text-right text-muted-foreground text-[10px]">
-                            {log.clickedAt?.toDate ? log.clickedAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now"}
-                          </td>
-                        </tr>
-                      ))}
+                      {clickLogs.map((log) => {
+                        const rawUrl = log.clickedUrl || "";
+                        const isSafe = rawUrl.startsWith("http://") || rawUrl.startsWith("https://");
+                        const safeHref = isSafe ? rawUrl : "#";
+
+                        return (
+                          <tr key={log.id} className="transition hover:bg-[#fbf7f2]">
+                            <td className="py-3.5 px-4 font-bold text-foreground">{log.userName}</td>
+                            <td className="py-3.5 px-4 font-bold uppercase text-[10px] text-red-500">{log.userMess}</td>
+                            <td className="py-3.5 px-4 text-muted-foreground max-w-[150px] truncate">{log.broadcastTitle}</td>
+                            <td className="py-3.5 px-4">
+                              <a 
+                                href={safeHref} 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                className={`max-w-[200px] truncate block font-medium ${isSafe ? "text-primary underline" : "text-muted-foreground no-underline"}`}
+                                title={isSafe ? rawUrl : "Unsafe URL blocked"}
+                              >
+                                {rawUrl}
+                              </a>
+                            </td>
+                            <td className="py-3.5 px-4 text-right text-muted-foreground text-[10px]">
+                              {log.clickedAt?.toDate ? log.clickedAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now"}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 )}

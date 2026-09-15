@@ -5,11 +5,10 @@ import { doc, getDoc, setDoc, serverTimestamp, addDoc, collection } from "fireba
 import { 
   MESSES, 
   saveDynamicMessMenu, 
-  getDynamicMessMenu, 
-  ADMIN_AUTH_KEYS,
   getAdminSession,
   saveAdminSession,
   clearAdminSession,
+  verifyAdminPasscode,
   type MessId, 
   type DayMenuWithNutrition, 
   type NutritionDishItem,
@@ -128,7 +127,7 @@ function NutritionistPortalPage() {
   });
   const [initialLoadedMenu, setInitialLoadedMenu] = useState<StudioDayMenu | null>(null);
 
-  // 🔒 Secure Session Initialization on Mount (Browser-close safe via sessionStorage)
+  // 🔒 Secure Session Initialization on Mount
   useEffect(() => {
     const activeSession = getAdminSession();
     if (activeSession && (activeSession.role === "nutritionist" || activeSession.role === "super-admin")) {
@@ -139,10 +138,11 @@ function NutritionistPortalPage() {
     }
   }, []);
 
-  // Fetch dynamic menu directly from Firestore daily_menus/{messId}_{YYYY-MM-DD}
+  // Fetch dynamic menu directly from Firestore daily_menus/{messId}_{YYYY-MM-DD} with race cancellation
   useEffect(() => {
     if (!isAuthenticated || !db || !selectedDate) return;
     const firestoreDb = db;
+    let isMounted = true;
 
     async function load() {
       setIsLoading(true);
@@ -151,6 +151,9 @@ function NutritionistPortalPage() {
       try {
         const dailyDocRef = doc(firestoreDb, "daily_menus", `${selectedMess}_${selectedDate}`);
         const dailySnap = await getDoc(dailyDocRef);
+        
+        if (!isMounted) return; // Prevent async race overwrite
+
         if (dailySnap.exists()) {
           firestoreData = dailySnap.data();
         }
@@ -170,12 +173,16 @@ function NutritionistPortalPage() {
           setInitialLoadedMenu(JSON.parse(JSON.stringify(emptyMenu)));
         }
       } catch (err) {
-        console.error("Error loading menu:", err);
+        if (isMounted) console.error("Error loading menu:", err);
       } finally {
-        setIsLoading(false);
+        if (isMounted) setIsLoading(false);
       }
     }
     load();
+
+    return () => {
+      isMounted = false; // Cancel pending async response if inputs change
+    };
   }, [selectedMess, selectedDate, isAuthenticated]);
 
   function sanitizeDishItem(item: any): StudioDishItem {
@@ -238,13 +245,11 @@ function NutritionistPortalPage() {
     };
   }
 
-  // Determine Unsaved Changes
   const hasUnsavedChanges = useMemo(() => {
     if (!initialLoadedMenu) return false;
     return JSON.stringify(menu) !== JSON.stringify(initialLoadedMenu);
   }, [menu, initialLoadedMenu]);
 
-  // Compute exact human-readable diff changes between initial loaded state and current draft state
   const detailedChangesSummary = useMemo(() => {
     if (!initialLoadedMenu) return [];
     const diffs: string[] = [];
@@ -282,7 +287,6 @@ function NutritionistPortalPage() {
     return menu.breakfast.length + menu.lunch.length + menu.snacks.length + menu.dinner.length;
   }, [menu]);
 
-  // Compute upcoming date options for horizontal switcher
   const upcomingDateOptions = useMemo(() => {
     const list = [];
     const base = new Date();
@@ -299,8 +303,7 @@ function NutritionistPortalPage() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanKey = passwordInput.trim();
-    const match = ADMIN_AUTH_KEYS[cleanKey];
+    const match = verifyAdminPasscode(passwordInput);
 
     if (match && (match.role === "nutritionist" || match.role === "super-admin")) {
       saveAdminSession({ role: match.role });
@@ -413,7 +416,6 @@ function NutritionistPortalPage() {
 
     if (!db || !selectedDate) return;
 
-    // Build clear confirmation prompt detailing detected changes
     const diffMessage = detailedChangesSummary.length > 0 
       ? `\n\nDetected Modifications:\n` + detailedChangesSummary.slice(0, 8).join("\n") + (detailedChangesSummary.length > 8 ? "\n  ...and more updates" : "")
       : "";
@@ -437,11 +439,9 @@ function NutritionistPortalPage() {
 
       await setDoc(docRef, payload, { merge: true });
 
-      // Also persist to recurring weekday template for backward compatibility
       const dayIndex = new Date(selectedDate + "T00:00:00").getDay();
       await saveDynamicMessMenu(selectedMess, dayIndex, menu as DayMenuWithNutrition);
 
-      // Create an audit log record for tracking what was changed
       await addDoc(collection(firestoreDb, "admin_audit_logs"), {
         messId: selectedMess,
         action: "Nutrition Studio Menu Updated",
@@ -478,7 +478,7 @@ function NutritionistPortalPage() {
                 type="password"
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
-                placeholder="Enter Authorization Passkey"
+                placeholder="Enter Passkey"
                 className="w-full bg-[#fbf7f2] border border-border rounded-xl px-4 py-3 text-xs font-bold text-foreground placeholder-muted-foreground focus:outline-none focus:border-emerald-600 focus:bg-white transition"
               />
             </div>
@@ -531,7 +531,7 @@ function NutritionistPortalPage() {
 
         <button
           onClick={handleLogout}
-          className="text-xs font-bold text-red-600 flex items-center gap-1 border border-border px-2.5 py-1 rounded-xl bg-red-50/50"
+          className="text-xs font-bold text-red-600 flex items-center gap-1 border border-border px-2.5 py-1 rounded-xl bg-red-50/50 cursor-pointer"
         >
           <LogOut className="w-3.5 h-3.5" /> Exit
         </button>
@@ -634,7 +634,6 @@ function NutritionistPortalPage() {
                 {MESSES.find(m => m.id === selectedMess)?.name}
               </span>
               
-              {/* Date Picker directly tied to daily_menus */}
               <div className="flex items-center gap-1.5 ml-1 bg-[#fbf7f2] border border-border/80 px-2.5 py-1 rounded-xl">
                 <Calendar className="w-3.5 h-3.5 text-emerald-600" />
                 <input
