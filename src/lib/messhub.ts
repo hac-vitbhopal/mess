@@ -642,16 +642,17 @@ export const ADMIN_AUTH_KEYS: Record<string, { role: "admin" | "super-admin" | "
 };
 
 const ADMIN_SESSION_KEY = "messhub.admin.session";
-
+const TAB_LOCK_KEY = "messhub.active.tab.lock";
 export interface AdminSession {
   role: "admin" | "super-admin" | "nutritionist";
   messId?: MessId;
+  tabId?: string;
 }
 
 export function getAdminSession(): AdminSession | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = localStorage.getItem(ADMIN_SESSION_KEY);
+    const raw = sessionStorage.getItem(ADMIN_SESSION_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -659,11 +660,33 @@ export function getAdminSession(): AdminSession | null {
 }
 
 export function saveAdminSession(session: AdminSession) {
-  localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session));
+  if (typeof window === "undefined") return;
+  
+  // Generate a unique identifier for this specific browser tab session
+  const tabId = Math.random().toString(36).substring(2, 15);
+  const secureSession = { ...session, tabId };
+
+  sessionStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(secureSession));
+  sessionStorage.setItem(TAB_LOCK_KEY, tabId);
 }
 
 export function clearAdminSession() {
-  localStorage.removeItem(ADMIN_SESSION_KEY);
+  if (typeof window === "undefined") return;
+  sessionStorage.removeItem(ADMIN_SESSION_KEY);
+  sessionStorage.removeItem(TAB_LOCK_KEY);
+}
+
+// Check if another mess facility or role is already active in a different tab/session
+export function validateTabSessionLock(): boolean {
+  if (typeof window === "undefined") return true;
+  const currentSession = getAdminSession();
+  if (!currentSession) return true;
+
+  const activeTabLock = sessionStorage.getItem(TAB_LOCK_KEY);
+  if (activeTabLock && activeTabLock !== currentSession.tabId) {
+    return false; // Conflict detected
+  }
+  return true;
 }
 
 /* ---------------- 🥗 PHASE 2: NUTRITION & DYNAMIC MENUS ---------------- */
@@ -1099,3 +1122,5 @@ export async function saveDailyMessMenu(messId: string, dateStr: string, menuDat
     throw error;
   }
 }
+
+

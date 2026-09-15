@@ -59,7 +59,14 @@ function SuperAdminGatekeeper() {
   const [authError, setAuthError] = useState(false);
 
   useEffect(() => {
-    setSession(getAdminSession());
+    const activeSession = getAdminSession();
+    // 🔒 Enforce role isolation: If an admin or nutritionist tries to use super-admin route, clear session
+    if (activeSession && activeSession.role !== "super-admin") {
+      clearAdminSession();
+      setSession(null);
+    } else {
+      setSession(activeSession);
+    }
     setIsMounted(true);
   }, []);
 
