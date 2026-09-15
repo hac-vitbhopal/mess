@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { db } from "@/lib/firebase";
-import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
+import { StudentFeedbackSchema, DishFeedbackSchema, checkRateLimit } from "@/lib/security";
+import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore";
 import {
   MEAL_DEFS,
   clearProfile,
@@ -11,31 +12,19 @@ import {
   greetingFor,
   mealStatus,
   HARDCODED_WEEKLY_MENUS,
-  getDynamicMessMenu,
   trackBroadcastClick,
   logStudentOnboarding,
   submitItemFeedback,
   type MealKey,
   type StudentProfile,
+  type SpecialOverride,
 } from "@/lib/messhub";
 import { Link } from "@tanstack/react-router";
-import { Star } from "lucide-react";
-
-function buildDateStrip(center: Date, days = 21): Date[] {
-  const start = new Date(center);
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - Math.floor(days / 2));
-  return Array.from({ length: days }, (_, i) => {
-    const d = new Date(start);
-    d.setDate(start.getDate() + i);
-    return d;
-  });
-}
+import { Star, Clock, Sparkles, ChevronDown, ChevronUp, Flame, Dumbbell, Wheat, ChefHat, Info } from "lucide-react";
 
 export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; onSignOut: () => void }) {
   const [now, setNow] = useState(() => new Date());
 
-  // Auto-ping Firestore on render to ensure Super Admin always has live active records
   useEffect(() => {
     if (profile?.name && profile?.messId) {
       logStudentOnboarding(profile).catch((err) =>
@@ -45,44 +34,96 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
   }, [profile]);
 
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
+    const id = setInterval(() => {
+      setNow(new Date());
+    }, 1000);
     return () => clearInterval(id);
   }, []);
 
-  const today = useMemo(() => {
+  const todayDateStr = useMemo(() => {
     const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }, []);
-  
-  const [selectedDate, setSelectedDate] = useState<Date>(today);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, [now]);
+
+  const activeWeekday = new Date().getDay();
   const [openMeal, setOpenMeal] = useState<MealKey | null>(null);
   const [broadcasts, setBroadcasts] = useState<{ id: string; title: string; body: string }[]>([]);
 
-  // ⚡ DYNAMIC NUTRITIONIST MENU STATE
-  const [dynamicMenu, setDynamicMenu] = useState<any>(null);
+  const [activeOverride, setActiveOverride] = useState<SpecialOverride | null>(null);
+  const [dailyMenu, setDailyMenu] = useState<any>(null);
 
-  const activeWeekday = selectedDate.getDay();
-
-  // ⚡ FETCH LIVE MENU & NUTRITION FROM FIRESTORE
   useEffect(() => {
-    async function loadNutritionistMenu() {
-      if (!profile?.messId) return;
-      const firestoreMenu = await getDynamicMessMenu(profile.messId, activeWeekday);
-      if (firestoreMenu) {
-        setDynamicMenu(firestoreMenu);
-      } else {
-        setDynamicMenu(null);
+    if (!db || !profile?.messId) return;
+
+    const q = query(
+      collection(db, "mess_overrides"),
+      where("messId", "==", profile.messId)
+    );
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      let foundOverride: SpecialOverride | null = null;
+
+      snapshot.forEach((doc) => {
+        const data = doc.data() as SpecialOverride;
+        if (data.date === todayDateStr) {
+          const [startH, startM] = (data.startTime || "00:00").split(":").map(Number);
+          const [endH, endM] = (data.endTime || "23:59").split(":").map(Number);
+
+          const startDateTime = new Date();
+          startDateTime.setHours(startH, startM, 0, 0);
+
+          const endDateTime = new Date();
+          endDateTime.setHours(endH, endM, 0, 0);
+
+          if (now >= startDateTime && now <= endDateTime) {
+            foundOverride = data;
+          }
+        }
+      });
+
+      setActiveOverride(foundOverride);
+    });
+
+    return () => unsub();
+  }, [profile?.messId, todayDateStr, now]);
+
+  useEffect(() => {
+    if (!db || !profile?.messId || !todayDateStr) return;
+    const firestoreDb = db;
+
+    async function loadDailyMenuFromFirestore() {
+      try {
+        const dailyDocRef = doc(firestoreDb, "daily_menus", `${profile.messId}_${todayDateStr}`);
+        const dailySnap = await getDoc(dailyDocRef);
+
+        if (dailySnap.exists()) {
+          setDailyMenu(dailySnap.data());
+        } else {
+          const weeklyDocRef = doc(firestoreDb, "mess_menus", `${profile.messId}_${activeWeekday}`);
+          const weeklySnap = await getDoc(weeklyDocRef);
+
+          if (weeklySnap.exists()) {
+            setDailyMenu(weeklySnap.data());
+          } else {
+            setDailyMenu(null);
+          }
+        }
+      } catch (err) {
+        console.error("[StudentHome] Error loading daily menu:", err);
+        setDailyMenu(null);
       }
     }
-    loadNutritionistMenu();
-  }, [profile.messId, activeWeekday]);
 
-  // Combine live Firestore menu with hardcoded fallback
+    loadDailyMenuFromFirestore();
+  }, [profile?.messId, todayDateStr, activeWeekday]);
+
   const currentMenu = useMemo(() => {
-    if (dynamicMenu) return dynamicMenu;
+    if (activeOverride && activeOverride.menu) {
+      return activeOverride.menu; 
+    }
+    if (dailyMenu) return dailyMenu;
     return HARDCODED_WEEKLY_MENUS[profile.messId]?.[activeWeekday] || { breakfast: [], lunch: [], snacks: [], dinner: [] };
-  }, [profile.messId, activeWeekday, dynamicMenu]);
+  }, [activeOverride, dailyMenu, profile.messId, activeWeekday]);
 
   useEffect(() => {
     async function syncToken() {
@@ -90,25 +131,24 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
       try {
         const { subscribeToMessTopic } = await import("@/lib/firebase");
         await subscribeToMessTopic(profile.messId, profile.name);
-        console.log("[FCM] Device token synced successfully for:", profile.messId);
       } catch (err) {
         console.error("[FCM] Token sync failed:", err);
       }
     }
-
     syncToken();
   }, [profile.messId, profile.name]);
 
-  // Feedback form states
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
   const messMeta: Record<string, { name: string; subtitle?: string }> = {
     jmb: { name: "JMB", subtitle: "Boys" },
-    crcl: { name: "Boys Block 1", subtitle: "" },
     mayuri_boys: { name: "Mayuri", subtitle: "Boys" },
     mayuri_girls: { name: "Mayuri", subtitle: "Girls" },
+    rassense: { name: "Rassense", subtitle: "" },
+    food_sutra: { name: "Food Sutra", subtitle: "" },
     safal: { name: "Safal", subtitle: "" },
+    anchor: { name: "Anchor", subtitle: "" },
     ab_catering: { name: "AB Catering", subtitle: "" }
   };
   
@@ -122,7 +162,6 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
     ? countdownTo(focus.endH, focus.endM, now)
     : countdownTo(focus.startH, focus.startM, now);
 
-  // Swiggy/Zomato-style Notification Scheduler
   useEffect(() => {
     if (!("Notification" in window) || Notification.permission !== "granted") return;
 
@@ -135,26 +174,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
         .map((i: any) => typeof i === "object" ? i.name : i)
         .join(", ") + (items.length > 3 ? "..." : "");
 
-      const pushTemplates: Record<string, { title: string; body: string }> = {
-        breakfast: {
-          title: "🍳 Breakfast Counter Open!",
-          body: `Today's fuel: ${itemString || "Hot breakfast updates"}. Beat the morning rush!`,
-        },
-        lunch: {
-          title: "🍽️ Lunch is Served!",
-          body: `Smells amazing today! Hot ${itemString || "items"} ready. Head down to the mess!`,
-        },
-        snacks: {
-          title: "☕ High Tea / Snacks Ready!",
-          body: `Time for a quick study break. ${itemString || "Fresh snacks ready"}.`,
-        },
-        dinner: {
-          title: "🌙 Dinner Window Open!",
-          body: `Wrapping up the day? Tonight's spread: ${itemString || "Dinner updates"}. Enjoy your meal!`,
-        }
-      };
-
-      const alertConfig = pushTemplates[focus.key] || {
+      const alertConfig = {
         title: `🍽️ ${focus.name} is Live!`,
         body: `Check out today's selections: ${itemString}`,
       };
@@ -164,7 +184,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
           body: alertConfig.body,
           icon: "/mess_logo.png",
           badge: "/mess_logo.png",
-          tag: `meal-${focus.key}-${dateKey(today)}`,
+          tag: `meal-${focus.key}-${todayDateStr}`,
           renotify: true,
           requireInteraction: false,
           vibrate: [200, 100, 200],
@@ -174,7 +194,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
 
       sessionStorage.setItem("messhub.last_notified_meal", focus.key);
     }
-  }, [focus, focusIsLive, currentMenu, today]);
+  }, [focus, focusIsLive, currentMenu, todayDateStr]);
 
   useEffect(() => {
     if (!db || !profile.messId) return;
@@ -195,108 +215,36 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
         .filter(b => b.messId === profile.messId || b.messId === "all");
 
       setBroadcasts(list);
-
-      if (list.length > 0) {
-        const latestAlert = list[0]; 
-        const alertId = latestAlert.id;
-
-        if (!sessionStorage.getItem(`messhub.processed_alert_${alertId}`)) {
-          if ("Notification" in window && Notification.permission === "granted") {
-            const title = `📢 Mess Alert: ${latestAlert.title}`;
-            const options = {
-              body: latestAlert.body,
-              icon: "/mess_logo.png",
-              badge: "/mess_logo.png",
-              tag: "meal-alert",
-              renotify: true,
-              requireInteraction: true, 
-              vibrate: [300, 100, 300],
-              data: { url: "/" }
-            };
-
-            navigator.serviceWorker.ready.then((registration) => {
-              registration.showNotification(title, options as any);
-            }).catch((err) => {
-              console.error("Service Worker notification failure:", err);
-            });
-          }
-          
-          sessionStorage.setItem(`messhub.processed_alert_${alertId}`, "true");
-        }
-      }
     });
 
     return () => broadcastUnsubscribe();
   }, [profile.messId]);
-
-  const strip = useMemo(() => buildDateStrip(today, 21), [today]);
-  const stripRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = stripRef.current?.querySelector<HTMLElement>(`[data-key="${dateKey(today)}"]`);
-    el?.scrollIntoView({ inline: "center", block: "nearest" });
-  }, [today]);
-
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-
-  useEffect(() => {
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-
-    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
-    return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
-  }, []);
-
-  async function handleAppInstallation() {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === "accepted") {
-        setDeferredPrompt(null);
-      }
-    } else {
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-      if (isIOS) {
-        alert(
-          "To install MessHub on iOS:\n\n" +
-          "1. Tap the 'Share' icon in Safari.\n" +
-          "2. Tap 'Add to Home Screen'."
-        );
-      } else {
-        alert(
-          "To install MessHub on Chrome/Edge:\n\n" +
-          "1. Tap the three dots (⋮) top right.\n" +
-          "2. Tap 'Install app' or 'Add to Home screen'."
-        );
-      }
-    }
-  }
 
   async function handleFeedbackSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!feedbackMessage.trim()) return;
 
     setIsSubmittingFeedback(true);
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyqJc_wS6XcWnqCjetwPtnTD-OMePvEu0NoI64EbEBxG1p2Jx5mL_iTtWgvx4MsKMb2/exec";
+
+    const formData = new URLSearchParams();
+    formData.append("name", profile.name || "VIT Student");
+    formData.append("email", profile.email || "N/A");
+    formData.append("mess", messLabelStr);
+    formData.append("message", feedbackMessage.trim());
+
     try {
-      const response = await fetch("https://formspree.io/f/mlgqbrqq", {
+      await fetch(GOOGLE_SCRIPT_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: profile.name,
-          mess: messLabelStr,
-          issue_or_feedback: feedbackMessage.trim(),
-        }),
+        mode: "no-cors",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: formData.toString(),
       });
 
-      if (response.ok) {
-        alert("Thank you! Your feedback has been sent successfully.");
-        setFeedbackMessage("");
-      } else {
-        alert("Failed to submit ticket. Please try again later.");
-      }
-    } catch {
+      alert("Thank you! Your feedback has been recorded and sent to the administration.");
+      setFeedbackMessage("");
+    } catch (err) {
+      console.error("Feedback submission error:", err);
       alert("Network error. Could not connect to the feedback server.");
     } finally {
       setIsSubmittingFeedback(false);
@@ -315,9 +263,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
             href={part}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={() => {
-              trackBroadcastClick(b.id, b.title, part);
-            }}
+            onClick={() => trackBroadcastClick(b.id, b.title, part)}
             className="text-primary font-bold underline hover:opacity-80 transition break-all"
           >
             {part}
@@ -329,7 +275,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
   }
 
   return (
-    <div className="min-h-screen bg-background pb-28 font-sans">
+    <div className="min-h-screen bg-background pb-28 font-sans select-none">
       {/* Header */}
       <header className="safe-top px-5 pt-2 pb-4">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
@@ -349,7 +295,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
                 onSignOut();
               }
             }}
-            className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-border bg-card text-sm font-semibold shadow-card"
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-border bg-card text-sm font-semibold shadow-card cursor-pointer"
             aria-label="Sign out"
           >
             {profile.name.charAt(0).toUpperCase()}
@@ -357,7 +303,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
         </div>
       </header>
 
-      {/* Hero: current / next meal (today) */}
+      {/* Hero: current / next meal */}
       <section className="px-5">
         <div className="relative overflow-hidden rounded-3xl gradient-warm p-6 text-white shadow-elevated transition-all duration-300 hover:shadow-2xl">
           <div className="absolute -right-10 -top-10 h-44 w-44 rounded-full bg-white/10 blur-2xl" />
@@ -375,7 +321,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
             </div>
 
             <div className="mt-5 w-full">
-              <h2 className="text-4xl font-black tracking-tight drop-shadow-sm select-none">
+              <h2 className="text-4xl font-black tracking-tight drop-shadow-sm">
                 {focus.name}
               </h2>
               <p className="mt-1 text-sm font-medium text-white/80 tracking-wide">
@@ -389,9 +335,9 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
               <div className="text-xs font-bold uppercase tracking-widest text-white/70">
                 {focusIsLive ? "Time Remaining" : "Countdown to Service"}
               </div>
-              <div className="font-display text-2xl font-black tracking-widest tabular-nums bg-white text-primary px-4 py-1.5 rounded-xl shadow-md select-none">
+              <div className="font-display text-2xl font-black tracking-widest tabular-nums bg-white text-primary px-4 py-1.5 rounded-xl shadow-md">
                 {String(countdown.hours).padStart(2, "0")}:
-                {String(countdown.hours ? countdown.mins : countdown.mins).padStart(2, "0")}:
+                {String(countdown.mins).padStart(2, "0")}:
                 {String(countdown.secs).padStart(2, "0")}
               </div>
             </div>
@@ -405,8 +351,8 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
               Today's {focus.name.toLowerCase()} menu
             </div>
             <button
-              onClick={() => { setSelectedDate(today); setOpenMeal(focus.key); }}
-              className="group text-xs font-bold text-primary flex items-center gap-1"
+              onClick={() => setOpenMeal(focus.key)}
+              className="group text-xs font-bold text-primary flex items-center gap-1 cursor-pointer"
             >
               <span>View full schedule</span>
               <span className="transition-transform duration-200 group-hover:translate-x-0.5">&rarr;</span>
@@ -417,7 +363,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
             {(currentMenu[focus.key] ?? []).map((i: any, idx: number) => {
               const name = typeof i === "object" ? i.name : i;
               return (
-                <li key={idx} className="truncate select-none font-medium flex items-center gap-2 text-muted-foreground">
+                <li key={idx} className="truncate font-medium flex items-center gap-2 text-muted-foreground">
                   <span className="h-1 w-1 rounded-full bg-muted-foreground/40" />
                   <span>{name}</span>
                 </li>
@@ -427,56 +373,32 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
         </div>
       </section>
 
-      {/* Horizontal calendar */}
+      {/* Today's Meals Grid */}
       <section className="mt-8">
-        <div className="flex items-baseline justify-between px-5">
-          <h3 className="text-lg font-bold">Browse menu</h3>
-          <button onClick={() => setSelectedDate(today)} className="text-xs font-medium text-primary">
-            Today
-          </button>
-        </div>
-        <div ref={stripRef} className="mt-3 flex gap-2 overflow-x-auto scroll-smooth px-5 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {strip.map((d) => {
-            const isSelected = dateKey(d) === dateKey(selectedDate);
-            const isToday = dateKey(d) === dateKey(today);
-            return (
-              <button
-                key={dateKey(d)}
-                data-key={dateKey(d)}
-                onClick={() => setSelectedDate(d)}
-                className={`flex min-w-[56px] shrink-0 flex-col items-center rounded-2xl border px-3 py-2.5 transition ${
-                  isSelected ? "border-transparent gradient-warm text-white shadow-card" : "border-border bg-card"
-                }`}
-              >
-                <span className={`text-[10px] font-medium uppercase tracking-wider ${isSelected ? "text-white/80" : "text-muted-foreground"}`}>
-                  {d.toLocaleDateString(undefined, { weekday: "short" })}
-                </span>
-                <span className="mt-0.5 font-display text-xl font-bold">{d.getDate()}</span>
-                {isToday && <span className={`mt-0.5 h-1 w-1 rounded-full ${isSelected ? "bg-white" : "bg-primary"}`} />}
-              </button>
-            );
-          })}
+        <div className="px-5 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-bold">Today's menu</h3>
+            <p className="text-xs text-muted-foreground">
+              {now.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}
+            </p>
+          </div>
+          {activeOverride && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-3 py-1 rounded-full">
+              <Sparkles className="w-3.5 h-3.5 text-amber-600" /> {activeOverride.label}
+            </span>
+          )}
         </div>
 
-        {/* Selected date label */}
-        <div className="mt-3 px-5">
-          <p className="text-xs uppercase tracking-wider text-muted-foreground">Standard Schedule</p>
-          <p className="font-semibold">
-            {selectedDate.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}
-          </p>
-        </div>
-
-        {/* Meal cards */}
         <div className="mt-3 grid grid-cols-2 gap-3 px-5">
           {MEAL_DEFS.map((m) => {
-            const isLive = dateKey(selectedDate) === dateKey(today) && mealStatus(m, now) === "live";
+            const isLive = mealStatus(m, now) === "live";
             const mealItems = currentMenu[m.key] ?? [];
             
             return (
               <button
                 key={m.key}
                 onClick={() => setOpenMeal(m.key)}
-                className="group flex flex-col justify-between rounded-2xl border border-border bg-card p-4 text-left shadow-card transition hover:border-primary/40 min-h-[140px]"
+                className="group flex flex-col justify-between rounded-2xl border border-border bg-card p-4 text-left shadow-card transition hover:border-primary/40 min-h-[140px] cursor-pointer"
               >
                 <div>
                   <div className="flex items-center justify-between">
@@ -537,7 +459,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
         </div>
       </section>
 
-      {/* 🍲 DAILY ITEM-LEVEL DISH RATING & FEEDBACK CARD */}
+      {/* Daily Item-Level Dish Rating & Feedback Card */}
       <section className="mt-8 px-5">
         <DailyItemFeedbackCard profile={profile} currentMenu={currentMenu} />
       </section>
@@ -551,7 +473,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
           <form onSubmit={handleFeedbackSubmit} className="mt-3.5 space-y-2">
             <div>
               <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Reporter</span>
-              <div className="text-xs font-semibold text-foreground mt-0.5 bg-muted/40 rounded-lg px-3 py-2 border border-border/40 select-none">
+              <div className="text-xs font-semibold text-foreground mt-0.5 bg-muted/40 rounded-lg px-3 py-2 border border-border/40">
                 {profile.name} <span className="opacity-50 font-normal">({activeMess.name})</span>
               </div>
             </div>
@@ -571,7 +493,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
             <button
               type="submit"
               disabled={isSubmittingFeedback || !feedbackMessage.trim()}
-              className="w-full rounded-xl bg-foreground text-background px-3 py-2.5 text-xs font-bold active:scale-[0.99] transition disabled:opacity-40"
+              className="w-full rounded-xl bg-foreground text-background px-3 py-2.5 text-xs font-bold active:scale-[0.99] transition disabled:opacity-40 cursor-pointer"
             >
               {isSubmittingFeedback ? "Submitting Ticket..." : "Submit Response"}
             </button>
@@ -579,46 +501,12 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
         </div>
       </section>
 
-      {/* 📱 Permanent PWA Installation Widget */}
-      <section className="mt-4 px-5">
-        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 shadow-card flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <h4 className="text-sm font-bold text-foreground">MessHub Platform Hub</h4>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Keep MessHub pinned directly to your home screen. Enable notifications for timely updates.
-            </p>
-          </div>
-          <button 
-            type="button"
-            onClick={handleAppInstallation}
-            className="shrink-0 rounded-xl gradient-warm px-4 py-2 text-xs font-bold text-white shadow-card active:scale-[0.98] transition"
-          >
-            Install App
-          </button>
-        </div>
-      </section>
-
-      {/* 📜 BOTTOM FOOTER PRIVACY LINK AREA */}
-      <footer className="mt-8 px-5 pb-6 text-center space-y-1">
-        <p className="text-[11px] text-muted-foreground font-medium">
-          MessHub is an independent student utility app.
-        </p>
-        <p className="text-[11px] font-semibold">
-          <Link
-            to="/privacy"
-            className="font-bold underline text-primary hover:opacity-80 transition"
-          >
-            Privacy Policy & Terms
-          </Link>
-        </p>
-      </footer>
-
-      {/* ⚡ Bottom sheet (Renders Nutrition Badges) */}
+      {/* Bottom sheet for meal items and nutrition badges */}
       {openMeal && (
         <MealSheet
           mealKey={openMeal}
           items={currentMenu[openMeal] ?? []}
-          date={selectedDate}
+          date={new Date()}
           onClose={() => setOpenMeal(null)}
         />
       )}
@@ -626,50 +514,76 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
   );
 }
 
-{/* 🍲 COMPONENT: Daily Item Feedback Card */}
 function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfile; currentMenu: any }) {
   const [selectedMeal, setSelectedMeal] = useState<MealKey>("lunch");
-  const [selectedItem, setSelectedItem] = useState<string>("");
+  const [selectedDishes, setSelectedDishes] = useState<string[]>([]);
   const [rating, setRating] = useState<number>(5);
   const [comment, setComment] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Dynamic Dish list from live menu
   const rawItems = currentMenu[selectedMeal] || [];
   const availableItems = useMemo(() => {
     return rawItems.map((item: any) => (typeof item === "object" ? item.name : item));
   }, [rawItems]);
 
-  // Default select first item on meal or menu change
   useEffect(() => {
-    if (availableItems.length > 0) {
-      setSelectedItem(availableItems[0]);
-    } else {
-      setSelectedItem("");
-    }
-  }, [selectedMeal, availableItems]);
+    setSelectedDishes([]);
+  }, [selectedMeal]);
+
+  const toggleDishSelection = (dish: string) => {
+    setSelectedDishes((prev) =>
+      prev.includes(dish) ? prev.filter((d) => d !== dish) : [...prev, dish]
+    );
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedItem) {
-      alert("Please select a dish to rate!");
+
+    if (selectedDishes.length === 0) {
+      alert("⚠️ Please select at least one dish to rate.");
+      return;
+    }
+
+    if (!checkRateLimit("item_dish_rating", 5, 60000)) {
+      alert("⚠️ Please wait a moment before submitting another rating.");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await submitItemFeedback({
-        studentName: profile.name,
-        studentEmail: profile.email,
-        messId: profile.messId,
-        mealKey: selectedMeal,
-        itemName: selectedItem,
-        rating,
-        comment: comment.trim(),
-        status: "unsolved", // ⚡ Explicitly passes default unsolved status
+      for (const dish of selectedDishes) {
+        const validation = DishFeedbackSchema.safeParse({
+          studentName: profile.name,
+          studentEmail: profile.email || "",
+          messId: profile.messId,
+          mealKey: selectedMeal,
+          itemName: dish,
+          rating,
+          comment: comment ? `[${selectedMeal.toUpperCase()}] ${comment}` : `[${selectedMeal.toUpperCase()}] Rated ${rating}/5`,
+          status: "unsolved",
+        });
+
+        if (validation.success) {
+          await submitItemFeedback(validation.data);
+        }
+      }
+
+      const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyqJc_wS6XcWnqCjetwPtnTD-OMePvEu0NoI64EbEBxG1p2Jx5mL_iTtWgvx4MsKMb2/exec";
+      const formData = new URLSearchParams();
+      formData.append("name", profile.name || "VIT Student");
+      formData.append("email", profile.email || "N/A");
+      formData.append("mess", profile.messId);
+      formData.append("message", `[Multiple Dish Feedback - ${selectedMeal.toUpperCase()}] Dishes: ${selectedDishes.join(", ")} | Rating: ${rating}/5 | Comment: ${comment || "None"}`);
+
+      await fetch(GOOGLE_SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: formData.toString(),
       });
 
-      alert(`⭐ Thank you ${profile.name.split(" ")[0]}! Your feedback for "${selectedItem}" has been logged.`);
+      alert(`⭐ Thank you ${profile.name.split(" ")[0]}! Your feedback for ${selectedDishes.length} items has been logged.`);
+      setSelectedDishes([]);
       setComment("");
       setRating(5);
     } catch (err) {
@@ -683,21 +597,20 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-card w-full text-foreground">
       <h3 className="font-extrabold text-foreground text-sm tracking-tight flex items-center gap-2">
-        <span>🍲</span> Rate Today's Dishes
+        <span>🍲</span> Rate Today's Dishes (Multi-Select)
       </h3>
       <p className="text-[11px] text-muted-foreground mt-0.5 font-medium">
-        Share taste & quality feedback on specific items directly with your mess admin.
+        Select multiple items to flag good or bad items from today's spread.
       </p>
 
       <form onSubmit={handleSubmit} className="mt-4 space-y-3">
-        {/* Meal Selector */}
         <div className="grid grid-cols-4 gap-1 bg-muted/40 p-1 rounded-xl border border-border/40">
           {MEAL_DEFS.map((m) => (
             <button
               key={m.key}
               type="button"
               onClick={() => setSelectedMeal(m.key)}
-              className={`py-1.5 text-[10px] font-bold rounded-lg capitalize transition ${
+              className={`py-1.5 text-[10px] font-bold rounded-lg capitalize transition cursor-pointer ${
                 selectedMeal === m.key
                   ? "bg-primary text-primary-foreground shadow-xs"
                   : "text-muted-foreground hover:text-foreground"
@@ -708,32 +621,41 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
           ))}
         </div>
 
-        {/* Dish Selector */}
         <div>
-          <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">
-            Select Dish
+          <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
+            Select Dishes (Check all that apply)
           </label>
           {availableItems.length > 0 ? (
-            <select
-              value={selectedItem}
-              onChange={(e) => setSelectedItem(e.target.value)}
-              className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs font-bold text-foreground focus:outline-none focus:border-primary transition"
-            >
-              {availableItems.map((dish: string, idx: number) => (
-                <option key={idx} value={dish}>
-                  {dish}
-                </option>
-              ))}
-            </select>
+            <div className="max-h-40 overflow-y-auto space-y-1.5 p-2 bg-background border border-border rounded-xl">
+              {availableItems.map((dish: string, idx: number) => {
+                const isChecked = selectedDishes.includes(dish);
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => toggleDishSelection(dish)}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                      isChecked ? "bg-primary/10 border border-primary text-foreground" : "bg-card border border-border/60 text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <span className="truncate">{dish}</span>
+                    <span className={`w-4 h-4 rounded-md border flex items-center justify-center text-[10px] font-bold ${
+                      isChecked ? "bg-primary border-primary text-white" : "border-muted-foreground/40 bg-background"
+                    }`}>
+                      {isChecked ? "✓" : ""}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           ) : (
             <p className="text-xs italic text-muted-foreground/70 py-1">No items listed for {selectedMeal} today.</p>
           )}
         </div>
 
-        {/* Star Rating Bar */}
         <div>
           <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">
-            Taste & Quality Rating
+            Overall Rating for Selected Items
           </label>
           <div className="flex items-center gap-1.5 bg-muted/30 p-2 rounded-xl border border-border/40 justify-center">
             {[1, 2, 3, 4, 5].map((star) => (
@@ -741,7 +663,7 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
                 key={star}
                 type="button"
                 onClick={() => setRating(star)}
-                className="p-1 transition active:scale-125"
+                className="p-1 transition active:scale-125 cursor-pointer"
               >
                 <Star
                   className={`w-6 h-6 ${
@@ -753,7 +675,6 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
           </div>
         </div>
 
-        {/* Optional Comment */}
         <div>
           <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">
             Specific Comments
@@ -762,27 +683,27 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
             rows={2}
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            placeholder="e.g. Paneer was soft, too salty, good portion..."
+            placeholder="e.g. These items were undercooked / too spicy..."
             className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium outline-none focus:border-primary transition"
           />
         </div>
 
-        {/* Submit */}
         <button
           type="submit"
-          disabled={isSubmitting || !selectedItem}
-          className="w-full rounded-xl bg-primary text-primary-foreground py-2.5 text-xs font-bold shadow-md active:scale-[0.99] transition disabled:opacity-40"
+          disabled={isSubmitting || selectedDishes.length === 0}
+          className="w-full rounded-xl bg-primary text-primary-foreground py-2.5 text-xs font-bold shadow-md active:scale-[0.99] transition disabled:opacity-40 cursor-pointer"
         >
-          {isSubmitting ? "Submitting Rating..." : "Send Dish Rating"}
+          {isSubmitting ? "Submitting Ratings..." : `Submit Feedback (${selectedDishes.length} selected)`}
         </button>
       </form>
     </div>
   );
 }
 
-{/* ⚡ MEAL SHEET MODAL DISPLAYING LIVE NUTRITION BADGES */}
+// 🍲 UPDATED MEAL SHEET MODAL WITH DYNAMIC "KNOW MORE" DROPDOWN
 function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items: any[]; date: Date; onClose: () => void }) {
   const def = MEAL_DEFS.find((m) => m.key === mealKey)!;
+  const [expandedDishes, setExpandedDishes] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     function onEsc(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
@@ -794,10 +715,14 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
     };
   }, [onClose]);
 
+  const toggleDishExpand = (idx: number) => {
+    setExpandedDishes((prev) => ({ ...prev, [idx]: !prev[idx] }));
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal="true">
-      <button aria-label="Close" onClick={onClose} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-      <div className="relative w-full max-w-md rounded-t-3xl bg-card p-6 pb-8 shadow-elevated safe-bottom max-h-[80vh] overflow-y-auto">
+      <button aria-label="Close" onClick={onClose} className="absolute inset-0 bg-black/40 backdrop-blur-sm cursor-pointer" />
+      <div className="relative w-full max-w-md rounded-t-3xl bg-card p-6 pb-8 shadow-elevated safe-bottom max-h-[85vh] overflow-y-auto">
         <div className="mx-auto -mt-2 mb-4 h-1.5 w-10 rounded-full bg-border" />
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -806,30 +731,95 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
             <p className="text-sm text-muted-foreground">{formatTime(def.startH, def.startM)} – {formatTime(def.endH, def.endM)}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">{date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}</p>
           </div>
-          <button onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full border border-border bg-background text-lg">×</button>
+          <button onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full border border-border bg-background text-lg cursor-pointer">×</button>
         </div>
 
         <div className="mt-5">
           <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Menu Items & Nutrition</div>
-          <ul className="mt-2 space-y-2.5">
+          <ul className="mt-2 space-y-3">
             {items.length > 0 ? (
               items.map((item, idx) => {
                 const isObject = typeof item === "object";
                 const name = isObject ? item.name : item;
+                const isExpanded = !!expandedDishes[idx];
+
+                // Filter micronutrients that have a value > 0
+                const activeMicronutrients = isObject && item.micronutrients ? Object.entries(item.micronutrients).filter(([_, val]) => typeof val === "number" && val > 0) : [];
 
                 return (
-                  <li key={idx} className="flex flex-col gap-1 rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm">
-                    <div className="flex items-center gap-2">
-                      <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
-                      <span className="text-foreground font-bold">{name}</span>
+                  <li key={idx} className="flex flex-col gap-2 rounded-2xl border border-border bg-background p-3.5 text-sm">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+                        <span className="text-foreground font-bold">{name}</span>
+                      </div>
+                      
+                      {isObject && (
+                        <button
+                          type="button"
+                          onClick={() => toggleDishExpand(idx)}
+                          className="text-[10px] font-bold text-primary flex items-center gap-1 bg-primary/10 px-2.5 py-1 rounded-xl cursor-pointer hover:bg-primary/20 transition"
+                        >
+                          <span>{isExpanded ? "Less" : "Know More"}</span>
+                          {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        </button>
+                      )}
                     </div>
 
-                    {/* Macro Badges dynamically rendered from Nutritionist Firestore data */}
-                    {isObject && (item.calories || item.protein || item.carbs) && (
-                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-semibold pl-3.5 pt-1 flex-wrap">
-                        {item.calories && <span className="bg-orange-50 text-orange-700 px-2 py-0.5 rounded-md border border-orange-200">🔥 {item.calories} kcal</span>}
-                        {item.protein && <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md border border-emerald-200">💪 {item.protein}g Protein</span>}
-                        {item.carbs && <span className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded-md border border-amber-200">🌾 {item.carbs}g Carbs</span>}
+                    {/* Primary 3 Macros Display (Energy, Protein, Carbs) + Serving Size */}
+                    {isObject && (
+                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-semibold pt-0.5 flex-wrap">
+                        {item.servingSize && <span className="bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-md border border-slate-200">🍽️ {item.servingSize}</span>}
+                        {item.calories !== undefined && <span className="bg-orange-50 text-orange-700 px-2.5 py-0.5 rounded-md border border-orange-200">🔥 {item.calories} kcal</span>}
+                        {item.protein !== undefined && <span className="bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-md border border-emerald-200">💪 {item.protein}g Protein</span>}
+                        {item.carbs !== undefined && <span className="bg-amber-50 text-amber-700 px-2.5 py-0.5 rounded-md border border-amber-200">🌾 {item.carbs}g Carbs</span>}
+                      </div>
+                    )}
+
+                    {/* Expanded Know More Dropdown */}
+                    {isExpanded && isObject && (
+                      <div className="mt-2 pt-3 border-t border-border/80 space-y-3 text-xs animate-fade-in bg-card p-3 rounded-xl border">
+                        
+                        {/* Cultural Profile / Trivia */}
+                        {(item.description || item.originStory || item.funFact || item.regionalTag) && (
+                          <div className="space-y-1">
+                            <span className="text-[9px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                              <Info className="w-3 h-3 text-primary" /> Cultural &amp; Food Profile
+                            </span>
+                            {item.regionalTag && <p className="text-[11px] font-semibold text-purple-700">🌍 {item.regionalTag}</p>}
+                            {item.description && <p className="text-[11px] text-foreground">{item.description}</p>}
+                            {item.originStory && <p className="text-[11px] text-muted-foreground">🏛️ Roots: {item.originStory}</p>}
+                            {item.funFact && <p className="text-[11px] text-muted-foreground italic">💡 Trivia: {item.funFact}</p>}
+                          </div>
+                        )}
+
+                        {/* Kitchen Recipe / Ingredients View
+                        {item.recipe && (item.recipe.ingredients || item.recipe.method) && (
+                          <div className="space-y-1 pt-2 border-t border-border/60">
+                            <span className="text-[9px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                              <ChefHat className="w-3 h-3 text-amber-600" /> Kitchen Preparation Specs
+                            </span>
+                            {item.recipe.ingredients && <p className="text-[11px] text-foreground"><strong>Ingredients:</strong> {item.recipe.ingredients}</p>}
+                            {item.recipe.method && <p className="text-[11px] text-muted-foreground"><strong>Method:</strong> {item.recipe.method}</p>}
+                          </div>
+                        )} */}
+
+                        {/* Filtered Active Micronutrients */}
+                        {activeMicronutrients.length > 0 && (
+                          <div className="space-y-1 pt-2 border-t border-border/60">
+                            <span className="text-[9px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                              ✨ Micronutrients Breakdown
+                            </span>
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {activeMicronutrients.map(([key, val]) => (
+                                <span key={key} className="bg-muted text-foreground px-2 py-0.5 rounded-md text-[10px] font-bold border border-border">
+                                  {key.replace(/([A-Z])/g, ' $1').toUpperCase()}: {String(val)}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                       </div>
                     )}
                   </li>

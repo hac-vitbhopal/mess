@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import * as XLSX from "xlsx";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp, query, onSnapshot, orderBy } from "firebase/firestore";
 import { 
@@ -7,7 +8,7 @@ import {
   saveAdminSession, 
   clearAdminSession, 
   ADMIN_AUTH_KEYS,
-  MESSES,
+  MESSES as DEFAULT_STATIC_MESSES,
   MEAL_DEFS,
   HARDCODED_WEEKLY_MENUS,
   deleteBroadcasts,
@@ -19,10 +20,10 @@ import { sendFcmNotification } from "@/lib/broadcast-action";
 import { 
   ShieldCheck, Users, Activity, MessageSquare, Megaphone, 
   LogOut, Menu, X, Clock, CheckSquare, Square, Star, 
-  CheckCircle2, AlertCircle, Trash2, TrendingUp, Send, CheckCircle
+  CheckCircle2, AlertCircle, Trash2, TrendingUp, Send, CheckCircle,
+  PlusCircle, History, Utensils, Download
 } from "lucide-react";
-import { AddMessAndMenuModal } from "@/components/messhub/AddMessAndMenuModal";
-import { PlusCircle } from "lucide-react";
+
 export const Route = createFileRoute("/super-admin")({
   head: () => ({
     meta: [
@@ -32,6 +33,23 @@ export const Route = createFileRoute("/super-admin")({
   }),
   component: SuperAdminGatekeeper,
 });
+
+// Helper to log Super Admin root activity into Firestore
+async function logSuperAdminActivity(messId: string, action: string, details: string) {
+  if (!db) return;
+  try {
+    const session = getAdminSession();
+    await addDoc(collection(db, "admin_audit_logs"), {
+      messId,
+      action,
+      details,
+      operatorRole: session?.role || "super-admin",
+      timestamp: serverTimestamp(),
+    });
+  } catch (err) {
+    console.error("Failed to write super admin audit log:", err);
+  }
+}
 
 function SuperAdminGatekeeper() {
   const navigate = useNavigate();
@@ -61,6 +79,7 @@ function SuperAdminGatekeeper() {
       const newSession = { role: matchedAuth.role };
       saveAdminSession(newSession);
       setSession(newSession);
+      logSuperAdminActivity("all", "Root Login", "Super Admin authorized access to Master Control Dashboard");
     } else {
       setAuthError(true);
       setPasscode("");
@@ -103,7 +122,7 @@ function SuperAdminGatekeeper() {
               }`}
             />
             {authError && <p className="mt-2.5 text-xs font-semibold text-red-400">Invalid authorization sequence.</p>}
-            <button type="submit" disabled={passcode.length === 0} className="mt-4 w-full rounded-2xl bg-white py-4 text-sm font-bold text-black active:scale-[0.99] transition-all disabled:opacity-40">
+            <button type="submit" disabled={passcode.length === 0} className="mt-4 w-full rounded-2xl bg-white py-4 text-sm font-bold text-black active:scale-[0.99] transition-all disabled:opacity-40 cursor-pointer">
               Verify Root Access
             </button>
           </form>
@@ -121,15 +140,17 @@ function SuperAdminGatekeeper() {
 
 /* ---------------- 👑 PLATFORM MASTER SAAS DASHBOARD ---------------- */
 function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
-  const [activeTab, setActiveTab] = useState<"overview" | "feedbacks" | "broadcasts" | "students" | "analytics">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "feedbacks" | "broadcasts" | "students" | "analytics" | "audit">("overview");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-const [isAddMessModalOpen, setIsAddMessModalOpen] = useState(false);
+
   // Global Realtime Datasets
+  const [dynamicMesses, setDynamicMesses] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [feedbacks, setFeedbacks] = useState<ItemFeedback[]>([]);
   const [menuLogs, setMenuLogs] = useState<any[]>([]);
   const [broadcastList, setBroadcastList] = useState<any[]>([]);
   const [clickLogs, setClickLogs] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
   // Local Action States
   const currentWeekday = new Date().getDay();
@@ -142,9 +163,14 @@ const [isAddMessModalOpen, setIsAddMessModalOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Live Firebase Sync Listeners
+  // ⚡ Live Firebase Sync Listeners
   useEffect(() => {
     if (!db) return;
+
+    const unsubMesses = onSnapshot(collection(db, "messes"), (snap) => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setDynamicMesses(list);
+    });
 
     const unsubStudents = onSnapshot(collection(db, "registered_students"), (snap) => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -158,7 +184,7 @@ const [isAddMessModalOpen, setIsAddMessModalOpen] = useState(false);
 
     const unsubMenu = onSnapshot(query(collection(db, "mess_menus"), orderBy("updatedAt", "desc")), (snap) => {
       setMenuLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, () => {}); // Fallback if composite index is pending
+    }, () => {});
 
     const unsubBroadcasts = onSnapshot(query(collection(db, "broadcasts"), orderBy("createdAt", "desc")), (snap) => {
       setBroadcastList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -170,8 +196,36 @@ const [isAddMessModalOpen, setIsAddMessModalOpen] = useState(false);
       setClickLogs(logs);
     });
 
-    return () => { unsubStudents(); unsubFeedbacks(); unsubMenu(); unsubBroadcasts(); unsubClicks(); };
+    const unsubAudit = onSnapshot(query(collection(db, "admin_audit_logs"), orderBy("timestamp", "desc")), (snap) => {
+      setAuditLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => {
+      console.warn("Audit logs listener fallback:", err);
+    });
+
+    return () => {
+      unsubMesses();
+      unsubStudents();
+      unsubFeedbacks();
+      unsubMenu();
+      unsubBroadcasts();
+      unsubClicks();
+      unsubAudit();
+    };
   }, []);
+
+  const allMesses = useMemo(() => {
+    const combined = [...DEFAULT_STATIC_MESSES];
+    dynamicMesses.forEach((dm) => {
+      if (!combined.some((m) => m.id === dm.id)) {
+        combined.push({
+          id: dm.id,
+          name: dm.name || dm.id,
+          subtitle: dm.subtitle || "",
+        });
+      }
+    });
+    return combined;
+  }, [dynamicMesses]);
 
   const pendingFeedbacksCount = feedbacks.filter(f => f.status === "unsolved").length;
 
@@ -194,6 +248,7 @@ const [isAddMessModalOpen, setIsAddMessModalOpen] = useState(false);
     setIsDeleting(true);
     try {
       await deleteBroadcasts(selectedIds);
+      await logSuperAdminActivity("all", "Purged Broadcasts", `Removed ${selectedIds.length} broadcast announcements`);
       setSelectedIds([]);
     } catch (err) {
       alert("Error deleting broadcasts.");
@@ -220,7 +275,7 @@ const [isAddMessModalOpen, setIsAddMessModalOpen] = useState(false);
 
       const template = pushTemplates[selectedMealKey] || { title: `🍽️ ${mealName} is Live!`, bodyPrefix: "Check out today's selections: " };
 
-      for (const mess of MESSES) {
+      for (const mess of allMesses) {
         const items = HARDCODED_WEEKLY_MENUS[mess.id]?.[currentWeekday]?.[selectedMealKey] ?? [];
         const itemString = items.slice(0, 3).join(", ") + (items.length > 3 ? "..." : "");
         const finalBodyText = `${template.bodyPrefix}${itemString || "Freshly cooked menu choices"}. Come down to the hall!`;
@@ -236,6 +291,8 @@ const [isAddMessModalOpen, setIsAddMessModalOpen] = useState(false);
           data: { topic: `mess_${mess.id}`, title: template.title, body: finalBodyText }
         }).catch(() => {});
       }
+
+      await logSuperAdminActivity("all", "Automated Meal Push", `Fired live alert for ${mealName} across all messes`);
       alert(`🚀 Success! UI updated and background alerts dispatched!`);
     } catch (error) {
       alert("Meal transmission failure.");
@@ -264,6 +321,12 @@ const [isAddMessModalOpen, setIsAddMessModalOpen] = useState(false);
       await sendFcmNotification({
         data: { topic: targetTopic, title: broadcastTitle.trim(), body: broadcastBody.trim(), url: targetUrl }
       });
+
+      await logSuperAdminActivity(
+        targetMessId,
+        "Custom Broadcast Sent",
+        `Target: ${targetMessId} | Title: "${broadcastTitle.trim()}"`
+      );
 
       setBroadcastTitle("");
       setBroadcastBody("");
@@ -303,7 +366,7 @@ const [isAddMessModalOpen, setIsAddMessModalOpen] = useState(false);
         <div className="flex items-center gap-2 font-black text-lg text-foreground">
           <ShieldCheck className="w-6 h-6 text-primary" /> Master HQ
         </div>
-        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 bg-zinc-100 rounded-xl">
+        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 bg-zinc-100 rounded-xl cursor-pointer">
           {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
         </button>
       </div>
@@ -327,11 +390,16 @@ const [isAddMessModalOpen, setIsAddMessModalOpen] = useState(false);
           <NavButton id="broadcasts" icon={Megaphone} label="Broadcast Management" />
           <NavButton id="students" icon={Users} label="Student Directory" />
           <NavButton id="analytics" icon={TrendingUp} label="Click Analytics" />
+          <NavButton id="audit" icon={History} label="System Audit Logs" badge={auditLogs.length} />
         </div>
 
         <div className="p-4 border-t border-border">
           <button 
-            onClick={() => { clearAdminSession(); onSignOut(); }} 
+            onClick={() => { 
+              logSuperAdminActivity("all", "Root Logout", "Super Admin logged out");
+              clearAdminSession(); 
+              onSignOut(); 
+            }} 
             className="w-full flex items-center gap-3 px-4 py-3 text-red-600 font-bold hover:bg-red-50 rounded-2xl transition text-xs cursor-pointer"
           >
             <LogOut className="w-4 h-4" /> End Root Session
@@ -345,29 +413,66 @@ const [isAddMessModalOpen, setIsAddMessModalOpen] = useState(false);
         {/* ================= TAB 1: OVERVIEW ================= */}
         {activeTab === "overview" && (
           <div className="space-y-6 animate-fade-in pb-12">
-            <div className="flex items-center justify-between">
-  <div>
-    <h1 className="text-2xl sm:text-3xl font-black text-foreground">Infrastructure Overview</h1>
-    <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Real-time system telemetry and campus metrics.</p>
-  </div>
-  <button
-    onClick={() => setIsAddMessModalOpen(true)}
-    className="gradient-warm text-white px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-card transition active:scale-95 cursor-pointer"
-  >
-    <PlusCircle className="w-4 h-4" /> Add New Mess &amp; Menu
-  </button>
-</div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-black text-foreground">Infrastructure Overview</h1>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Real-time system telemetry and campus metrics.</p>
+              </div>
+              <Link
+                to="/add-mess"
+                className="gradient-warm text-white px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-card transition active:scale-95 cursor-pointer self-start sm:self-auto"
+              >
+                <PlusCircle className="w-4 h-4" /> Add New Mess &amp; Menu
+              </Link>
+            </div>
             
             {/* KPI METRIC CARDS */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <MetricCard title="Registered Students" value={students.length} icon={Users} color="bg-blue-50 text-blue-600" />
-              <MetricCard title="Active Broadcasts" value={broadcastList.length} icon={Megaphone} color="bg-purple-50 text-purple-600" />
+              <MetricCard title="Mess Facilities" value={allMesses.length} icon={Utensils} color="bg-purple-50 text-purple-600" />
               <MetricCard title="Pending Feedback" value={pendingFeedbacksCount} icon={MessageSquare} color="bg-amber-50 text-amber-600" alert={pendingFeedbacksCount > 0} />
-              <MetricCard title="Menu Audit Logs" value={menuLogs.length} icon={Activity} color="bg-emerald-50 text-emerald-600" />
+              <MetricCard title="Platform Audit Logs" value={auditLogs.length} icon={History} color="bg-emerald-50 text-emerald-600" />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               
+              {/* 🏢 MESS FACILITY & ASSIGNED ADMINS DIRECTORY */}
+              <div className="bg-white rounded-3xl border border-border p-5 shadow-card flex flex-col h-[460px]">
+                <div className="pb-3 border-b border-border flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
+                    <Utensils className="w-4 h-4 text-primary" /> Mess Facilities &amp; Active Management ({allMesses.length})
+                  </h2>
+                  <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-md">
+                    100% Operational
+                  </span>
+                </div>
+                <div className="mt-3 overflow-y-auto flex-1 space-y-3 pr-1">
+                  {allMesses.map((mess) => {
+                    const userCount = students.filter(s => s.messId === mess.id).length;
+                    const authKeyEntry = Object.entries(ADMIN_AUTH_KEYS).find(([_, auth]) => auth.messId === mess.id);
+                    const adminRole = authKeyEntry ? authKeyEntry[1].role : "Unassigned";
+
+                    return (
+                      <div key={mess.id} className="bg-[#fbf7f2] border border-border/70 p-3.5 rounded-2xl flex items-center justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-xs text-foreground">{mess.name} {mess.subtitle ? `(${mess.subtitle})` : ""}</span>
+                            <span className="text-[9px] font-bold uppercase bg-zinc-200 text-zinc-700 px-1.5 py-0.5 rounded">ID: {mess.id}</span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mt-0.5 font-medium">
+                            Assigned Role: <span className="font-bold text-foreground capitalize">{adminRole}</span>
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-xs font-black text-primary">{userCount}</span>
+                          <p className="text-[9px] text-muted-foreground uppercase font-bold">Students</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* 🕒 LIVE MENU AUDIT LOG */}
               <div className="bg-white rounded-3xl border border-border p-5 shadow-card flex flex-col h-[460px]">
                 <div className="pb-3 border-b border-border flex items-center justify-between">
@@ -375,7 +480,7 @@ const [isAddMessModalOpen, setIsAddMessModalOpen] = useState(false);
                     <Clock className="w-4 h-4 text-primary" /> Live Menu Audit Trail
                   </h2>
                   <span className="text-[10px] font-bold bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded-md">
-                    Last 30 Updates
+                    Recent Updates
                   </span>
                 </div>
                 <div className="mt-3 overflow-y-auto flex-1 space-y-2 pr-1">
@@ -401,35 +506,6 @@ const [isAddMessModalOpen, setIsAddMessModalOpen] = useState(false);
                       </div>
                     ))
                   )}
-                </div>
-              </div>
-
-              {/* 🏢 MESH UTILIZATION DEMOGRAPHICS */}
-              <div className="bg-white rounded-3xl border border-border p-5 shadow-card flex flex-col h-[460px]">
-                <div className="pb-3 border-b border-border flex items-center justify-between">
-                  <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
-                    <Users className="w-4 h-4 text-primary" /> Mess Facility Demographics
-                  </h2>
-                  <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-md">
-                    100% Active Sync
-                  </span>
-                </div>
-                <div className="mt-4 overflow-y-auto flex-1 space-y-4 pr-1">
-                  {MESSES.map((mess) => {
-                    const count = students.filter(s => s.messId === mess.id).length;
-                    const percentage = students.length > 0 ? Math.round((count / students.length) * 100) : 0;
-                    return (
-                      <div key={mess.id} className="space-y-1">
-                        <div className="flex justify-between text-xs font-bold text-foreground">
-                          <span>{mess.name} {mess.subtitle ? `(${mess.subtitle})` : ""}</span>
-                          <span className="text-muted-foreground">{count} Users ({percentage}%)</span>
-                        </div>
-                        <div className="w-full bg-zinc-100 rounded-full h-2.5 overflow-hidden border border-zinc-200">
-                          <div className="gradient-warm h-2.5 rounded-full transition-all duration-500" style={{ width: `${percentage}%` }}></div>
-                        </div>
-                      </div>
-                    );
-                  })}
                 </div>
               </div>
 
@@ -474,7 +550,7 @@ const [isAddMessModalOpen, setIsAddMessModalOpen] = useState(false);
                       <select
                         value={selectedMealKey}
                         onChange={(e) => setSelectedMealKey(e.target.value as MealKey)}
-                        className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2.5 text-xs font-bold outline-none focus:border-primary focus:bg-white transition"
+                        className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2.5 text-xs font-bold outline-none focus:border-primary focus:bg-white transition cursor-pointer"
                       >
                         {MEAL_DEFS.map((m) => (
                           <option key={m.key} value={m.key}>
@@ -512,10 +588,10 @@ const [isAddMessModalOpen, setIsAddMessModalOpen] = useState(false);
                     <select
                       value={targetMessId}
                       onChange={(e) => setTargetMessId(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2.5 text-xs font-semibold outline-none focus:border-primary focus:bg-white transition"
+                      className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2.5 text-xs font-semibold outline-none focus:border-primary focus:bg-white transition cursor-pointer"
                     >
                       <option value="all">🌍 All Messes (Global Broadcast)</option>
-                      {MESSES.map((m) => (
+                      {allMesses.map((m) => (
                         <option key={m.id} value={m.id}>🏢 {m.name} {m.subtitle ? `(${m.subtitle})` : ""}</option>
                       ))}
                     </select>
@@ -625,6 +701,7 @@ const [isAddMessModalOpen, setIsAddMessModalOpen] = useState(false);
                                 onClick={async () => {
                                   if (confirm("Delete this broadcast announcement?")) {
                                     await deleteBroadcasts([b.id]);
+                                    await logSuperAdminActivity(b.messId, "Broadcast Deleted", `Deleted broadcast: "${b.title}"`);
                                   }
                                 }}
                                 className="rounded-lg bg-red-100 px-2.5 py-1 text-[10px] font-bold text-red-600 hover:bg-red-500 hover:text-white transition cursor-pointer"
@@ -647,9 +724,33 @@ const [isAddMessModalOpen, setIsAddMessModalOpen] = useState(false);
         {/* ================= TAB 4: STUDENT DIRECTORY ================= */}
         {activeTab === "students" && (
           <div className="space-y-6 animate-fade-in pb-12">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-black text-foreground">Student Onboarding Directory</h1>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Comprehensive real-time directory of every student authenticated on MessHub.</p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-black text-foreground">Student Onboarding Directory</h1>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Comprehensive real-time directory of every student authenticated on MessHub.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (students.length === 0) {
+                    alert("No student records available to export.");
+                    return;
+                  }
+                  const rows = students.map((s) => ({
+                    "Student Name": s.name || "Anonymous",
+                    "Email": s.email || "N/A",
+                    "Assigned Mess": s.messId || "N/A",
+                    "Last Active": s.lastActiveAt?.toDate ? s.lastActiveAt.toDate().toLocaleString() : "Recent"
+                  }));
+                  const ws = XLSX.utils.json_to_sheet(rows);
+                  const wb = XLSX.utils.book_new();
+                  XLSX.utils.book_append_sheet(wb, ws, "StudentDirectory");
+                  XLSX.writeFile(wb, `MessHub_Students_${new Date().toISOString().split("T")[0]}.xlsx`);
+                }}
+                className="gradient-warm text-white px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-card transition active:scale-95 cursor-pointer self-start sm:self-auto"
+              >
+                <Download className="w-4 h-4" /> Export Student Directory to Excel
+              </button>
             </div>
 
             <div className="bg-white rounded-3xl border border-border p-5 shadow-card">
@@ -750,12 +851,54 @@ const [isAddMessModalOpen, setIsAddMessModalOpen] = useState(false);
           </div>
         )}
 
+        {/* ================= TAB 6: MASTER AUDIT LOGS ================= */}
+        {activeTab === "audit" && (
+          <div className="space-y-6 animate-fade-in pb-12">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-black text-foreground">Platform Audit Logs</h1>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Immutable record of all super admin and operator actions across campus.</p>
+            </div>
+
+            <div className="bg-white rounded-3xl border border-border p-5 shadow-card">
+              <div className="flex items-center justify-between pb-3 border-b border-border">
+                <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
+                  <History className="w-4 h-4 text-primary" /> System Events Feed
+                </h2>
+                <span className="rounded-full bg-zinc-100 text-zinc-700 font-bold px-3 py-1 text-xs">
+                  {auditLogs.length} Operations Logged
+                </span>
+              </div>
+
+              <div className="mt-4 space-y-2 max-h-[600px] overflow-y-auto pr-1">
+                {auditLogs.length === 0 ? (
+                  <p className="py-12 text-center text-xs italic text-muted-foreground">No audit logs recorded yet.</p>
+                ) : (
+                  auditLogs.map((log) => (
+                    <div key={log.id} className="p-3.5 bg-[#fbf7f2] border border-border/80 rounded-2xl flex items-start justify-between gap-3 text-xs">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-foreground">{log.action}</span>
+                          <span className="text-[9px] font-bold uppercase bg-zinc-200 text-zinc-700 px-1.5 py-0.5 rounded">
+                            {log.operatorRole || "admin"}
+                          </span>
+                          <span className="text-[9px] font-bold uppercase bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded">
+                            {log.messId}
+                          </span>
+                        </div>
+                        <p className="text-muted-foreground text-[11px] font-medium">{log.details}</p>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground/70 font-semibold shrink-0">
+                        {log.timestamp?.toDate ? log.timestamp.toDate().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : "Just now"}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
       </main>
-      {/* ⚡ 2. ADD THE MODAL COMPONENT HERE AT THE VERY BOTTOM */}
-      <AddMessAndMenuModal 
-        isOpen={isAddMessModalOpen} 
-        onClose={() => setIsAddMessModalOpen(false)} 
-      />
     </div>
   );
 }
@@ -786,20 +929,54 @@ function SuperAdminFeedbackViewer({ feedbacks }: { feedbacks: ItemFeedback[] }) 
     return true;
   });
 
+  function exportFeedbackToExcel() {
+    if (feedbacks.length === 0) {
+      alert("No feedback records available to export.");
+      return;
+    }
+
+    const exportRows = feedbacks.map((f) => ({
+      "Date / Time": f.createdAt?.toDate ? f.createdAt.toDate().toLocaleString("en-IN") : "Recent",
+      "Student Name": f.studentName,
+      "Student Email": f.studentEmail || "",
+      "Mess Facility": f.messId,
+      "Meal": f.mealKey,
+      "Dish Name": f.itemName,
+      "Rating (Out of 5)": f.rating,
+      "Feedback Comment": f.comment || "",
+      "Resolution Status": f.status === "solved" ? "Resolved" : "Pending"
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "CampusFeedback");
+    XLSX.writeFile(wb, `MessHub_CampusFeedback_${new Date().toISOString().split("T")[0]}.xlsx`);
+  }
+
   return (
     <div className="bg-white border border-border rounded-3xl p-5 shadow-card space-y-4">
-      <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl border border-border w-fit">
-        {(["all", "unsolved", "solved"] as const).map((type) => (
-          <button
-            key={type}
-            onClick={() => setFilter(type)}
-            className={`px-4 py-1.5 text-[11px] font-bold rounded-lg capitalize transition cursor-pointer ${
-              filter === type ? "bg-foreground text-background shadow-xs" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {type}
-          </button>
-        ))}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
+        <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl border border-border w-fit">
+          {(["all", "unsolved", "solved"] as const).map((type) => (
+            <button
+              key={type}
+              onClick={() => setFilter(type)}
+              className={`px-4 py-1.5 text-[11px] font-bold rounded-lg capitalize transition cursor-pointer ${
+                filter === type ? "bg-foreground text-background shadow-xs" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {type}
+            </button>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={exportFeedbackToExcel}
+          className="text-xs font-bold text-slate-700 bg-background hover:bg-slate-100 border border-border px-3 py-2 rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-2xs self-start sm:self-auto"
+        >
+          <Download className="w-3.5 h-3.5 text-emerald-600" /> Export Feedback to Excel
+        </button>
       </div>
 
       <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1">
@@ -817,7 +994,15 @@ function SuperAdminFeedbackViewer({ feedbacks }: { feedbacks: ItemFeedback[] }) 
               >
                 <button
                   type="button"
-                  onClick={() => item.id && toggleFeedbackStatus(item.id, item.status)}
+                  onClick={async () => {
+                    if (!item.id) return;
+                    await toggleFeedbackStatus(item.id, item.status);
+                    await logSuperAdminActivity(
+                      item.messId,
+                      "Feedback Resolution",
+                      `Toggled feedback for "${item.itemName}" to ${isSolved ? "Unsolved" : "Solved"}`
+                    );
+                  }}
                   className="mt-1 shrink-0 text-primary hover:scale-110 transition cursor-pointer"
                   title={isSolved ? "Mark Unsolved" : "Mark Solved"}
                 >
@@ -851,7 +1036,7 @@ function SuperAdminFeedbackViewer({ feedbacks }: { feedbacks: ItemFeedback[] }) 
                   <div className="pt-2 flex justify-end">
                     {isSolved ? (
                       <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full">
-                        <CheckCircle className="w-3 h-3 text-emerald-600" /> Resolved & Solved
+                        <CheckCircle className="w-3 h-3 text-emerald-600" /> Resolved &amp; Solved
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full">

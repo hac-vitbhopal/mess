@@ -12,7 +12,16 @@ import {
 } from "firebase/firestore";
 import { getDoc } from "firebase/firestore";
 // import { serverTimestamp } from "firebase/firestore";
-export type MessId = "crcl" | "jmb" | "mayuri_boys" | "mayuri_girls" | "safal" | "ab_catering";
+export type MessId = 
+  | "jmb"
+  | "mayuri_boys" 
+  | "mayuri_girls" 
+  | "rassense" 
+  | "food_sutra" 
+  | "safal" 
+  | "anchor" 
+  | "ab_catering" 
+  | string;
 
 export interface Mess {
   id: MessId;
@@ -21,16 +30,19 @@ export interface Mess {
 }
 
 export const MESSES: Mess[] = [
-  { id: "crcl", name: "Boys Block 1" },
   { id: "jmb", name: "JMB" },
-  { id: "mayuri_boys", name: "Mayuri", subtitle: "Boys" },
-  { id: "mayuri_girls", name: "Mayuri", subtitle: "Girls" },
+  { id: "mayuri_boys", name: "Mayuri Boys" },
+  { id: "mayuri_girls", name: "Mayuri Girls" },
+  { id: "rassense", name: "Rassense" },
+  { id: "food_sutra", name: "Food Sutra" },
   { id: "safal", name: "Safal" },
+  { id: "anchor", name: "Anchor" },
   { id: "ab_catering", name: "AB Catering" },
 ];
 
 export function messLabel(id: MessId) {
-  const m = MESSES.find((x) => x.id === id)!;
+  const m = MESSES.find((x) => x.id === id);
+  if (!m) return id;
   return m.subtitle ? `${m.name} (${m.subtitle})` : m.name;
 }
 
@@ -410,7 +422,41 @@ export function getOverrides(mess: MessId): Record<string, any> {
 export async function saveOverrides(mess: MessId, o: any) {
   console.info("[Static Model] Overrides disabled.");
 }
+/* ---------------- ⚡ SPECIAL FIRESTORE OVERRIDES ---------------- */
 
+export interface SpecialOverride {
+  id?: string;
+  messId: MessId;
+  label: string;
+  date: string;       // YYYY-MM-DD
+  startTime: string;  // HH:mm (e.g., "07:30")
+  endTime: string;    // HH:mm (e.g., "22:00")
+  expiresAt: string;  // ISO Date string for automatic expiration
+  menu: DayMenu;
+  createdAt?: any;
+}
+
+/**
+ * ⚡ Save or update a Special Override in Firestore
+ */
+export async function saveFirestoreOverride(messId: MessId, override: SpecialOverride) {
+  if (!db) return;
+  const overrideDocId = `${messId}_${override.date}`;
+  await setDoc(doc(db, "mess_overrides", overrideDocId), {
+    ...override,
+    messId,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * ⚡ Delete an override from Firestore
+ */
+export async function deleteFirestoreOverride(messId: MessId, dateStr: string) {
+  if (!db) return;
+  const overrideDocId = `${messId}_${dateStr}`;
+  await deleteDoc(doc(db, "mess_overrides", overrideDocId));
+}
 /* ---------------- 🔥 LIVE FIRESTORE BROADCAST ---------------- */
 
 export async function sendBroadcast(messId: MessId, title: string, body: string) {
@@ -583,14 +629,16 @@ export const MEALS = MEAL_DEFS;
 /* ---------------- Role Security & Gatekeeping ---------------- */
 
 export const ADMIN_AUTH_KEYS: Record<string, { role: "admin" | "super-admin" | "nutritionist"; messId?: MessId }> = {
-  "MeranaamJMB@2026": { role: "admin", messId: "jmb" },
-  "MeranaamCRCL@2026": { role: "admin", messId: "crcl" },
-  "MeranaamMAYURIB@2026": { role: "admin", messId: "mayuri_boys" },
-  "MeranaamMAYURIG@2026": { role: "admin", messId: "mayuri_girls" },
-  "MeranaamSAFAL@2026": { role: "admin", messId: "safal" },
-  "MeranaamABCAT@2026": { role: "admin", messId: "ab_catering" },
-  "Meranaammesshai#99": { role: "super-admin" } ,
-  "VITBNutri@2026": { role: "nutritionist" }
+  [import.meta.env.VITE_ADMIN_PASS_JMB]: { role: "admin", messId: "jmb" },
+  [import.meta.env.VITE_ADMIN_PASS_MAYURI_BOYS]: { role: "admin", messId: "mayuri_boys" },
+  [import.meta.env.VITE_ADMIN_PASS_MAYURI_GIRLS]: { role: "admin", messId: "mayuri_girls" },
+  [import.meta.env.VITE_ADMIN_PASS_RASSENSE]: { role: "admin", messId: "rassense" },
+  [import.meta.env.VITE_ADMIN_PASS_FOOD_SUTRA]: { role: "admin", messId: "food_sutra" },
+  [import.meta.env.VITE_ADMIN_PASS_SAFAL]: { role: "admin", messId: "safal" },
+  [import.meta.env.VITE_ADMIN_PASS_ANCHOR]: { role: "admin", messId: "anchor" },
+  [import.meta.env.VITE_ADMIN_PASS_AB_CATERING]: { role: "admin", messId: "ab_catering" },
+  [import.meta.env.VITE_SUPER_ADMIN_PASS]: { role: "super-admin" },
+  [import.meta.env.VITE_NUTRITIONIST_PASS]: { role: "nutritionist" }
 };
 
 const ADMIN_SESSION_KEY = "messhub.admin.session";
@@ -623,19 +671,50 @@ export function clearAdminSession() {
 // import { getDoc } from "firebase/firestore";
 
 // 1. Dynamic Item with Macros
-export interface MenuItemWithNutrition {
-  name: string;
-  calories?: number; // kcal
-  protein?: number;  // grams
-  carbs?: number;    // grams
-  fat?: number;      // grams
+// ✅ NEW: Full Macro, Micro, and Regional Profile
+export interface MicronutrientProfile {
+  iron?: number;        // mg
+  calcium?: number;     // mg
+  magnesium?: number;   // mg
+  potassium?: number;   // mg
+  sodium?: number;      // mg
+  zinc?: number;        // mg
+  vitaminA?: number;    // mcg
+  vitaminC?: number;    // mg
+  vitaminB12?: number;  // mcg
+  folate?: number;      // mcg
+  vitaminD?: number;    // mcg / IU
+  vitaminB6?: number;   // mg
 }
 
+export interface NutritionDishItem {
+  id?: string;
+  name: string;
+  regionalTag?: string; // e.g., "Tamil Nadu Style", "Punjabi", "Rajasthani", "Kerala", "Bengali"
+  description?: string; // Short dish summary & health benefits
+  originStory?: string; // Region of origin & cultural history
+  funFact?: string;     // Popular or fun trivia about the dish
+
+  // Primary Macro Values (Visible on Main Menu Cards)
+  calories: number;     // Energy (kcal)
+  protein: number;      // Protein (g)
+  carbs: number;        // Carbohydrates (g)
+  fat: number;          // Total Fat (g)
+  saturatedFat?: number;// Saturated Fat (g)
+  fiber?: number;       // Fibre (g)
+  addedSugar?: number;  // Added Sugar (g)
+
+  // Secondary Micro Breakdown (Collapsed under "Know More")
+  micronutrients?: MicronutrientProfile;
+}
+
+export type MenuItemWithNutrition = NutritionDishItem;
+
 export interface DayMenuWithNutrition {
-  breakfast: MenuItemWithNutrition[];
-  lunch: MenuItemWithNutrition[];
-  snacks: MenuItemWithNutrition[];
-  dinner: MenuItemWithNutrition[];
+  breakfast: NutritionDishItem[];
+  lunch: NutritionDishItem[];
+  snacks: NutritionDishItem[];
+  dinner: NutritionDishItem[];
 }
 
 // 2. Fetch Dynamic Menu from Firestore (or fallback to empty structure)
@@ -709,7 +788,169 @@ export async function submitItemFeedback(feedback: Omit<ItemFeedback, "id" | "cr
 /**
  * 🚀 One-click script to seed ALL messes and days into Firestore `mess_menus`
  */
-export async function seedAllMenusToFirestore() {
+// export async function seedAllMenusToFirestore() {
+//   if (!db) return;
+
+//   const messIds = Object.keys(HARDCODED_WEEKLY_MENUS) as MessId[];
+//   let totalSeeded = 0;
+
+//   for (const messId of messIds) {
+//     for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+//       const defaultMenu = HARDCODED_WEEKLY_MENUS[messId]?.[dayIndex];
+
+//       if (defaultMenu) {
+//         const menuWithNutrition: DayMenuWithNutrition = {
+//           breakfast: (defaultMenu.breakfast || []).map((name) => ({
+//             name,
+//             calories: 220,
+//             protein: 6,
+//             carbs: 30,
+//             fat: 5,
+//           })),
+//           lunch: (defaultMenu.lunch || []).map((name) => ({
+//             name,
+//             calories: 380,
+//             protein: 12,
+//             carbs: 50,
+//             fat: 8,
+//           })),
+//           snacks: (defaultMenu.snacks || []).map((name) => ({
+//             name,
+//             calories: 180,
+//             protein: 4,
+//             carbs: 25,
+//             fat: 6,
+//           })),
+//           dinner: (defaultMenu.dinner || []).map((name) => ({
+//             name,
+//             calories: 420,
+//             protein: 15,
+//             carbs: 55,
+//             fat: 10,
+//           })),
+//         };
+
+//         await saveDynamicMessMenu(messId, dayIndex, menuWithNutrition);
+//         totalSeeded++;
+//       }
+//     }
+//   }
+
+//   console.info(`[Seeder] Successfully populated ${totalSeeded} menu documents into Firestore!`);
+//   alert(`✅ Done! Created ${totalSeeded} mess menu documents across all facilities in Firestore.`);
+// }
+export function generateDishProfile(dishName: string, meal: MealKey): NutritionDishItem {
+  const d = dishName.toLowerCase();
+  
+  let regionalTag = "North Indian";
+  let description = "Traditional wholesome campus meal prepared with fresh ingredients.";
+  let originStory = "Evolved as a staple across Indian regional home kitchens.";
+  let funFact = "Prepared fresh daily using balanced spice blends for optimal digestion.";
+
+  let calories = 220;
+  let protein = 7;
+  let carbs = 32;
+  let fat = 6;
+  let saturatedFat = 1.5;
+  let fiber = 3;
+  let addedSugar = 0;
+
+  let iron = 1.8;
+  let calcium = 45;
+  let magnesium = 28;
+  let potassium = 180;
+  let sodium = 210;
+  let zinc = 0.9;
+  let vitaminA = 35;
+  let vitaminC = 4;
+  let vitaminB12 = 0.1;
+  let folate = 25;
+  let vitaminD = 0;
+  let vitaminB6 = 0.2;
+
+  // South Indian Dishes
+  if (d.includes("dosa") || d.includes("idli") || d.includes("vada") || d.includes("uthappam") || d.includes("pongal") || d.includes("sambar") || d.includes("rasam") || d.includes("poriyal") || d.includes("kootu") || d.includes("kuzhambu") || d.includes("avial")) {
+    if (d.includes("kerala") || d.includes("avial")) {
+      regionalTag = "Kerala Style";
+      description = "Rich vegetable medley cooked in a lightly seasoned coconut and curd sauce.";
+      originStory = "Originates from the Travancore royal feast (Sadya) tradition.";
+      funFact = "According to legend, Bhima invented Avial during the Pandavas' exile.";
+    } else {
+      regionalTag = "Tamil Nadu Style";
+      description = "Authentic Southern recipe flavored with curry leaves, mustard seeds, and freshly ground spices.";
+      originStory = "A century-old staple of South Indian breakfast and thali traditions.";
+      funFact = "Fermented batter makes dosas and idlis naturally probiotic and gut-friendly.";
+    }
+    calories = d.includes("dosa") ? 260 : 190;
+    protein = 7;
+    carbs = 38;
+    fat = 5;
+    calcium = 65;
+  }
+  // Punjabi / North Indian Classics
+  else if (d.includes("rajma") || d.includes("chole") || d.includes("paneer") || d.includes("makhani") || d.includes("bhature") || d.includes("paratha") || d.includes("butter chicken")) {
+    regionalTag = "Punjabi Style";
+    if (d.includes("rajma")) {
+      description = "Tender kidney beans simmered in a spiced onion-tomato gravy.";
+      originStory = "Popularized in the Punjab region after kidney beans arrived via trade routes.";
+      funFact = "Rajma-Chawal is considered the ultimate comfort food across Northern India.";
+      protein = 13;
+      fiber = 7;
+    } else if (d.includes("paneer")) {
+      description = "Rich cottage cheese cubes cooked in aromatic spiced gravy.";
+      originStory = "A festive centerpiece in North Indian culinary feasts.";
+      funFact = "Paneer is one of the richest non-meat sources of complete casein protein.";
+      protein = 15;
+      fat = 12;
+      calcium = 180;
+    }
+    calories = 340;
+    carbs = 42;
+  }
+  // Rajasthani & Central Indian
+  else if (d.includes("gatte") || d.includes("bati") || d.includes("churma") || d.includes("sev tamatar") || d.includes("poha") || d.includes("jalebi")) {
+    if (d.includes("poha") || d.includes("jalebi")) {
+      regionalTag = "Malwa / Central Indian";
+      description = "Steamed flattened rice tempered with mustard, fennel seeds, and crunchy peanuts.";
+      originStory = "Signature breakfast of Indore and Central India.";
+      funFact = "Light, non-oily, and loaded with easily bioavailable iron from flattened paddy.";
+      iron = 3.5;
+    } else {
+      regionalTag = "Rajasthani Style";
+      description = "Gram flour dumplings or baked wheat batis infused with traditional desert spices.";
+      originStory = "Developed to preserve nutritious food in arid desert climates with minimal water.";
+      funFact = "Dal Baati Churma was historically carried by Rajput warriors for long expeditions.";
+      protein = 10;
+    }
+  }
+  // Bengali / Eastern
+  else if (d.includes("posto") || d.includes("ghugni") || d.includes("bhaja") || d.includes("kheer")) {
+    regionalTag = "Bengali Style";
+    description = "Subtly spiced dish seasoned with panch phoron (five-spice blend) and mustard oil.";
+    originStory = "A classic afternoon staple in Bengal households.";
+  }
+
+  return {
+    name: dishName,
+    regionalTag,
+    description,
+    originStory,
+    funFact,
+    calories,
+    protein,
+    carbs,
+    fat,
+    saturatedFat,
+    fiber,
+    addedSugar,
+    micronutrients: {
+      iron, calcium, magnesium, potassium, sodium, zinc,
+      vitaminA, vitaminC, vitaminB12, folate, vitaminD, vitaminB6
+    }
+  };
+}
+
+export async function seedAllNutritionMenusToFirestore() {
   if (!db) return;
 
   const messIds = Object.keys(HARDCODED_WEEKLY_MENUS) as MessId[];
@@ -720,45 +961,27 @@ export async function seedAllMenusToFirestore() {
       const defaultMenu = HARDCODED_WEEKLY_MENUS[messId]?.[dayIndex];
 
       if (defaultMenu) {
-        const menuWithNutrition: DayMenuWithNutrition = {
-          breakfast: (defaultMenu.breakfast || []).map((name) => ({
-            name,
-            calories: 220,
-            protein: 6,
-            carbs: 30,
-            fat: 5,
-          })),
-          lunch: (defaultMenu.lunch || []).map((name) => ({
-            name,
-            calories: 380,
-            protein: 12,
-            carbs: 50,
-            fat: 8,
-          })),
-          snacks: (defaultMenu.snacks || []).map((name) => ({
-            name,
-            calories: 180,
-            protein: 4,
-            carbs: 25,
-            fat: 6,
-          })),
-          dinner: (defaultMenu.dinner || []).map((name) => ({
-            name,
-            calories: 420,
-            protein: 15,
-            carbs: 55,
-            fat: 10,
-          })),
+        const enrichedMenu: DayMenuWithNutrition = {
+          breakfast: (defaultMenu.breakfast || []).map((name) => generateDishProfile(name, "breakfast")),
+          lunch: (defaultMenu.lunch || []).map((name) => generateDishProfile(name, "lunch")),
+          snacks: (defaultMenu.snacks || []).map((name) => generateDishProfile(name, "snacks")),
+          dinner: (defaultMenu.dinner || []).map((name) => generateDishProfile(name, "dinner")),
         };
 
-        await saveDynamicMessMenu(messId, dayIndex, menuWithNutrition);
+        await setDoc(doc(db, "mess_menus", `${messId}_${dayIndex}`), {
+          ...enrichedMenu,
+          messId,
+          day: dayIndex,
+          updatedAt: serverTimestamp(),
+          updatedByRole: "nutritionist",
+        });
+
         totalSeeded++;
       }
     }
   }
 
-  console.info(`[Seeder] Successfully populated ${totalSeeded} menu documents into Firestore!`);
-  alert(`✅ Done! Created ${totalSeeded} mess menu documents across all facilities in Firestore.`);
+  alert(`✅ Done! Populated ${totalSeeded} complete macro, micro, and regional menus across all messes into Firestore.`);
 }
 
 /* ---------------- ⭐ ITEM FEEDBACK SYSTEM ---------------- */
@@ -797,3 +1020,82 @@ export async function toggleFeedbackStatus(feedbackId: string, currentStatus: "s
   }
 }
 
+
+// Add this interface if not already present
+export interface KitchenRecipe {
+  ingredients?: string;
+  method?: string;
+}
+
+// Ensure NutritionDishItem includes servingSize, specialTag, and recipe
+export interface NutritionDishItem {
+  id?: string;
+  name: string;
+  servingSize?: string;
+  regionalTag?: string;
+  specialTag?: string;
+  description?: string;
+  originStory?: string;
+  funFact?: string;
+  recipe?: KitchenRecipe;
+
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  saturatedFat?: number;
+  fiber?: number;
+  addedSugar?: number;
+
+  micronutrients?: MicronutrientProfile;
+}
+
+/**
+ * ⚡ Fetch Daily Date-Specific Menu (Pushed from Google Sheets or Edited in Dashboard)
+ */
+export async function getDailyMessMenu(messId: string, dateStr: string): Promise<DayMenuWithNutrition | null> {
+  if (!db) return null;
+  try {
+    const docRef = doc(db, "daily_menus", `${messId}_${dateStr}`);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return snap.data() as DayMenuWithNutrition;
+    }
+  } catch (err) {
+    console.error("[MessHub] Error fetching daily menu:", err);
+  }
+  return null;
+}
+
+/**
+ * ⚡ Save or Live-Edit Daily Menu from the Portal
+ */
+export async function saveDailyMessMenu(messId: string, dateStr: string, menuData: DayMenuWithNutrition) {
+  if (!db) return;
+  const docId = `${messId}_${dateStr}`;
+  const session = getAdminSession();
+
+  try {
+    await setDoc(doc(db, "daily_menus", docId), {
+      ...menuData,
+      messId,
+      date: dateStr,
+      updatedAt: serverTimestamp(),
+      updatedByRole: session?.role || "nutritionist",
+    }, { merge: true });
+
+    // Create Audit Log
+    await addDoc(collection(db, "admin_audit_logs"), {
+      messId,
+      action: "Daily Menu Edited via Portal",
+      details: `Updated daily menu for date ${dateStr}`,
+      operatorRole: session?.role || "nutritionist",
+      timestamp: serverTimestamp(),
+    });
+
+    console.info(`[Firestore] Saved live menu for ${docId}`);
+  } catch (error) {
+    console.error("[Firestore] Error saving daily menu:", error);
+    throw error;
+  }
+}

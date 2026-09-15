@@ -14,6 +14,7 @@ import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as NutritionistRouteImport } from './routes/nutritionist'
 import { Route as ComplaintsRouteImport } from './routes/complaints'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as AddMessRouteImport } from './routes/add-mess'
 import { Route as AdminNotificationsRouteImport } from './routes/AdminNotifications'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -42,6 +43,11 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AddMessRoute = AddMessRouteImport.update({
+  id: '/add-mess',
+  path: '/add-mess',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminNotificationsRoute = AdminNotificationsRouteImport.update({
   id: '/AdminNotifications',
   path: '/AdminNotifications',
@@ -56,6 +62,7 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/AdminNotifications': typeof AdminNotificationsRoute
+  '/add-mess': typeof AddMessRoute
   '/admin': typeof AdminRoute
   '/complaints': typeof ComplaintsRoute
   '/nutritionist': typeof NutritionistRoute
@@ -65,6 +72,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/AdminNotifications': typeof AdminNotificationsRoute
+  '/add-mess': typeof AddMessRoute
   '/admin': typeof AdminRoute
   '/complaints': typeof ComplaintsRoute
   '/nutritionist': typeof NutritionistRoute
@@ -75,6 +83,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/AdminNotifications': typeof AdminNotificationsRoute
+  '/add-mess': typeof AddMessRoute
   '/admin': typeof AdminRoute
   '/complaints': typeof ComplaintsRoute
   '/nutritionist': typeof NutritionistRoute
@@ -86,6 +95,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/AdminNotifications'
+    | '/add-mess'
     | '/admin'
     | '/complaints'
     | '/nutritionist'
@@ -95,6 +105,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/AdminNotifications'
+    | '/add-mess'
     | '/admin'
     | '/complaints'
     | '/nutritionist'
@@ -104,6 +115,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/AdminNotifications'
+    | '/add-mess'
     | '/admin'
     | '/complaints'
     | '/nutritionist'
@@ -114,6 +126,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminNotificationsRoute: typeof AdminNotificationsRoute
+  AddMessRoute: typeof AddMessRoute
   AdminRoute: typeof AdminRoute
   ComplaintsRoute: typeof ComplaintsRoute
   NutritionistRoute: typeof NutritionistRoute
@@ -158,6 +171,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/add-mess': {
+      id: '/add-mess'
+      path: '/add-mess'
+      fullPath: '/add-mess'
+      preLoaderRoute: typeof AddMessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/AdminNotifications': {
       id: '/AdminNotifications'
       path: '/AdminNotifications'
@@ -178,6 +198,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminNotificationsRoute: AdminNotificationsRoute,
+  AddMessRoute: AddMessRoute,
   AdminRoute: AdminRoute,
   ComplaintsRoute: ComplaintsRoute,
   NutritionistRoute: NutritionistRoute,

@@ -1,11 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
+import * as XLSX from "xlsx";
 import {
   DEFAULT_WEEKLY,
   MEAL_DEFS,
   MESSES,
   dateKey,
-  formatTime,
   getOverrides,
   saveOverrides,
   getAdminSession,
@@ -13,53 +13,135 @@ import {
   clearAdminSession,
   ADMIN_AUTH_KEYS,
   sendBroadcast,
-  getDynamicMessMenu,
-  saveDynamicMessMenu,
   HARDCODED_WEEKLY_MENUS,
   toggleFeedbackStatus,
+  saveFirestoreOverride,
+  deleteFirestoreOverride,
   type DayMenu,
   type MealKey,
   type MessId,
-  type Overrides,
   type DayMenuWithNutrition,
-  type MenuItemWithNutrition,
   type ItemFeedback,
+  type SpecialOverride,
+  type NutritionDishItem,
 } from "@/lib/messhub";
 import { db } from "@/lib/firebase";
-import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
-import { Plus, Trash2, Save, CheckCircle2, AlertCircle, Lock, CheckSquare, Square, Star } from "lucide-react";
+import { 
+  collection, 
+  query, 
+  where, 
+  orderBy, 
+  onSnapshot, 
+  addDoc, 
+  serverTimestamp,
+  doc,
+  getDoc,
+  setDoc,
+  writeBatch
+} from "firebase/firestore";
+import { 
+  Plus, 
+  Trash2, 
+  Save, 
+  CheckCircle2, 
+  AlertCircle, 
+  Lock, 
+  CheckSquare, 
+  Square, 
+  Star, 
+  Clock, 
+  Sparkles, 
+  History, 
+  Edit3, 
+  Utensils, 
+  Megaphone,
+  MessageSquare,
+  LogOut,
+  ChevronRight,
+  Menu,
+  X,
+  Flame,
+  Dumbbell,
+  Wheat,
+  Calendar,
+  ChefHat,
+  FileSpreadsheet,
+  Download
+} from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
     meta: [
-      { title: "Mess Control Gateway — MessHub" },
-      { name: "description", content: "Secure authentication gateway for mess operators." },
+      { title: "Mess Control Dashboard — MessHub" },
+      { name: "description", content: "Mess console with pending change tracking, Excel import, and audit history." },
     ],
   }),
   component: AdminGatekeeper,
 });
 
-const WEEKDAYS = [
-  { i: 1, name: "Monday" },
-  { i: 2, name: "Tuesday" },
-  { i: 3, name: "Wednesday" },
-  { i: 4, name: "Thursday" },
-  { i: 5, name: "Friday" },
-  { i: 6, name: "Saturday" },
-  { i: 0, name: "Sunday" },
-];
+export type Overrides = Record<string, { label: string; menu: DayMenu }>;
 
 const MEAL_TYPES = ["breakfast", "lunch", "snacks", "dinner"] as const;
 
+export interface AdminDishItem extends NutritionDishItem {
+  servingSize?: string;
+  specialTag?: string;
+  recipe?: {
+    ingredients?: string;
+    method?: string;
+  };
+}
+
+export type AdminDayMenu = {
+  breakfast: AdminDishItem[];
+  lunch: AdminDishItem[];
+  snacks: AdminDishItem[];
+  dinner: AdminDishItem[];
+};
+
+// Helper to recursively remove undefined values so Firestore never rejects payloads
+function cleanFirestoreData(data: any): any {
+  if (data === undefined) return null;
+  if (data === null || typeof data !== "object") return data;
+  
+  if (Array.isArray(data)) {
+    return data.map(cleanFirestoreData);
+  }
+  
+  const cleaned: Record<string, any> = {};
+  for (const key of Object.keys(data)) {
+    const val = data[key];
+    if (val !== undefined) {
+      cleaned[key] = cleanFirestoreData(val);
+    }
+  }
+  return cleaned;
+}
+
+async function logAdminActivity(messId: string, action: string, details: string) {
+  if (!db) return;
+  const firestoreDb = db;
+  try {
+    const session = getAdminSession();
+    await addDoc(collection(firestoreDb, "admin_audit_logs"), {
+      messId,
+      action,
+      details,
+      operatorRole: session?.role || "admin",
+      timestamp: serverTimestamp(),
+    });
+  } catch (err) {
+    console.error("Failed to write audit log:", err);
+  }
+}
+
 function AdminGatekeeper() {
   const navigate = useNavigate();
-  // Start session as null on initial SSR render
   const [session, setSession] = useState<any>(null);
   const [isHydrated, setIsHydrated] = useState(false);
   const [passcode, setPasscode] = useState("");
   const [authError, setAuthError] = useState(false);
 
-  // Read saved session ONLY on client mount to match SSR
   useEffect(() => {
     const savedSession = getAdminSession();
     if (savedSession) {
@@ -94,12 +176,10 @@ function AdminGatekeeper() {
     }
   }
 
-  // Prevent flash before hydration completes
   if (!isHydrated) {
     return <div className="min-h-screen bg-background" />;
   }
 
-  // Phase 1: Lockscreen Gate
   if (!session || !session.messId) {
     return (
       <div className="min-h-screen bg-background flex flex-col justify-between px-6 py-12 safe-top safe-bottom select-none font-sans">
@@ -157,106 +237,404 @@ function AdminGatekeeper() {
   return <LockedMessDashboard messId={session.messId} onSignOut={() => setSession(null)} />;
 }
 
-/* ---------------- Concrete Isolated Dashboard View ---------------- */
+/* ---------------- Sidebar Dashboard Layout ---------------- */
 
 function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut: () => void }) {
   const [overrides, setOverrides] = useState<Overrides>(() => getOverrides(messId));
-  const [activeDay, setActiveDay] = useState<number>(() => new Date().getDay());
+
+  // Date selection state
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+
   const [showOverrideEditor, setShowOverrideEditor] = useState<string | null>(null);
-  
-  // Dynamic Nutrition Menu States
-  const [menu, setMenu] = useState<DayMenuWithNutrition>({
+  const [activeTab, setActiveTab] = useState<"menu" | "overrides" | "broadcasts" | "feedback" | "audit">("menu");
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [expandedRecipeIndex, setExpandedRecipeIndex] = useState<string | null>(null);
+  const [isImportingExcel, setIsImportingExcel] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Firestore Real-Time Subscriptions
+  const [firestoreOverrides, setFirestoreOverrides] = useState<SpecialOverride[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+
+  // Menu States
+  const [menu, setMenu] = useState<AdminDayMenu>({
     breakfast: [],
     lunch: [],
     snacks: [],
     dinner: [],
   });
+  const [initialLoadedMenu, setInitialLoadedMenu] = useState<AdminDayMenu | null>(null);
   const [isLoadingMenu, setIsLoadingMenu] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Broadcast States
   const [broadcastTitle, setBroadcastTitle] = useState("");
   const [broadcastBody, setBroadcastBody] = useState("");
   const [isBroadcasting, setIsBroadcasting] = useState(false);
 
-  const mess = MESSES.find((m) => m.id === messId)!;
+  const mess = MESSES.find((m) => m.id === messId) || { id: messId, name: messId };
 
-  // ⚡ Load Menu & Nutrition Macros whenever Mess or Day changes
-  useEffect(() => {
-    async function load() {
-      setIsLoadingMenu(true);
-      setHasUnsavedChanges(false);
+  // Pending Changes Calculation
+  const pendingSummary = useMemo(() => {
+    if (!initialLoadedMenu) return [];
+    const changes: { meal: string; text: string }[] = [];
 
-      const data = await getDynamicMessMenu(messId, activeDay);
+    MEAL_TYPES.forEach((meal) => {
+      const origList = (initialLoadedMenu[meal] || []).map((i) => i.name.trim());
+      const curList = (menu[meal] || []).map((i) => i.name.trim());
 
-      if (data && (data.breakfast?.length > 0 || data.lunch?.length > 0 || data.dinner?.length > 0)) {
-        setMenu(data);
-      } else {
-        // Fallback to static hardcoded matrix
-        const defaultMenu = HARDCODED_WEEKLY_MENUS[messId]?.[activeDay];
-        if (defaultMenu) {
-          setMenu({
-            breakfast: (defaultMenu.breakfast || []).map((name) => ({ name, calories: 200, protein: 6, carbs: 25, fat: 5 })),
-            lunch: (defaultMenu.lunch || []).map((name) => ({ name, calories: 350, protein: 12, carbs: 45, fat: 8 })),
-            snacks: (defaultMenu.snacks || []).map((name) => ({ name, calories: 180, protein: 4, carbs: 22, fat: 6 })),
-            dinner: (defaultMenu.dinner || []).map((name) => ({ name, calories: 400, protein: 15, carbs: 50, fat: 10 })),
-          });
-        } else {
-          setMenu({ breakfast: [], lunch: [], snacks: [], dinner: [] });
+      if (JSON.stringify(origList) !== JSON.stringify(curList)) {
+        const added = curList.filter((x) => x && !origList.includes(x));
+        const removed = origList.filter((x) => x && !curList.includes(x));
+
+        if (added.length > 0) changes.push({ meal, text: `Added: ${added.join(", ")}` });
+        if (removed.length > 0) changes.push({ meal, text: `Removed: ${removed.join(", ")}` });
+        if (added.length === 0 && removed.length === 0 && origList.length === curList.length) {
+          changes.push({ meal, text: `Modified dish details` });
         }
       }
+    });
 
-      setIsLoadingMenu(false);
+    return changes;
+  }, [menu, initialLoadedMenu]);
+
+  const hasUnsavedChanges = pendingSummary.length > 0;
+
+  // Real-time onSnapshot for Special Overrides
+  useEffect(() => {
+    if (!db) return;
+    const firestoreDb = db;
+    const q = query(collection(firestoreDb, "mess_overrides"), where("messId", "==", messId));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list: SpecialOverride[] = [];
+      const overrideObj: Overrides = {};
+      
+      snapshot.forEach((doc) => {
+        const data = doc.data() as SpecialOverride;
+        list.push({ id: doc.id, ...data });
+        overrideObj[data.date] = { label: data.label, menu: data.menu };
+      });
+
+      setFirestoreOverrides(list);
+      setOverrides(overrideObj);
+    });
+
+    return () => unsubscribe();
+  }, [messId]);
+
+  // Real-time onSnapshot for Admin Activity Logs
+  useEffect(() => {
+    if (!db) return;
+    const firestoreDb = db;
+    const auditQuery = query(
+      collection(firestoreDb, "admin_audit_logs"),
+      where("messId", "==", messId),
+      orderBy("timestamp", "desc")
+    );
+
+    const unsub = onSnapshot(auditQuery, (snapshot) => {
+      setAuditLogs(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+    }, (err) => {
+      console.warn("Audit log order notice:", err);
+    });
+
+    return () => unsub();
+  }, [messId]);
+
+  // Load Menu strictly by selectedDate (YYYY-MM-DD) from `daily_menus`
+  useEffect(() => {
+    if (!db || !selectedDate || !messId) return;
+    const firestoreDb = db;
+
+    async function loadDailyMenu() {
+      setIsLoadingMenu(true);
+      try {
+        const docId = `${messId}_${selectedDate}`;
+        const dailyDocRef = doc(firestoreDb, "daily_menus", docId);
+        const dailySnap = await getDoc(dailyDocRef);
+
+        if (dailySnap.exists()) {
+          const data = dailySnap.data();
+          const formattedMenu: AdminDayMenu = {
+            breakfast: (data.breakfast || []).map(sanitizeItem),
+            lunch: (data.lunch || []).map(sanitizeItem),
+            snacks: (data.snacks || []).map(sanitizeItem),
+            dinner: (data.dinner || []).map(sanitizeItem),
+          };
+          setMenu(formattedMenu);
+          setInitialLoadedMenu(JSON.parse(JSON.stringify(formattedMenu)));
+        } else {
+          const emptyMenu: AdminDayMenu = { breakfast: [], lunch: [], snacks: [], dinner: [] };
+          setMenu(emptyMenu);
+          setInitialLoadedMenu(JSON.parse(JSON.stringify(emptyMenu)));
+        }
+      } catch (err) {
+        console.error("Error loading daily menu from Firestore:", err);
+      } finally {
+        setIsLoadingMenu(false);
+      }
     }
-    load();
-  }, [messId, activeDay]);
 
-  const handleAddItem = (meal: keyof DayMenuWithNutrition) => {
+    loadDailyMenu();
+  }, [messId, selectedDate]);
+
+  function sanitizeItem(item: any): AdminDishItem {
+    if (typeof item === "string") {
+      return {
+        name: item,
+        servingSize: "1 Portion",
+        calories: 200,
+        protein: 6,
+        carbs: 25,
+        fat: 5,
+        saturatedFat: 1,
+        fiber: 2,
+        addedSugar: 0,
+        recipe: { ingredients: "", method: "" },
+        micronutrients: {
+          iron: 0, calcium: 0, magnesium: 0, potassium: 0, sodium: 0, zinc: 0,
+          vitaminA: 0, vitaminC: 0, vitaminB12: 0, folate: 0, vitaminD: 0, vitaminB6: 0
+        }
+      };
+    }
+    return {
+      name: item.name || "",
+      servingSize: item.servingSize || "1 Portion",
+      regionalTag: item.regionalTag || "",
+      specialTag: item.specialTag || "",
+      description: item.description || "",
+      originStory: item.originStory || "",
+      funFact: item.funFact || "",
+      recipe: {
+        ingredients: item.recipe?.ingredients || "",
+        method: item.recipe?.method || "",
+      },
+      calories: item.calories ?? 200,
+      protein: item.protein ?? 6,
+      carbs: item.carbs ?? 25,
+      fat: item.fat ?? 5,
+      saturatedFat: item.saturatedFat ?? 1,
+      fiber: item.fiber ?? 2,
+      addedSugar: item.addedSugar ?? 0,
+      micronutrients: {
+        iron: item.micronutrients?.iron ?? 0,
+        calcium: item.micronutrients?.calcium ?? 0,
+        magnesium: item.micronutrients?.magnesium ?? 0,
+        potassium: item.micronutrients?.potassium ?? 0,
+        sodium: item.micronutrients?.sodium ?? 0,
+        zinc: item.micronutrients?.zinc ?? 0,
+        vitaminA: item.micronutrients?.vitaminA ?? 0,
+        vitaminC: item.micronutrients?.vitaminC ?? 0,
+        vitaminB12: item.micronutrients?.vitaminB12 ?? 0,
+        folate: item.micronutrients?.folate ?? 0,
+        vitaminD: item.micronutrients?.vitaminD ?? 0,
+        vitaminB6: item.micronutrients?.vitaminB6 ?? 0,
+      }
+    };
+  }
+
+  const handleAddItem = (meal: keyof AdminDayMenu) => {
     setMenu((prev) => ({
       ...prev,
-      [meal]: [...prev[meal], { name: "", calories: 200, protein: 8, carbs: 25, fat: 5 }],
+      [meal]: [...prev[meal], { name: "", servingSize: "1 Portion", calories: 200, protein: 8, carbs: 25, fat: 5, recipe: { ingredients: "", method: "" } }],
     }));
-    setHasUnsavedChanges(true);
   };
 
-  const handleRemoveItem = (meal: keyof DayMenuWithNutrition, index: number) => {
+  const handleRemoveItem = (meal: keyof AdminDayMenu, index: number) => {
     setMenu((prev) => ({
       ...prev,
       [meal]: prev[meal].filter((_, i) => i !== index),
     }));
-    setHasUnsavedChanges(true);
   };
 
-  // Only allows updating dish name for admins
-  const handleItemNameChange = (
-    meal: keyof DayMenuWithNutrition,
+  const handleItemFieldChange = (
+    meal: keyof AdminDayMenu,
     index: number,
-    value: string
+    field: keyof AdminDishItem,
+    value: any
   ) => {
     setMenu((prev) => {
       const updatedMeal = [...prev[meal]];
-      updatedMeal[index] = { ...updatedMeal[index], name: value };
+      updatedMeal[index] = { ...updatedMeal[index], [field]: value };
       return { ...prev, [meal]: updatedMeal };
     });
-    setHasUnsavedChanges(true);
   };
 
   async function handleSaveChanges() {
     if (!hasUnsavedChanges) {
-      alert("ℹ️ No changes detected!\n\nYou haven't modified any menu items.");
+      alert("ℹ️ No changes detected!\n\nYou have not modified any dishes.");
       return;
     }
 
+    if (!db || !selectedDate) return;
+    const firestoreDb = db;
     setIsSaving(true);
+
     try {
-      await saveDynamicMessMenu(messId, activeDay, menu);
-      setHasUnsavedChanges(false);
-      alert(`✅ Menu items updated in Firebase and published to student feeds!`);
-    } catch {
-      alert("An error occurred while deploying updates. Check network stability.");
+      const dailyDocRef = doc(firestoreDb, "daily_menus", `${messId}_${selectedDate}`);
+      
+      const payload = cleanFirestoreData({
+        ...menu,
+        messId,
+        date: selectedDate,
+        updatedAt: serverTimestamp(),
+        updatedByRole: "admin",
+      });
+
+      await setDoc(dailyDocRef, payload, { merge: true });
+
+      await logAdminActivity(
+        messId, 
+        "Menu Published", 
+        `Updated dishes for date ${selectedDate}: ${pendingSummary.map(c => `${c.meal} (${c.text})`).join("; ")}`
+      );
+
+      setInitialLoadedMenu(JSON.parse(JSON.stringify(menu)));
+      alert(`✅ Menu items and recipes for ${selectedDate} updated in Firebase and live in student apps!`);
+    } catch (err: any) {
+      console.error(err);
+      alert(`An error occurred: ${err.message || "Failed to update Firestore."}`);
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  // 📂 Excel / CSV Import Function
+  async function handleExcelImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !db) return;
+    const firestoreDb = db;
+    setIsImportingExcel(true);
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
+      const firstSheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[firstSheetName];
+      const rows: any[] = XLSX.utils.sheet_to_json(sheet);
+
+      if (!rows || rows.length === 0) {
+        alert("The selected Excel file is empty.");
+        return;
+      }
+
+      const groupedByDate: Record<string, AdminDayMenu> = {};
+      let dishCount = 0;
+
+      for (const row of rows) {
+        const getVal = (...keys: string[]): any => {
+          for (const k of keys) {
+            if (row[k] !== undefined && row[k] !== null && row[k] !== "") return row[k];
+            const foundKey = Object.keys(row).find(
+              (rk) => rk.toLowerCase().replace(/[^a-z0-9]/g, "") === k.toLowerCase().replace(/[^a-z0-9]/g, "")
+            );
+            if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null && row[foundKey] !== "") {
+              return row[foundKey];
+            }
+          }
+          return undefined;
+        };
+
+        let rawDate = String(getVal("Date", "date") || "").trim();
+        if (typeof row.Date === "number") {
+          const dateObj = new Date(Math.floor(row.Date - 25569) * 86400 * 1000);
+          rawDate = `${dateObj.getUTCFullYear()}-${String(dateObj.getUTCMonth() + 1).padStart(2, "0")}-${String(dateObj.getUTCDate()).padStart(2, "0")}`;
+        } else if (rawDate.includes("/")) {
+          const parts = rawDate.split("/");
+          if (parts.length === 3) {
+            const y = parts[2].length === 4 ? parts[2] : `20${parts[2]}`;
+            rawDate = `${y}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`;
+          }
+        }
+
+        const meal = String(getVal("Meal", "meal") || "").trim().toLowerCase() as MealKey;
+        const dishName = String(getVal("DishName", "dishName", "Dish", "Items", "Item") || "").trim();
+
+        if (!rawDate || !dishName || !MEAL_TYPES.includes(meal)) continue;
+
+        if (!groupedByDate[rawDate]) {
+          groupedByDate[rawDate] = { breakfast: [], lunch: [], snacks: [], dinner: [] };
+        }
+
+        const parseNum = (val: any, fallback: number): number => {
+          if (val === undefined || val === null || val === "" || isNaN(Number(val))) return fallback;
+          return Number(val);
+        };
+
+        groupedByDate[rawDate][meal].push({
+          name: dishName,
+          servingSize: String(getVal("ServingSize", "servingSize", "Serving") || "1 Portion").trim(),
+          regionalTag: String(getVal("RegionalTag", "regionalTag", "Region") || "").trim(),
+          specialTag: String(getVal("SpecialTag", "specialTag") || "").trim(),
+          description: String(getVal("Description", "description") || "").trim(),
+          originStory: String(getVal("OriginStory", "originStory") || "").trim(),
+          funFact: String(getVal("FunFact", "funFact") || "").trim(),
+          
+          calories: parseNum(getVal("Calories", "calories", "Energy_kcal"), 200),
+          protein: parseNum(getVal("Protein", "protein", "Protein_g"), 6),
+          carbs: parseNum(getVal("Carbs", "carbs", "Carbs_g"), 25),
+          fat: parseNum(getVal("Fat", "fat", "Fat_g"), 5),
+          saturatedFat: parseNum(getVal("SatFat", "saturatedFat", "SatFat_g"), 1),
+          fiber: parseNum(getVal("Fiber", "fiber", "Fiber_g"), 2),
+          addedSugar: parseNum(getVal("Sugar", "addedSugar", "Sugar_g"), 0),
+
+          recipe: {
+            ingredients: String(getVal("RecipeIngredients", "recipeingredients", "Ingredients") || "").trim(),
+            method: String(getVal("RecipeMethod", "recipemethod", "Method") || "").trim(),
+          },
+
+          micronutrients: {
+            iron: parseNum(getVal("Iron", "iron_mg"), 0),
+            calcium: parseNum(getVal("Calcium", "calcium_mg"), 0),
+            magnesium: parseNum(getVal("Magnesium", "magnesium_mg"), 0),
+            potassium: parseNum(getVal("Potassium", "potassium_mg"), 0),
+            sodium: parseNum(getVal("Sodium", "sodium_mg"), 0),
+            zinc: parseNum(getVal("Zinc", "zinc_mg"), 0),
+            vitaminA: parseNum(getVal("VitA", "vitaminA", "vita_mcg"), 0),
+            vitaminC: parseNum(getVal("VitC", "vitaminC", "vitc_mg"), 0),
+            vitaminB12: parseNum(getVal("VitB12", "vitaminB12", "vitb12_mcg"), 0),
+            folate: parseNum(getVal("Folate", "folate_mcg"), 0),
+            vitaminD: parseNum(getVal("VitD", "vitaminD", "vitd_mcg"), 0),
+            vitaminB6: parseNum(getVal("VitB6", "vitaminB6", "vitb6_mg"), 0),
+          }
+        });
+        dishCount++;
+      }
+
+      const batch = writeBatch(firestoreDb);
+      const dates = Object.keys(groupedByDate);
+
+      for (const d of dates) {
+        const docRef = doc(firestoreDb, "daily_menus", `${messId}_${d}`);
+        const payload = cleanFirestoreData({
+          ...groupedByDate[d],
+          messId,
+          date: d,
+          updatedAt: serverTimestamp(),
+          updatedByRole: "admin",
+        });
+        batch.set(docRef, payload, { merge: true });
+      }
+
+      await batch.commit();
+      await logAdminActivity(messId, "Excel Menu Import", `Imported ${dishCount} dishes across ${dates.length} calendar days from Excel`);
+
+      alert(`🎉 Successfully imported ${dishCount} dishes across ${dates.length} days into Firebase!`);
+      
+      if (groupedByDate[selectedDate]) {
+        setMenu(groupedByDate[selectedDate]);
+        setInitialLoadedMenu(JSON.parse(JSON.stringify(groupedByDate[selectedDate])));
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert(`Error parsing Excel: ${err.message || "Invalid spreadsheet structure."}`);
+    } finally {
+      setIsImportingExcel(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
 
@@ -265,6 +643,7 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
     setIsBroadcasting(true);
     try {
       await sendBroadcast(messId, broadcastTitle.trim(), broadcastBody.trim());
+      await logAdminActivity(messId, "Broadcast Sent", `Announcement: "${broadcastTitle.trim()}"`);
       setBroadcastTitle("");
       setBroadcastBody("");
       alert("Announcement broadcasted successfully!");
@@ -277,277 +656,635 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
 
   const overrideKeys = useMemo(() => Object.keys(overrides).sort(), [overrides]);
 
+  const upcomingDateOptions = useMemo(() => {
+    const list = [];
+    const base = new Date();
+    for (let offset = 0; offset < 10; offset++) {
+      const target = new Date(base);
+      target.setDate(base.getDate() + offset);
+      const key = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, "0")}-${String(target.getDate()).padStart(2, "0")}`;
+      const dayName = target.toLocaleDateString("en-IN", { weekday: "short" });
+      const monthDay = target.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+      list.push({ key, label: `${dayName}, ${monthDay}`, isToday: offset === 0 });
+    }
+    return list;
+  }, []);
+
+  const navItems = [
+    { id: "menu", label: "Daily Menu Studio", icon: Utensils, badge: hasUnsavedChanges ? `${pendingSummary.length} Pending` : null },
+    { id: "overrides", label: "Special Overrides", icon: Sparkles, count: overrideKeys.length },
+    { id: "broadcasts", label: "Broadcast Notices", icon: Megaphone },
+    { id: "feedback", label: "Student Feedback", icon: MessageSquare },
+    { id: "audit", label: "Operations Log", icon: History, count: auditLogs.length },
+  ];
+
   return (
-    <div className="min-h-screen bg-background pb-16 font-sans">
-      <header className="safe-top border-b border-border bg-card/60 px-5 pb-4 pt-3 backdrop-blur sticky top-0 z-40">
-        <div className="mx-auto grid max-w-5xl grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-          <div className="min-w-0">
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">
-              Authorized Portal · {mess.name}{mess.subtitle ? ` (${mess.subtitle})` : ""}
-            </p>
-            <h1 className="truncate text-xl font-bold text-foreground">Weekly Menu Console</h1>
-          </div>
+    <div className="min-h-screen bg-background font-sans flex flex-col md:flex-row select-none">
+      
+      {/* 📱 Mobile Top Appbar */}
+      <div className="md:hidden flex items-center justify-between p-4 border-b border-border bg-card sticky top-0 z-40">
+        <div className="flex items-center gap-2.5">
           <button
-            onClick={() => { clearAdminSession(); onSignOut(); }}
-            className="rounded-full border border-border bg-white px-3 py-1.5 text-xs font-bold shadow-card transition active:scale-95 cursor-pointer"
+            onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+            className="p-1.5 rounded-xl border border-border bg-background"
+            aria-label="Toggle Navigation"
           >
-            Lock Console
+            {isMobileSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
+          <div>
+            <h1 className="font-bold text-sm leading-none">{mess.name}</h1>
+            <span className="text-[10px] text-muted-foreground">Admin Console</span>
+          </div>
         </div>
-      </header>
 
-      <main className="mx-auto max-w-2xl px-5 py-6">
-        {/* Weekly menu editor */}
-        <section className="mt-2">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-bold text-foreground">Weekly Menu Items</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">Edit dish names for your mess. Macros are managed by the Nutritionist.</p>
-            </div>
-          </div>
-
-          {/* Weekday Selector */}
-          <div className="mt-4 flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {WEEKDAYS.map((d) => (
-              <button
-                key={d.i}
-                onClick={() => {
-                  if (hasUnsavedChanges && !confirm("Discard unsaved changes and switch day?")) return;
-                  setActiveDay(d.i);
-                }}
-                className={`shrink-0 rounded-2xl border px-4 py-2 text-sm font-medium transition cursor-pointer ${
-                  activeDay === d.i
-                    ? "border-transparent gradient-warm text-white shadow-card"
-                    : "border-border bg-white text-muted-foreground"
-                }`}
-              >
-                {d.name}
-              </button>
-            ))}
-          </div>
-
-          {/* Unsaved Changes Status Bar */}
-          <div className="flex items-center justify-between mt-3 mb-4">
-            <span className="text-xs font-bold text-muted-foreground">
-              Editing: <span className="underline text-foreground">{WEEKDAYS.find(w => w.i === activeDay)?.name}</span>
-            </span>
-
-            {hasUnsavedChanges ? (
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-300 px-2.5 py-0.5 rounded-full animate-pulse">
-                <AlertCircle className="w-3 h-3 text-amber-600" /> Unsaved Changes
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-2.5 py-0.5 rounded-full">
-                <CheckCircle2 className="w-3 h-3 text-emerald-600" /> All Saved
-              </span>
-            )}
-          </div>
-
-          {/* Meals List */}
-          {isLoadingMenu ? (
-            <div className="py-12 text-center text-xs font-bold text-muted-foreground">Loading menu items...</div>
-          ) : (
-            <div className="space-y-4">
-              {MEAL_TYPES.map((mealType) => (
-                <div key={mealType} className="rounded-2xl border border-border bg-white p-4 shadow-card">
-                  <div className="flex items-center justify-between pb-2 border-b border-border/60 mb-3">
-                    <h3 className="text-xs font-black uppercase tracking-wider text-foreground flex items-center gap-1.5">
-                      <span>🍽️</span> {mealType}
-                    </h3>
-                    <button
-                      type="button"
-                      onClick={() => handleAddItem(mealType)}
-                      className="text-[11px] font-bold text-primary bg-background border border-border px-2.5 py-1 rounded-lg flex items-center gap-1 hover:bg-muted/50 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Add Dish
-                    </button>
-                  </div>
-
-                  {menu[mealType].length === 0 ? (
-                    <p className="text-[11px] italic text-muted-foreground/60 py-2 text-center">No dishes configured for {mealType}.</p>
-                  ) : (
-                    <div className="space-y-2.5">
-                      {/* Column Labels */}
-                      <div className="hidden sm:flex items-center justify-between px-3 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                        <span className="flex-1">Dish Name / Menu Item</span>
-                        <div className="flex items-center gap-2 pr-8">
-                          <span className="w-16 text-center flex items-center justify-center gap-0.5"><Lock className="w-3 h-3 text-muted-foreground/60"/> Calories</span>
-                          <span className="w-14 text-center">Protein</span>
-                          <span className="w-14 text-center">Carbs</span>
-                        </div>
-                      </div>
-
-                      {menu[mealType].map((item, idx) => (
-                        <div key={idx} className="bg-background border border-border p-3 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
-                          
-                          {/* Dish Name (Editable) */}
-                          <div className="w-full sm:flex-1">
-                            <label className="block sm:hidden text-[9px] font-bold text-muted-foreground uppercase mb-0.5">Dish Name</label>
-                            <input
-                              type="text"
-                              placeholder="Dish Name"
-                              value={item.name}
-                              onChange={(e) => handleItemNameChange(mealType, idx, e.target.value)}
-                              className="w-full bg-white border border-border px-3 py-1.5 rounded-lg text-xs font-bold text-foreground focus:outline-none focus:border-primary"
-                            />
-                          </div>
-
-                          {/* 🔒 READ-ONLY NUTRITION MACROS (Managed by Nutritionist) */}
-                          <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-semibold flex-wrap w-full sm:w-auto select-none opacity-85">
-                            <span className="bg-orange-50 text-orange-800 border border-orange-200 px-2 py-1 rounded-md flex items-center gap-1 font-bold">
-                              🔥 {item.calories ?? 0} kcal
-                            </span>
-                            <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-1 rounded-md flex items-center gap-1 font-bold">
-                              💪 {item.protein ?? 0}g Pro
-                            </span>
-                            <span className="bg-amber-50 text-amber-800 border border-amber-200 px-2 py-1 rounded-md flex items-center gap-1 font-bold">
-                              🌾 {item.carbs ?? 0}g Carb
-                            </span>
-                          </div>
-
-                          {/* Delete Dish Button */}
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveItem(mealType, idx)}
-                            className="text-red-500 hover:text-red-700 p-1 self-end sm:self-center cursor-pointer"
-                            title="Delete Dish"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* Global Save Action Button */}
         <button
-          onClick={handleSaveChanges}
-          disabled={isSaving}
-          className={`mt-6 w-full rounded-2xl py-4 text-sm font-bold shadow-card active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-2 ${
-            hasUnsavedChanges
-              ? "gradient-warm text-white"
-              : "bg-gray-100 text-gray-400 border border-gray-300"
-          }`}
+          onClick={() => { clearAdminSession(); onSignOut(); }}
+          className="text-xs font-bold text-destructive flex items-center gap-1 border border-border px-2.5 py-1 rounded-xl"
         >
-          <Save className="w-4 h-4" />
-          {isSaving ? "Publishing Updates..." : "Save & Update Student Portal"}
+          <LogOut className="w-3.5 h-3.5" /> Exit
         </button>
+      </div>
 
-        {/* Special date overrides */}
-        <section className="mt-10">
+      {/* 🧭 Desktop & Mobile Sidebar Drawer */}
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 w-64 bg-card border-r border-border p-5 flex flex-col justify-between transition-transform duration-200 ease-in-out
+        md:translate-x-0 md:static md:w-72 shrink-0
+        ${isMobileSidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"}
+      `}>
+        <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-bold text-foreground">Special date overrides</h2>
-              <p className="text-sm text-muted-foreground">Festivals or one-off menus. Falls back to the weekly menu when no override exists.</p>
+              <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Authorized Station</p>
+              <h2 className="text-xl font-black text-foreground tracking-tight flex items-center gap-2">
+                <span>{mess.name}</span>
+                {mess.subtitle && (
+                  <span className="text-[10px] font-bold bg-muted px-2 py-0.5 rounded-md text-muted-foreground">
+                    {mess.subtitle}
+                  </span>
+                )}
+              </h2>
             </div>
             <button
-              onClick={() => setShowOverrideEditor(dateKey(new Date()))}
-              className="rounded-full gradient-warm px-4 py-2 text-sm font-semibold text-white shadow-card cursor-pointer"
+              onClick={() => setIsMobileSidebarOpen(false)}
+              className="md:hidden p-1 rounded-lg border border-border text-muted-foreground"
             >
-              + Add override
+              <X className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="mt-4 space-y-3">
-            {overrideKeys.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-border bg-white p-6 text-center text-sm text-muted-foreground font-medium">
-                No special overrides. The weekly menu is used for every date.
-              </div>
-            )}
-            {overrideKeys.map((k) => {
-              const o = overrides[k];
-              const date = new Date(k + "T00:00:00");
+          <nav className="space-y-1.5">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
               return (
-                <div key={k} className="rounded-2xl border border-border bg-white p-4 shadow-card">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="font-semibold text-foreground">
-                        {date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
-                      </div>
-                      <div className="text-xs text-primary font-semibold mt-0.5">Special: {o.label}</div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setShowOverrideEditor(k)}
-                        className="rounded-full border border-border bg-white px-3 py-1.5 text-xs font-medium text-foreground transition active:bg-background cursor-pointer"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (!confirm("Delete this override?")) return;
-                          const next = { ...overrides };
-                          delete next[k];
-                          setOverrides(next);
-                          saveOverrides(messId, next);
-                        }}
-                        className="rounded-full border border-destructive/40 bg-white px-3 py-1.5 text-xs font-medium text-destructive transition active:bg-destructive/5 cursor-pointer"
-                      >
-                        Delete
-                      </button>
-                    </div>
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    setActiveTab(item.id as any);
+                    setIsMobileSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition cursor-pointer ${
+                    isActive
+                      ? "gradient-warm text-white shadow-card"
+                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Icon className="w-4 h-4" />
+                    <span>{item.label}</span>
                   </div>
-                </div>
+
+                  {item.badge && (
+                    <span className="text-[9px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-black animate-pulse shadow-xs">
+                      {item.badge}
+                    </span>
+                  )}
+                  {typeof item.count === "number" && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                      isActive ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+                    }`}>
+                      {item.count}
+                    </span>
+                  )}
+                </button>
               );
             })}
-          </div>
-        </section>
+          </nav>
 
-        {/* Broadcast layout module */}
-        <section className="mt-10">
-          <div className="rounded-2xl border border-border bg-white p-5 shadow-card w-full">
-            <h3 className="font-bold text-foreground text-base tracking-tight">Broadcast an announcement</h3>
-            <p className="mt-0.5 text-xs text-muted-foreground">This updates your students' notification feeds instantly.</p>
-            
-            <input
-              type="text"
-              value={broadcastTitle}
-              onChange={(e) => setBroadcastTitle(e.target.value)}
-              placeholder="Heading (e.g., Timing Extension)"
-              className="mt-4 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-xs font-semibold outline-none focus:border-primary transition"
-            />
-            
-            <textarea
-              rows={3}
-              maxLength={500}
-              value={broadcastBody}
-              onChange={(e) => setBroadcastBody(e.target.value)}
-              placeholder="Message text goes here..."
-              className="mt-2.5 w-full resize-none rounded-xl border border-border bg-background px-3 py-2.5 text-xs font-semibold outline-none focus:border-primary transition"
-            />
-            
-            <button 
-              onClick={handleSendBroadcast}
-              disabled={isBroadcasting || !broadcastTitle.trim() || !broadcastBody.trim()}
-              className="mt-3 w-full rounded-xl gradient-warm px-4 py-2 text-xs font-bold text-white shadow-card active:scale-[0.99] transition disabled:opacity-40 cursor-pointer"
-            >
-              {isBroadcasting ? "Sending..." : "Send Announcement"}
-            </button>
-          </div>
-        </section>
+          <div className="rounded-2xl border border-border bg-background p-4 shadow-xs">
+            <div className="flex items-center justify-between pb-2 border-b border-border/60">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <AlertCircle className={`w-3.5 h-3.5 ${hasUnsavedChanges ? "text-amber-500" : "text-emerald-500"}`} />
+                Pending Changes
+              </span>
+              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                hasUnsavedChanges ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"
+              }`}>
+                {hasUnsavedChanges ? `${pendingSummary.length} Changes` : "Synced"}
+              </span>
+            </div>
 
-        {/* 🍲 ⚡ STUDENT DISH FEEDBACK MANAGEMENT (Filtered for this Mess) */}
-        <section className="mt-10">
-          <AdminDishFeedbackViewer messId={messId} />
-        </section>
+            {hasUnsavedChanges ? (
+              <div className="mt-2.5 space-y-1.5">
+                <p className="text-[11px] font-bold text-foreground">
+                  Date: {selectedDate}
+                </p>
+                <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
+                  {pendingSummary.map((change, idx) => (
+                    <div key={idx} className="text-[10px] text-muted-foreground bg-muted/40 p-1.5 rounded-lg border border-border/40">
+                      <span className="font-bold uppercase text-foreground">{change.meal}:</span> {change.text}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  onClick={handleSaveChanges}
+                  disabled={isSaving}
+                  className="w-full mt-2 gradient-warm text-white py-2 rounded-xl text-[11px] font-bold shadow-xs cursor-pointer active:scale-95 transition"
+                >
+                  {isSaving ? "Publishing..." : "Publish All Changes"}
+                </button>
+              </div>
+            ) : (
+              <p className="text-[11px] italic text-muted-foreground/70 mt-2">
+                All daily menus are synced live with student apps.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="pt-4 border-t border-border space-y-2">
+          <Link
+            to="/"
+            className="w-full flex items-center justify-between text-xs font-bold text-muted-foreground hover:text-foreground px-3 py-2 rounded-xl hover:bg-muted transition"
+          >
+            <span>Live Student Feed</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </Link>
+          <button
+            onClick={() => { clearAdminSession(); onSignOut(); }}
+            className="w-full flex items-center gap-2 text-xs font-bold text-destructive hover:bg-destructive/10 px-3 py-2 rounded-xl transition cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>Lock Console</span>
+          </button>
+        </div>
+      </aside>
+
+      {isMobileSidebarOpen && (
+        <div
+          onClick={() => setIsMobileSidebarOpen(false)}
+          className="fixed inset-0 bg-black/40 backdrop-blur-xs z-40 md:hidden"
+        />
+      )}
+
+      <main className="flex-1 p-4 md:p-8 max-w-5xl overflow-y-auto">
+        
+        {activeTab === "menu" && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card p-5 rounded-3xl border border-border shadow-card">
+              <div>
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                    {mess.name}
+                  </span>
+                  
+                  <div className="flex items-center gap-1.5 ml-1 bg-background border border-border px-2.5 py-1 rounded-xl shadow-2xs">
+                    <Calendar className="w-3.5 h-3.5 text-primary" />
+                    <input
+                      type="date"
+                      value={selectedDate}
+                      onChange={(e) => {
+                        if (hasUnsavedChanges && !confirm("Discard unsaved changes?")) return;
+                        if (e.target.value) setSelectedDate(e.target.value);
+                      }}
+                      className="bg-transparent text-[11px] font-bold text-foreground outline-none cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                <h2 className="text-xl font-black text-foreground">Menu & Kitchen Studio</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  View and manage menus by exact calendar date. Changes update the live student view for that day.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  onChange={handleExcelImport}
+                  className="hidden"
+                  id="admin-excel-import"
+                />
+                <label
+                  htmlFor="admin-excel-import"
+                  className="px-3.5 py-2.5 rounded-2xl text-xs font-bold border border-border bg-background hover:bg-muted text-foreground transition flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                  <span>{isImportingExcel ? "Importing..." : "Import Excel / CSV"}</span>
+                </label>
+
+                <button
+                  onClick={handleSaveChanges}
+                  disabled={isSaving}
+                  className={`px-5 py-2.5 rounded-2xl text-xs font-bold shadow-card active:scale-95 transition flex items-center justify-center gap-2 cursor-pointer ${
+                    hasUnsavedChanges
+                      ? "gradient-warm text-white"
+                      : "bg-muted text-muted-foreground border border-border"
+                  }`}
+                >
+                  <Save className="w-4 h-4" />
+                  {isSaving ? "Publishing..." : "Save & Update Students"}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {upcomingDateOptions.map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => {
+                    if (hasUnsavedChanges && !confirm("Switching dates will discard unsaved modifications. Continue?")) return;
+                    setSelectedDate(opt.key);
+                  }}
+                  className={`shrink-0 rounded-2xl border px-4 py-2.5 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                    selectedDate === opt.key
+                      ? "border-transparent gradient-warm text-white shadow-card"
+                      : "border-border bg-card text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <span>{opt.label}</span>
+                  {opt.isToday && (
+                    <span className={`text-[9px] px-1.5 py-0.2 rounded-full uppercase ${
+                      selectedDate === opt.key ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"
+                    }`}>
+                      Today
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {isLoadingMenu ? (
+              <div className="py-16 text-center text-xs font-bold text-muted-foreground bg-card rounded-3xl border border-border">
+                Loading menu from database...
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {MEAL_TYPES.map((mealType) => (
+                  <div key={mealType} className="rounded-3xl border border-border bg-card p-5 shadow-card space-y-3">
+                    <div className="flex items-center justify-between pb-3 border-b border-border/60">
+                      <h3 className="text-xs font-black uppercase tracking-wider text-foreground flex items-center gap-2">
+                        <span>🍽️</span> {mealType}
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => handleAddItem(mealType)}
+                        className="text-[11px] font-bold text-primary bg-background border border-border px-3 py-1.5 rounded-xl flex items-center gap-1 hover:bg-muted/50 transition cursor-pointer shadow-xs"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Add Dish
+                      </button>
+                    </div>
+
+                    {menu[mealType].length === 0 ? (
+                      <p className="text-xs italic text-muted-foreground/60 py-4 text-center">No dishes entered for {mealType} on {selectedDate}.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="hidden sm:flex items-center justify-between px-3 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                          <span className="flex-1">Dish Name / Menu Item</span>
+                          <span className="w-32 text-center">Serving Size</span>
+                          <div className="flex items-center gap-2 pr-8">
+                            <span className="w-16 text-center flex items-center justify-center gap-0.5"><Lock className="w-3 h-3 text-muted-foreground/60"/> Calories</span>
+                            <span className="w-14 text-center">Protein</span>
+                            <span className="w-14 text-center">Carbs</span>
+                          </div>
+                        </div>
+
+                        {menu[mealType].map((item, idx) => {
+                          const recipeKey = `${mealType}_${idx}`;
+                          const isRecipeExpanded = expandedRecipeIndex === recipeKey;
+
+                          return (
+                            <div key={idx} className="bg-background border border-border p-3 rounded-2xl flex flex-col gap-2">
+                              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                                <div className="w-full sm:flex-1">
+                                  <input
+                                    type="text"
+                                    placeholder="Enter dish name..."
+                                    value={item.name}
+                                    onChange={(e) => handleItemFieldChange(mealType, idx, "name", e.target.value)}
+                                    className="w-full bg-card border border-border px-3 py-2 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:border-primary shadow-xs"
+                                  />
+                                </div>
+
+                                <div className="w-full sm:w-32">
+                                  <input
+                                    type="text"
+                                    placeholder="1 Bowl (150g)"
+                                    value={item.servingSize || ""}
+                                    onChange={(e) => handleItemFieldChange(mealType, idx, "servingSize", e.target.value)}
+                                    className="w-full bg-card border border-border px-2.5 py-2 rounded-xl text-xs font-semibold text-foreground focus:outline-none focus:border-primary shadow-xs"
+                                  />
+                                </div>
+
+                                <div className="flex items-center gap-1.5 text-[10px] font-semibold select-none">
+                                  <span className="bg-orange-50 text-orange-800 border border-orange-200 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1">
+                                    <Flame className="w-3 h-3 text-orange-600" /> {item.calories ?? 0} kcal
+                                  </span>
+                                  <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1">
+                                    <Dumbbell className="w-3 h-3 text-emerald-600" /> {item.protein ?? 0}g
+                                  </span>
+                                  <span className="bg-amber-50 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1">
+                                    <Wheat className="w-3 h-3 text-amber-600" /> {item.carbs ?? 0}g
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-1 self-end sm:self-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedRecipeIndex(isRecipeExpanded ? null : recipeKey)}
+                                    className={`p-1.5 rounded-xl border text-[10px] font-bold flex items-center gap-1 transition cursor-pointer ${
+                                      isRecipeExpanded ? "bg-primary text-white border-primary" : "bg-card text-muted-foreground border-border hover:bg-muted"
+                                    }`}
+                                    title="View Kitchen Recipe"
+                                  >
+                                    <ChefHat className="w-3.5 h-3.5" />
+                                    <span>{isRecipeExpanded ? "Hide" : "Recipe"}</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveItem(mealType, idx)}
+                                    className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50 transition cursor-pointer"
+                                    title="Delete Dish"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {isRecipeExpanded && (
+                                <div className="mt-2 pt-2 border-t border-border/80 grid grid-cols-1 sm:grid-cols-2 gap-3 bg-muted/20 p-3 rounded-xl">
+                                  <div>
+                                    <label className="block text-[9px] uppercase font-bold text-muted-foreground mb-1">
+                                      Chef Standard Ingredients & Ratios
+                                    </label>
+                                    <textarea
+                                      rows={2}
+                                      value={item.recipe?.ingredients || ""}
+                                      onChange={(e) => {
+                                        const r = { ...(item.recipe || {}), ingredients: e.target.value };
+                                        handleItemFieldChange(mealType, idx, "recipe", r);
+                                      }}
+                                      placeholder="e.g. 10kg Rice, 2kg Paneer, Spices ratio..."
+                                      className="w-full bg-card border border-border rounded-xl p-2 text-xs text-foreground resize-none focus:outline-none focus:border-primary"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[9px] uppercase font-bold text-muted-foreground mb-1">
+                                      Cooking Guidelines & Prep Method
+                                    </label>
+                                    <textarea
+                                      rows={2}
+                                      value={item.recipe?.method || ""}
+                                      onChange={(e) => {
+                                        const r = { ...(item.recipe || {}), method: e.target.value };
+                                        handleItemFieldChange(mealType, idx, "recipe", r);
+                                      }}
+                                      placeholder="Step-by-step preparation method for kitchen team..."
+                                      className="w-full bg-card border border-border rounded-xl p-2 text-xs text-foreground resize-none focus:outline-none focus:border-primary"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "overrides" && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card p-5 rounded-3xl border border-border shadow-card">
+              <div>
+                <h2 className="text-xl font-black text-foreground flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-amber-500" /> Special Feast Overrides
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Set up temporary menus with start and end times that automatically revert back.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowOverrideEditor(selectedDate)}
+                className="gradient-warm text-white px-4 py-2.5 rounded-2xl text-xs font-bold shadow-card active:scale-95 transition flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+              >
+                <Plus className="w-4 h-4" /> Add Special Date
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {overrideKeys.length === 0 ? (
+                <div className="rounded-3xl border border-dashed border-border bg-card p-12 text-center text-xs text-muted-foreground font-medium">
+                  No special overrides scheduled. The standard menu schedule is currently active.
+                </div>
+              ) : (
+                overrideKeys.map((k) => {
+                  const o = overrides[k];
+                  const firestoreData = firestoreOverrides.find((fo) => fo.date === k);
+                  const date = new Date(k + "T00:00:00");
+                  const isExpired = firestoreData?.expiresAt ? new Date(firestoreData.expiresAt) < new Date() : false;
+
+                  return (
+                    <div key={k} className="rounded-3xl border border-border bg-card p-5 shadow-card">
+                      <div className="flex items-start sm:items-center justify-between flex-col sm:flex-row gap-3">
+                        <div>
+                          <div className="font-bold text-foreground flex items-center gap-2 flex-wrap">
+                            <span>{date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}</span>
+                            {firestoreData && (
+                              isExpired ? (
+                                <span className="text-[9px] bg-red-100 text-red-700 font-bold px-2.5 py-0.5 rounded-full">
+                                  Expired
+                                </span>
+                              ) : (
+                                <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                                  <Clock className="w-3 h-3 text-emerald-600" /> Active: {firestoreData.startTime} - {firestoreData.endTime}
+                                </span>
+                              )
+                            )}
+                          </div>
+                          <div className="text-xs text-primary font-bold mt-1">Special: {o.label}</div>
+                        </div>
+
+                        <div className="flex gap-2 self-end sm:self-center">
+                          <button
+                            onClick={() => setShowOverrideEditor(k)}
+                            className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-bold hover:bg-muted transition cursor-pointer flex items-center gap-1"
+                          >
+                            <Edit3 className="w-3 h-3" /> Edit
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`Delete special override for ${k}?`)) return;
+                              await deleteFirestoreOverride(messId, k);
+                              await logAdminActivity(messId, "Override Removed", `Deleted special override for date: ${k}`);
+                              const next = { ...overrides };
+                              delete next[k];
+                              setOverrides(next);
+                              saveOverrides(messId, next);
+                            }}
+                            className="rounded-xl border border-destructive/40 bg-background px-3 py-1.5 text-xs font-bold text-destructive hover:bg-destructive/10 transition cursor-pointer flex items-center gap-1"
+                          >
+                            <Trash2 className="w-3 h-3" /> Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "broadcasts" && (
+          <div className="max-w-xl mx-auto space-y-4">
+            <div className="rounded-3xl border border-border bg-card p-6 shadow-card space-y-4">
+              <div>
+                <h2 className="text-xl font-black text-foreground flex items-center gap-2">
+                  <Megaphone className="w-5 h-5 text-primary" /> Broadcast Mess Notice
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Sends instant notifications and banner popups to all registered students.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-muted-foreground mb-1">
+                    Announcement Headline
+                  </label>
+                  <input
+                    type="text"
+                    value={broadcastTitle}
+                    onChange={(e) => setBroadcastTitle(e.target.value)}
+                    placeholder="e.g. Lunch timings extended by 30 minutes"
+                    className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs font-bold text-foreground focus:outline-none focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-muted-foreground mb-1">
+                    Message Details & Links
+                  </label>
+                  <textarea
+                    rows={4}
+                    maxLength={500}
+                    value={broadcastBody}
+                    onChange={(e) => setBroadcastBody(e.target.value)}
+                    placeholder="Add operational notes or instructions..."
+                    className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs font-medium text-foreground focus:outline-none focus:border-primary resize-none"
+                  />
+                </div>
+
+                <button 
+                  onClick={handleSendBroadcast}
+                  disabled={isBroadcasting || !broadcastTitle.trim() || !broadcastBody.trim()}
+                  className="w-full gradient-warm text-white py-3 rounded-xl text-xs font-bold uppercase tracking-wider shadow-card active:scale-95 transition disabled:opacity-40 cursor-pointer"
+                >
+                  {isBroadcasting ? "Broadcasting Notice..." : "Broadcast Live Notice"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "feedback" && (
+          <div className="max-w-2xl mx-auto">
+            <AdminDishFeedbackViewer messId={messId} />
+          </div>
+        )}
+
+        {activeTab === "audit" && (
+          <div className="max-w-2xl mx-auto space-y-4">
+            <div className="rounded-3xl border border-border bg-card p-6 shadow-card">
+              <div className="flex items-center justify-between pb-3 border-b border-border/60">
+                <div>
+                  <h2 className="text-xl font-black text-foreground flex items-center gap-2">
+                    <History className="w-5 h-5 text-primary" /> Operations Activity Feed
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Live record of all menu edits, overrides, and broadcast transmissions.
+                  </p>
+                </div>
+                <span className="text-xs font-bold bg-muted px-2.5 py-1 rounded-full text-muted-foreground">
+                  {auditLogs.length} Events
+                </span>
+              </div>
+
+              <div className="mt-4 space-y-2 max-h-[500px] overflow-y-auto pr-1">
+                {auditLogs.length === 0 ? (
+                  <p className="text-xs italic text-muted-foreground/60 py-8 text-center">No recent operator logs recorded.</p>
+                ) : (
+                  auditLogs.map((log) => (
+                    <div key={log.id} className="p-3 bg-background border border-border/80 rounded-2xl flex items-start justify-between gap-3 text-xs">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-foreground">{log.action}</span>
+                          <span className="text-[9px] font-bold uppercase bg-muted text-muted-foreground px-1.5 py-0.2 rounded">
+                            {log.operatorRole || "admin"}
+                          </span>
+                        </div>
+                        <p className="text-muted-foreground text-[11px] font-medium">{log.details}</p>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground/70 font-semibold shrink-0">
+                        {log.timestamp?.toDate ? log.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Recent"}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
       </main>
 
       {showOverrideEditor && (
         <OverrideEditor
           initialKey={showOverrideEditor}
           existing={overrides[showOverrideEditor]}
+          existingOverrideData={firestoreOverrides.find(fo => fo.date === showOverrideEditor)}
           weeklyFallback={{}}
           onCancel={() => setShowOverrideEditor(null)}
-          onSave={(k, val) => {
-            const next = { ...overrides, [k]: val };
+          onSave={async (k, val) => {
+            const next = { ...overrides, [k]: { label: val.label, menu: val.menu } };
             setOverrides(next);
             saveOverrides(messId, next);
+
+            await saveFirestoreOverride(messId, {
+              messId,
+              date: k,
+              label: val.label,
+              startTime: val.startTime || "07:30",
+              endTime: val.endTime || "22:00",
+              expiresAt: new Date(`${k}T${val.endTime || "22:00"}:00`).toISOString(),
+              menu: val.menu,
+            });
+
+            await logAdminActivity(
+              messId,
+              "Override Published",
+              `Set "${val.label}" on ${k} (${val.startTime} - ${val.endTime})`
+            );
+
             setShowOverrideEditor(null);
           }}
         />
@@ -556,18 +1293,16 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
   );
 }
 
-{/* 🍲 ⚡ COMPONENT: Admin Dish Feedback Viewer with Solved/Unsolved Toggle */}
-{/* 🍲 COMPONENT: Admin Dish Feedback Viewer with Solved Visual Styling */}
 function AdminDishFeedbackViewer({ messId }: { messId: MessId }) {
   const [feedbacks, setFeedbacks] = useState<ItemFeedback[]>([]);
   const [filter, setFilter] = useState<"all" | "unsolved" | "solved">("all");
 
   useEffect(() => {
     if (!db) return;
+    const firestoreDb = db;
 
-    // Scalable query with index error fallback
     const indexedQuery = query(
-      collection(db, "item_feedback"),
+      collection(firestoreDb, "item_feedback"),
       where("messId", "==", messId),
       orderBy("createdAt", "desc")
     );
@@ -579,9 +1314,9 @@ function AdminDishFeedbackViewer({ messId }: { messId: MessId }) {
         setFeedbacks(list);
       },
       (err) => {
-        console.warn("[Firestore] Index pending, using fallback memory sort:", err);
+        console.warn("[Firestore] Index fallback sorting:", err);
         const fallbackQuery = query(
-          collection(db, "item_feedback"),
+          collection(firestoreDb, "item_feedback"),
           where("messId", "==", messId)
         );
         onSnapshot(fallbackQuery, (snap) => {
@@ -601,94 +1336,123 @@ function AdminDishFeedbackViewer({ messId }: { messId: MessId }) {
     return true;
   });
 
+  function exportFeedbackToExcel() {
+    if (feedbacks.length === 0) {
+      alert("No feedback records available to export.");
+      return;
+    }
+
+    const exportRows = feedbacks.map((f) => ({
+      "Date / Time": f.createdAt?.toDate ? f.createdAt.toDate().toLocaleString("en-IN") : "Recent",
+      "Student Name": f.studentName,
+      "Student Email": f.studentEmail || "",
+      "Meal": f.mealKey,
+      "Dish Name": f.itemName,
+      "Rating (Out of 5)": f.rating,
+      "Feedback Comment": f.comment || "",
+      "Resolution Status": f.status === "solved" ? "Resolved" : "Pending"
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "FeedbackReports");
+    XLSX.writeFile(wb, `MessHub_Feedback_${messId}_${new Date().toISOString().split("T")[0]}.xlsx`);
+  }
+
   return (
-    <div className="bg-white border border-border rounded-2xl p-5 shadow-card space-y-4 font-sans select-none">
-      {/* Header & Filter Controls */}
+    <div className="bg-card border border-border rounded-3xl p-5 shadow-card space-y-4 font-sans select-none">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/60">
         <div>
-          <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-            <span>🍲</span> Student Dish Feedback ({feedbacks.length})
+          <h2 className="text-base font-black text-foreground flex items-center gap-2">
+            <span>🍲</span> Student Dish Reports ({feedbacks.length})
           </h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Real-time quality feedback submitted by students for this mess facility.
+            Student ratings and food quality logs submitted for this facility.
           </p>
         </div>
 
-        {/* Filter Toggle Buttons */}
-        <div className="flex items-center gap-1 bg-background p-1 rounded-xl border border-border">
-          {(["all", "unsolved", "solved"] as const).map((type) => (
-            <button
-              key={type}
-              onClick={() => setFilter(type)}
-              className={`px-3 py-1 text-[10px] font-bold rounded-lg capitalize transition cursor-pointer ${
-                filter === type
-                  ? "bg-primary text-primary-foreground shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {type}
-            </button>
-          ))}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={exportFeedbackToExcel}
+            className="text-xs font-bold text-slate-700 bg-background hover:bg-muted border border-border px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-600" /> Export to Excel
+          </button>
+
+          <div className="flex items-center gap-1 bg-muted p-1 rounded-xl border border-border">
+            {(["all", "unsolved", "solved"] as const).map((type) => (
+              <button
+                key={type}
+                onClick={() => setFilter(type)}
+                className={`px-3 py-1 text-[10px] font-bold rounded-lg capitalize transition cursor-pointer ${
+                  filter === type
+                    ? "bg-background text-foreground shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {type}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Feedback Items List */}
       {filteredFeedbacks.length === 0 ? (
         <p className="text-xs italic text-muted-foreground/60 text-center py-8">
-          No {filter !== "all" ? filter : ""} feedback entries logged yet.
+          No {filter !== "all" ? filter : ""} feedback records found.
         </p>
       ) : (
-        <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1">
+        <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
           {filteredFeedbacks.map((item) => {
             const isSolved = item.status === "solved";
 
             return (
               <div
                 key={item.id}
-                className={`p-3.5 rounded-xl border transition-all flex items-start gap-3 ${
+                className={`p-3.5 rounded-2xl border transition flex items-start gap-3 ${
                   isSolved
-                    ? "bg-emerald-50/40 border-emerald-300 opacity-60 grayscale-[25%]" // ⚡ Solved Style: Faded + Green Border
-                    : "bg-background border-border shadow-xs" // Active Pending Style
+                    ? "bg-muted/40 border-border opacity-60 grayscale-[30%]"
+                    : "bg-background border-border shadow-xs"
                 }`}
               >
-                {/* Solved/Unsolved Status Tick Checkbox */}
                 <button
                   type="button"
-                  onClick={() => item.id && toggleFeedbackStatus(item.id, item.status)}
+                  onClick={async () => {
+                    if (!item.id) return;
+                    await toggleFeedbackStatus(item.id, item.status);
+                    await logAdminActivity(
+                      messId, 
+                      "Feedback Toggle", 
+                      `Toggled feedback for '${item.itemName}' to ${isSolved ? 'Unsolved' : 'Solved'}`
+                    );
+                  }}
                   className="mt-0.5 text-primary hover:scale-110 transition cursor-pointer shrink-0"
                   title={isSolved ? "Mark as Unsolved" : "Mark as Solved"}
                 >
                   {isSolved ? (
                     <CheckSquare className="w-5 h-5 text-emerald-600 fill-emerald-100" />
                   ) : (
-                    <Square className="w-5 h-5 text-gray-400" />
+                    <Square className="w-5 h-5 text-muted-foreground" />
                   )}
                 </button>
 
                 <div className="flex-1 min-w-0 space-y-1">
-                  {/* Dish Name & Rating */}
                   <div className="flex items-center justify-between gap-2">
-                    <span
-                      className={`font-bold text-xs truncate ${
-                        isSolved ? "line-through text-muted-foreground" : "text-foreground" // ⚡ Crossed out text if solved
-                      }`}
-                    >
+                    <span className={`font-bold text-xs truncate ${isSolved ? "line-through text-muted-foreground" : "text-foreground"}`}>
                       {item.itemName}{" "}
                       <span className="uppercase text-[9px] text-muted-foreground font-semibold no-underline inline-block">
                         ({item.mealKey})
                       </span>
                     </span>
 
-                    {/* Star Rating Display */}
                     <div className="flex items-center gap-0.5 shrink-0">
                       {[1, 2, 3, 4, 5].map((star) => (
                         <Star
                           key={star}
                           className={`w-3.5 h-3.5 ${
                             star <= item.rating
-                              ? isSolved
-                                ? "fill-gray-400 text-gray-400"
-                                : "fill-amber-500 text-amber-500"
+                              ? isSolved ? "fill-gray-400 text-gray-400" : "fill-amber-500 text-amber-500"
                               : "text-gray-300"
                           }`}
                         />
@@ -696,33 +1460,24 @@ function AdminDishFeedbackViewer({ messId }: { messId: MessId }) {
                     </div>
                   </div>
 
-                  {/* Student Details */}
                   <div className="text-[10px] text-muted-foreground font-medium">
                     👤 {item.studentName} {item.studentEmail ? `(${item.studentEmail})` : ""}
                   </div>
 
-                  {/* Comment */}
                   {item.comment && (
-                    <p
-                      className={`text-xs italic p-2 rounded-lg border mt-1 ${
-                        isSolved
-                          ? "line-through text-muted-foreground bg-gray-100/60 border-gray-200"
-                          : "text-foreground bg-white border-border/80"
-                      }`}
-                    >
+                    <p className={`text-xs italic p-2 rounded-xl border mt-1 ${isSolved ? "line-through text-muted-foreground bg-muted border-border" : "text-foreground bg-card border-border/80"}`}>
                       "{item.comment}"
                     </p>
                   )}
 
-                  {/* Status Badge */}
                   <div className="pt-1 flex items-center justify-end">
                     {isSolved ? (
-                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-2 py-0.5 rounded-full">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Solved & Resolved
+                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-full">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Resolved
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 bg-amber-100/70 border border-amber-300 px-2 py-0.5 rounded-full">
-                        <AlertCircle className="w-3 h-3 text-amber-600" /> Pending Resolution
+                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2.5 py-0.5 rounded-full">
+                        <AlertCircle className="w-3 h-3 text-amber-600" /> Pending Action
                       </span>
                     )}
                   </div>
@@ -736,11 +1491,24 @@ function AdminDishFeedbackViewer({ messId }: { messId: MessId }) {
   );
 }
 
-function OverrideEditor({ initialKey, existing, onCancel, onSave }: {
-  initialKey: string; existing?: { label: string; menu: DayMenu }; weeklyFallback: any; onCancel: () => void; onSave: (k: string, v: { label: string; menu: DayMenu }) => void;
+function OverrideEditor({ 
+  initialKey, 
+  existing, 
+  existingOverrideData,
+  onCancel, 
+  onSave 
+}: {
+  initialKey: string; 
+  existing?: { label: string; menu: DayMenu }; 
+  existingOverrideData?: SpecialOverride;
+  weeklyFallback: any; 
+  onCancel: () => void; 
+  onSave: (k: string, v: { label: string; menu: DayMenu; startTime: string; endTime: string }) => void;
 }) {
   const [dateStr, setDateStr] = useState(initialKey);
   const [label, setLabel] = useState(existing?.label ?? "Special menu");
+  const [startTime, setStartTime] = useState(existingOverrideData?.startTime || "07:30");
+  const [endTime, setEndTime] = useState(existingOverrideData?.endTime || "22:00");
   const initialMenu: DayMenu = existing?.menu ?? DEFAULT_WEEKLY[0];
   const [menu, setMenu] = useState<DayMenu>(initialMenu);
 
@@ -750,11 +1518,11 @@ function OverrideEditor({ initialKey, existing, onCancel, onSave }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center font-sans" role="dialog" aria-modal="true">
-      <button aria-label="Close" onClick={onCancel} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-      <div className="relative w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-6 shadow-elevated sm:max-h-[85vh] sm:rounded-3xl border border-border">
+      <button aria-label="Close" onClick={onCancel} className="absolute inset-0 bg-black/40 backdrop-blur-xs cursor-pointer" />
+      <div className="relative w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-card p-6 shadow-elevated sm:max-h-[85vh] sm:rounded-3xl border border-border">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-foreground">{existing ? "Edit override" : "Add special date"}</h3>
-          <button onClick={onCancel} className="grid h-9 w-9 place-items-center rounded-full border border-border bg-background text-lg cursor-pointer" aria-label="Close">×</button>
+          <button onClick={onCancel} className="grid h-9 w-9 place-items-center rounded-full border border-border bg-background text-lg cursor-pointer">×</button>
         </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -777,6 +1545,27 @@ function OverrideEditor({ initialKey, existing, onCancel, onSave }: {
           </label>
         </div>
 
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 bg-muted/40 p-3 rounded-2xl border border-border/60">
+          <label className="block">
+            <span className="mb-1 block text-[10px] font-bold uppercase text-primary tracking-wider">Start Time</span>
+            <input
+              type="time"
+              value={startTime}
+              onChange={(e) => setStartTime(e.target.value)}
+              className="w-full rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold outline-none focus:border-primary"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[10px] font-bold uppercase text-primary tracking-wider">End Time (Reverts automatically)</span>
+            <input
+              type="time"
+              value={endTime}
+              onChange={(e) => setEndTime(e.target.value)}
+              className="w-full rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold outline-none focus:border-primary"
+            />
+          </label>
+        </div>
+
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {MEAL_DEFS.map((m) => (
             <div key={m.key} className="rounded-2xl border border-border bg-background p-3">
@@ -789,7 +1578,7 @@ function OverrideEditor({ initialKey, existing, onCancel, onSave }: {
                 value={(menu[m.key] || []).join("\n")}
                 onChange={(e) => setItems(m.key, e.target.value)}
                 placeholder="One item per line"
-                className="mt-2 w-full resize-y rounded-xl border border-border bg-white px-3 py-2 text-sm outline-none focus:border-primary font-medium"
+                className="mt-2 w-full resize-y rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-primary font-medium"
               />
             </div>
           ))}
@@ -797,12 +1586,12 @@ function OverrideEditor({ initialKey, existing, onCancel, onSave }: {
 
         <div className="mt-5 flex justify-end gap-2">
           <button onClick={onCancel} className="rounded-xl border border-border bg-background px-4 py-2 text-xs font-bold text-muted-foreground cursor-pointer">
-            Cancel
+            Cancel 
           </button>
           <button
             onClick={() => {
               if (!dateStr || !label.trim()) return;
-              onSave(dateStr, { label: label.trim(), menu });
+              onSave(dateStr, { label: label.trim(), menu, startTime, endTime });
             }}
             className="rounded-xl gradient-warm px-4 py-2 text-xs font-bold text-white shadow-card cursor-pointer"
           >
