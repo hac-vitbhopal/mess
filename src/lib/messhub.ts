@@ -51,7 +51,8 @@ export interface StudentProfile {
   messId: MessId;
 }
 
-const PROFILE_KEY = "messhub.profile";
+// const PROFILE_KEY = "messhub.profile";
+const PROFILE_KEY = "messhub.student_profile_v2"; // Bumped version to force re-login
 
 export function getProfile(): StudentProfile | null {
   if (typeof window === "undefined") return null;
@@ -73,7 +74,10 @@ export function saveProfile(p: StudentProfile) {
 }
 
 export function clearProfile() {
-  localStorage.removeItem(PROFILE_KEY);
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(PROFILE_KEY);
+    sessionStorage.clear();
+  }
 }
 
 /* ---------------- Meals ---------------- */
