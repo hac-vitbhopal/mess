@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, limit, doc, getDoc } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, limit, doc, getDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import { 
   getAdminSession, 
   saveAdminSession, 
@@ -20,7 +20,7 @@ import {
   ShieldCheck, Users, Activity, MessageSquare, Megaphone, 
   LogOut, Menu, X, Clock, CheckSquare, Square, Star, 
   CheckCircle2, AlertCircle, Trash2, TrendingUp, Send, CheckCircle,
-  PlusCircle, History, Utensils, Download
+  PlusCircle, History, Utensils, Download, AlertTriangle
 } from "lucide-react";
 
 export const Route = createFileRoute("/super-admin")({
@@ -143,13 +143,14 @@ function SuperAdminGatekeeper() {
 
 /* ---------------- 👑 PLATFORM MASTER SAAS DASHBOARD ---------------- */
 function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
-  const [activeTab, setActiveTab] = useState<"overview" | "feedbacks" | "broadcasts" | "students" | "analytics" | "audit">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "feedbacks" | "complaints" | "broadcasts" | "students" | "analytics" | "audit">("overview");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Global Realtime Datasets
   const [dynamicMesses, setDynamicMesses] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [feedbacks, setFeedbacks] = useState<ItemFeedback[]>([]);
+  const [complaints, setComplaints] = useState<any[]>([]);
   const [menuLogs, setMenuLogs] = useState<any[]>([]);
   const [broadcastList, setBroadcastList] = useState<any[]>([]);
   const [clickLogs, setClickLogs] = useState<any[]>([]);
@@ -175,7 +176,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
       setDynamicMesses(list);
     });
 
-    const studentsQuery = query(collection(db, "registered_students"), limit(100));
+    const studentsQuery = query(collection(db, "registered_students"), limit(1500));
     const unsubStudents = onSnapshot(studentsQuery, (snap) => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       list.sort((a: any, b: any) => (b.lastActiveAt?.toDate?.()?.getTime() || 0) - (a.lastActiveAt?.toDate?.()?.getTime() || 0));
@@ -185,6 +186,15 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
     const feedbacksQuery = query(collection(db, "item_feedback"), orderBy("createdAt", "desc"), limit(100));
     const unsubFeedbacks = onSnapshot(feedbacksQuery, (snap) => {
       setFeedbacks(snap.docs.map(d => ({ id: d.id, ...d.data() } as ItemFeedback)));
+    });
+
+    // ⚡ Complaints / Bug Reports Realtime Stream from Firestore collection
+    const complaintsQuery = query(collection(db, "complaints"), orderBy("createdAt", "desc"), limit(100));
+    const unsubComplaints = onSnapshot(complaintsQuery, (snap) => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setComplaints(list);
+    }, (err) => {
+      console.warn("Complaints listener fallback:", err);
     });
 
     const menuQuery = query(collection(db, "mess_menus"), orderBy("updatedAt", "desc"), limit(50));
@@ -215,6 +225,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
       unsubMesses();
       unsubStudents();
       unsubFeedbacks();
+      unsubComplaints();
       unsubMenu();
       unsubBroadcasts();
       unsubClicks();
@@ -237,6 +248,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
   }, [dynamicMesses]);
 
   const pendingFeedbacksCount = feedbacks.filter(f => f.status === "unsolved").length;
+  const pendingComplaintsCount = complaints.filter(c => c.status !== "solved").length;
 
   const toggleSelectAll = () => {
     if (selectedIds.length === broadcastList.length) {
@@ -293,7 +305,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
       for (const mess of allMesses) {
         let items: string[] = [];
 
-        // 1. Try pulling from live daily_menus first
         try {
           const dailyDoc = await getDoc(doc(db, "daily_menus", `${mess.id}_${todayDateStr}`));
           if (dailyDoc.exists()) {
@@ -305,7 +316,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           console.warn(`Could not fetch daily menu for ${mess.id}:`, e);
         }
 
-        // 2. Fallback to recurring template mess_menus
         if (items.length === 0) {
           try {
             const recurringDoc = await getDoc(doc(db, "mess_menus", `${mess.id}_day_${currentWeekday}`));
@@ -425,6 +435,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           <p className="px-4 text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2 mt-2">Infrastructure</p>
           <NavButton id="overview" icon={Activity} label="HQ Overview" />
           <NavButton id="feedbacks" icon={MessageSquare} label="Campus Feedback" badge={pendingFeedbacksCount} />
+          <NavButton id="complaints" icon={AlertTriangle} label="Campus Complaints" badge={pendingComplaintsCount} />
           <NavButton id="broadcasts" icon={Megaphone} label="Broadcast Management" />
           <NavButton id="students" icon={Users} label="Student Directory" />
           <NavButton id="analytics" icon={TrendingUp} label="Click Analytics" />
@@ -468,7 +479,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
               <MetricCard title="Registered Students" value={students.length} icon={Users} color="bg-blue-50 text-blue-600" />
               <MetricCard title="Mess Facilities" value={allMesses.length} icon={Utensils} color="bg-purple-50 text-purple-600" />
               <MetricCard title="Pending Feedback" value={pendingFeedbacksCount} icon={MessageSquare} color="bg-amber-50 text-amber-600" alert={pendingFeedbacksCount > 0} />
-              <MetricCard title="Platform Audit Logs" value={auditLogs.length} icon={History} color="bg-emerald-50 text-emerald-600" />
+              <MetricCard title="Open Complaints" value={pendingComplaintsCount} icon={AlertTriangle} color="bg-red-50 text-red-600" alert={pendingComplaintsCount > 0} />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -559,7 +570,18 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           </div>
         )}
 
-        {/* ================= TAB 3: BROADCAST MANAGEMENT ================= */}
+        {/* ================= TAB 3: CAMPUS COMPLAINTS ================= */}
+        {activeTab === "complaints" && (
+          <div className="space-y-6 animate-fade-in pb-12">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-black text-foreground">Student Complaints &amp; Error Reports</h1>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Review portal bug reports, service complaints, and manage resolution statuses.</p>
+            </div>
+            <SuperAdminComplaintsViewer complaints={complaints} />
+          </div>
+        )}
+
+        {/* ================= TAB 4: BROADCAST MANAGEMENT ================= */}
         {activeTab === "broadcasts" && (
           <div className="space-y-6 animate-fade-in pb-12">
             <div>
@@ -753,7 +775,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           </div>
         )}
 
-        {/* ================= TAB 4: STUDENT DIRECTORY ================= */}
+        {/* ================= TAB 5: STUDENT DIRECTORY ================= */}
         {activeTab === "students" && (
           <div className="space-y-6 animate-fade-in pb-12">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -827,7 +849,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           </div>
         )}
 
-        {/* ================= TAB 5: CLICK ANALYTICS ================= */}
+        {/* ================= TAB 6: CLICK ANALYTICS ================= */}
         {activeTab === "analytics" && (
           <div className="space-y-6 animate-fade-in pb-12">
             <div>
@@ -895,7 +917,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           </div>
         )}
 
-        {/* ================= TAB 6: MASTER AUDIT LOGS ================= */}
+        {/* ================= TAB 7: MASTER AUDIT LOGS ================= */}
         {activeTab === "audit" && (
           <div className="space-y-6 animate-fade-in pb-12">
             <div>
@@ -1074,6 +1096,170 @@ function SuperAdminFeedbackViewer({ feedbacks }: { feedbacks: ItemFeedback[] }) 
                   {item.comment && (
                     <p className={`text-xs italic p-2.5 rounded-xl mt-2 border ${isSolved ? "bg-zinc-50 text-zinc-400 line-through border-zinc-200" : "bg-[#fbf7f2] text-foreground border-border/60"}`}>
                       "{item.comment}"
+                    </p>
+                  )}
+
+                  <div className="pt-2 flex justify-end">
+                    {isSolved ? (
+                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full">
+                        <CheckCircle className="w-3 h-3 text-emerald-600" /> Resolved &amp; Solved
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full">
+                        <AlertCircle className="w-3 h-3 text-amber-600" /> Action Required (Pending)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SuperAdminComplaintsViewer({ complaints }: { complaints: any[] }) {
+  const [filter, setFilter] = useState<"all" | "unsolved" | "solved">("all");
+
+  const filtered = complaints.filter((c) => {
+    const isSolved = c.status === "solved";
+    if (filter === "unsolved") return !isSolved;
+    if (filter === "solved") return isSolved;
+    return true;
+  });
+
+  async function handleToggleComplaintStatus(complaint: any) {
+    if (!complaint.id || !db) return;
+    const isSolved = complaint.status === "solved";
+    const newStatus = isSolved ? "unsolved" : "solved";
+
+    try {
+      await updateDoc(doc(db, "complaints", complaint.id), { status: newStatus });
+      await logSuperAdminActivity(
+        complaint.messId || "all",
+        "Complaint Status Update",
+        `Marked complaint from ${complaint.studentName || "Student"} as ${newStatus}`
+      );
+    } catch (err) {
+      console.error("Error updating complaint status:", err);
+      alert("Failed to update complaint resolution status.");
+    }
+  }
+
+  async function handleDeleteComplaint(complaint: any) {
+    if (!complaint.id || !db) return;
+    if (!confirm(`Permanently delete complaint from ${complaint.studentName || "Student"}?`)) return;
+
+    try {
+      await deleteDoc(doc(db, "complaints", complaint.id));
+      await logSuperAdminActivity(
+        complaint.messId || "all",
+        "Complaint Deleted",
+        `Removed complaint report from ${complaint.studentName || "Student"}`
+      );
+    } catch (err) {
+      console.error("Error deleting complaint:", err);
+      alert("Failed to delete complaint record.");
+    }
+  }
+
+  function exportComplaintsToExcel() {
+    if (complaints.length === 0) {
+      alert("No complaint records available to export.");
+      return;
+    }
+
+    const exportRows = complaints.map((c) => ({
+      "Date / Time": c.createdAt?.toDate ? c.createdAt.toDate().toLocaleString("en-IN") : "Recent",
+      "Student Name": c.studentName || "Anonymous",
+      "Mess Facility": c.messId || "N/A",
+      "Category": c.category || "General",
+      "Message / Issue": c.message || c.issue_or_feedback || "",
+      "Resolution Status": c.status === "solved" ? "Resolved" : "Pending"
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "CampusComplaints");
+    XLSX.writeFile(wb, `MessHub_Complaints_${new Date().toISOString().split("T")[0]}.xlsx`);
+  }
+
+  return (
+    <div className="bg-white border border-border rounded-3xl p-5 shadow-card space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
+        <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl border border-border w-fit">
+          {(["all", "unsolved", "solved"] as const).map((type) => (
+            <button
+              key={type}
+              onClick={() => setFilter(type)}
+              className={`px-4 py-1.5 text-[11px] font-bold rounded-lg capitalize transition cursor-pointer ${
+                filter === type ? "bg-foreground text-background shadow-xs" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {type}
+            </button>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={exportComplaintsToExcel}
+          className="text-xs font-bold text-slate-700 bg-background hover:bg-slate-100 border border-border px-3 py-2 rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-2xs self-start sm:self-auto"
+        >
+          <Download className="w-3.5 h-3.5 text-emerald-600" /> Export Complaints to Excel
+        </button>
+      </div>
+
+      <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1">
+        {filtered.length === 0 ? (
+          <p className="py-12 text-center text-xs italic text-muted-foreground">No complaint records found matching filter.</p>
+        ) : (
+          filtered.map((item) => {
+            const isSolved = item.status === "solved";
+            return (
+              <div 
+                key={item.id} 
+                className={`p-4 rounded-2xl border transition-all flex items-start gap-4 ${
+                  isSolved ? "bg-emerald-50/40 border-emerald-300 opacity-70" : "bg-white border-border shadow-xs"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => handleToggleComplaintStatus(item)}
+                  className="mt-1 shrink-0 text-primary hover:scale-110 transition cursor-pointer"
+                  title={isSolved ? "Mark Unsolved" : "Mark Solved"}
+                >
+                  {isSolved ? <CheckSquare className="w-5 h-5 text-emerald-600 fill-emerald-100" /> : <Square className="w-5 h-5 text-zinc-400" />}
+                </button>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`font-bold text-sm truncate ${isSolved ? "line-through text-muted-foreground" : "text-foreground"}`}>
+                      {item.category || "Report / Issue"} <span className="uppercase text-[10px] text-muted-foreground ml-1 font-semibold">({item.messId || "General"})</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteComplaint(item)}
+                      className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                      title="Delete complaint report"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="text-[11px] text-muted-foreground font-medium flex items-center gap-2 mt-1">
+                    <span>👤 {item.studentName || "Anonymous"} {item.email ? `(${item.email})` : ""}</span>
+                    <span className="w-1 h-1 rounded-full bg-zinc-300" />
+                    <span className="text-[10px] text-zinc-400">
+                      {item.createdAt?.toDate ? item.createdAt.toDate().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : "Just now"}
+                    </span>
+                  </div>
+
+                  {(item.message || item.issue_or_feedback) && (
+                    <p className={`text-xs italic p-2.5 rounded-xl mt-2 border ${isSolved ? "bg-zinc-50 text-zinc-400 line-through border-zinc-200" : "bg-[#fbf7f2] text-foreground border-border/60"}`}>
+                      "{item.message || item.issue_or_feedback}"
                     </p>
                   )}
 
