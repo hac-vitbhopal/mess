@@ -16,11 +16,13 @@ export function sanitizePlainText(rawInput: unknown): string {
 }
 
 export const MessIdSchema = z.enum([
-  "crcl",
   "jmb",
   "mayuri_boys",
   "mayuri_girls",
   "safal",
+  "anchor",
+  "food_sutra",
+  "rassense",
   "ab_catering",
 ]);
 
