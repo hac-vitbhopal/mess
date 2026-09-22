@@ -216,7 +216,7 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
             Privacy Policy & Terms
           </Link>
         </p>
-        <p className="text-[11px] text-[#221510]/80">
+        {/* <p className="text-[11px] text-[#221510]/80">
           Designed &amp; Built by{" "}
           <a
             href="https://itsmeishaan.vercel.app/"
@@ -234,7 +234,7 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
           >
             VIT Bhopal University
           </a>
-        </p>
+        </p> */}
       </footer>
     </div>
   );

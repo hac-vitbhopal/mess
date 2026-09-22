@@ -604,7 +604,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
 
       {/* 🚀 Professional Footer */}
       <footer className="mt-12 px-5 py-6 border-t border-border/60 text-center text-xs text-muted-foreground space-y-1">
-        <p>
+        {/* <p>
           Designed &amp; Built by{" "}
           <a
             href="https://itsmeishaan.vercel.app/"
@@ -614,7 +614,9 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
           >
             Ishaan Mittal
           </a>{" "}
-          × <a
+          × 
+          
+          <a
             href="https://vitbhopal.ac.in/"
             target="_blank"
             rel="noopener noreferrer"
@@ -622,7 +624,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
           >
             VIT Bhopal University
           </a>
-        </p>
+        </p> */}
         <p className="text-[11px] opacity-80">
           &copy; {new Date().getFullYear()} MessHub. All rights reserved.
         </p>
