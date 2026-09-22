@@ -697,7 +697,7 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
         }
       }
 
-      const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyqJc_wS6XcWnqCjetwPtnTD-OMePvEu0NoI64EbEBxG1p2Jx5mL_iTtWgvx4MsKMb2/exec";
+      const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyxSQO8yoPm0foZaPUXZaOMIWG3v2S1ysDVj_tpGeF_DigIML9AHaN1TvoIJda19Z9q/exec";
       const formData = new URLSearchParams();
       formData.append("name", profile.name || "VIT Student");
       formData.append("email", profile.email || "N/A");
