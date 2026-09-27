@@ -1,15 +1,17 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider } from "firebase/auth"; // ⚡ Added for Google Sign-In
+import { getAnalytics } from "firebase/analytics"; // 📊 Added for Google Analytics
 import { registerFcmToken } from "./register-token-action";
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyD45WuPr0HR9d0lJY4HCrhRUhy-kV0wsw4",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "messmenu-a387b.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "messmenu-a387b",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "messmenu-a387b.firebasestorage.app",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "1057632756638",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:1057632756638:web:8eca944e315ec5c76c2c8f"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
 export const isFirebaseConfigured = () => !!firebaseConfig.apiKey;
@@ -26,6 +28,9 @@ export const db = app ? getFirestore(app) : null;
 // ⚡ AUTH & GOOGLE PROVIDER EXPORTS (Required for Student Login)
 export const auth = app ? getAuth(app) : null;
 export const googleProvider = new GoogleAuthProvider();
+
+// 📊 ANALYTICS EXPORT (Safe client-side initialization)
+export const analytics = (app && typeof window !== "undefined") ? getAnalytics(app) : null;
 
 export async function requestNotificationPermission() {
   if (!("Notification" in window)) {
