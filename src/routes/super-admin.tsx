@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
-import { db } from "@/lib/firebase";
+import { db, auth } from "@/lib/firebase"; // 🔒 Added auth import for secure token retrieval
 import { collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, limit, doc, getDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import { 
   getAdminSession, 
@@ -188,7 +188,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
       setFeedbacks(snap.docs.map(d => ({ id: d.id, ...d.data() } as ItemFeedback)));
     });
 
-    // ⚡ Complaints / Bug Reports Realtime Stream from Firestore collection
     const complaintsQuery = query(collection(db, "complaints"), orderBy("createdAt", "desc"), limit(100));
     const unsubComplaints = onSnapshot(complaintsQuery, (snap) => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -285,6 +284,10 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
 
     if (!window.confirm(`🚨 Transmit automated ${mealName} push alerts across all student endpoints?`)) return;
 
+   // 🔒 Obtain current operator's Firebase ID token safely with optional chaining
+    const currentUser = auth?.currentUser;
+    const adminToken = currentUser ? await currentUser.getIdToken() : "";
+
     setIsFiringMealAlert(true);
     try {
       const pushTemplates: Record<string, { title: string; bodyPrefix: string }> = {
@@ -336,7 +339,13 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
         const finalBodyText = `${template.bodyPrefix}${itemSummary}. Come down to the hall!`;
 
         await sendFcmNotification({
-          data: { topic: `mess_${mess.id}`, title: template.title, body: finalBodyText, url: "/" }
+          data: { 
+            topic: `mess_${mess.id}`, 
+            title: template.title, 
+            body: finalBodyText, 
+            url: "/", 
+            adminToken // 🔒 Required secure operator token
+          }
         }).catch((e) => console.error("Notification push warning:", e));
       }
 
@@ -354,6 +363,10 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
     e.preventDefault();
     if (!broadcastTitle.trim() || !broadcastBody.trim() || !db) return;
 
+   // 🔒 Obtain current operator's Firebase ID token safely with optional chaining
+    const currentUser = auth?.currentUser;
+    const adminToken = currentUser ? await currentUser.getIdToken() : "";
+
     setIsBroadcastingCustom(true);
     try {
       const targetTopic = targetMessId === "all" ? "mess_all" : `mess_${targetMessId}`;
@@ -367,7 +380,13 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
       }
 
       await sendFcmNotification({
-        data: { topic: targetTopic, title: broadcastTitle.trim(), body: broadcastBody.trim(), url: targetUrl }
+        data: { 
+          topic: targetTopic, 
+          title: broadcastTitle.trim(), 
+          body: broadcastBody.trim(), 
+          url: targetUrl, 
+          adminToken // 🔒 Required secure operator token
+        }
       });
 
       await logSuperAdminActivity(
