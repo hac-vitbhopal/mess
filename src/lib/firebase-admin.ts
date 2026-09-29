@@ -45,3 +45,4 @@ try {
 
 export const adminDb = firestore;
 export const adminMessaging = admin.messaging(app);
+export const adminAuth = admin.auth(app); // 🔒 Added to export Firebase Admin Auth

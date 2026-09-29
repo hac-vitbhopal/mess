@@ -8,6 +8,9 @@ export default defineConfig({
     },
   },
   vite: {
+    build: {
+      sourcemap: false, // 🔒 Locks down production source code against browser DevTools inspection
+    },
     ssr: {
       external: ["firebase-admin", "@google-cloud/firestore"],
     },

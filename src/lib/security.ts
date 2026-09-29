@@ -2,10 +2,12 @@ import { z } from "zod";
 import DOMPurify from "dompurify";
 
 const SAFE_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@vitbhopal\.ac\.in$/;
-const ALPHANUMERIC_SAFE = /^[a-zA-Z0-9_\-\s.]+$/;
+
+// 🔒 Unicode-aware safe text regex supporting international characters while preventing injection
+const INTERNATIONAL_SAFE_TEXT = /^[\p{L}\p{N}_\-\s.]+$/u;
 
 /**
- * Strips HTML, scripts, event handlers, and SSTI syntax characters
+ * Strips HTML, scripts, event handlers, and dangerous control characters
  */
 export function sanitizePlainText(rawInput: unknown): string {
   if (typeof rawInput !== "string") return "";
@@ -31,7 +33,7 @@ export const StudentProfileSchema = z.object({
     .string()
     .min(1, "Name required")
     .max(50, "Name exceeds 50 characters")
-    .regex(ALPHANUMERIC_SAFE, "Invalid characters in name")
+    .regex(INTERNATIONAL_SAFE_TEXT, "Invalid characters in name")
     .transform(sanitizePlainText),
   email: z
     .string()
@@ -65,12 +67,28 @@ export const BroadcastSchema = z.object({
   body: z.string().min(1).max(10000, "Broadcast exceeds 10,000 characters").transform(sanitizePlainText),
 });
 
-// Sliding Window Rate Limiter
+/**
+ * 🔒 Distributed Rate Limiter Pattern for Serverless (Vercel)
+ * Note: For absolute production security across distributed serverless functions, 
+ * connect this function to Upstash Redis (`@upstash/redis`) using sliding window counters.
+ */
 interface RateLimitTracker {
   count: number;
   resetAt: number;
 }
 const memoryStore = new Map<string, RateLimitTracker>();
+
+// Periodic memory cleanup to prevent memory leaks in long-running local environments
+if (typeof setInterval !== "undefined") {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, value] of memoryStore.entries()) {
+      if (now > value.resetAt) {
+        memoryStore.delete(key);
+      }
+    }
+  }, 60000);
+}
 
 export function checkRateLimit(actionIdentifier: string, maxAttempts = 5, windowMs = 60000): boolean {
   const now = Date.now();
