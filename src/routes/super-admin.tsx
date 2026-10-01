@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import { db, auth } from "@/lib/firebase"; // 🔒 Added auth import for secure token retrieval
-import { collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, limit, doc, getDoc, updateDoc, deleteDoc } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, limit, doc, getDoc, updateDoc, deleteDoc, setDoc } from "firebase/firestore";
 import { 
   getAdminSession, 
   saveAdminSession, 
@@ -20,7 +20,7 @@ import {
   ShieldCheck, Users, Activity, MessageSquare, Megaphone, 
   LogOut, Menu, X, Clock, CheckSquare, Square, Star, 
   CheckCircle2, AlertCircle, Trash2, TrendingUp, Send, CheckCircle,
-  PlusCircle, History, Utensils, Download, AlertTriangle
+  PlusCircle, History, Utensils, Download, AlertTriangle, Lock, Unlock, KeyRound
 } from "lucide-react";
 
 export const Route = createFileRoute("/super-admin")({
@@ -143,7 +143,7 @@ function SuperAdminGatekeeper() {
 
 /* ---------------- 👑 PLATFORM MASTER SAAS DASHBOARD ---------------- */
 function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
-  const [activeTab, setActiveTab] = useState<"overview" | "feedbacks" | "complaints" | "broadcasts" | "students" | "analytics" | "audit">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "roles" | "feedbacks" | "complaints" | "broadcasts" | "students" | "analytics" | "audit">("overview");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Global Realtime Datasets
@@ -167,9 +167,22 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // 🔒 Master Kitchen Editing Permission State (Synced for Roles Tab)
+  const [isMenuEditingUnlocked, setIsMenuEditingUnlocked] = useState(false);
+  const [isUpdatingLock, setIsUpdatingLock] = useState(false);
+  const [saveSuccessNotice, setSaveSuccessNotice] = useState(false);
+
   // ⚡ Bounded Firebase Sync Listeners
   useEffect(() => {
     if (!db) return;
+
+    // Fetch live Kitchen Lock configuration state
+    const configRef = doc(db, "platform_config", "settings");
+    const unsubConfig = onSnapshot(configRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setIsMenuEditingUnlocked(!!docSnap.data().menuEditingEnabled);
+      }
+    });
 
     const unsubMesses = onSnapshot(collection(db, "messes"), (snap) => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -221,6 +234,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
     });
 
     return () => {
+      unsubConfig();
       unsubMesses();
       unsubStudents();
       unsubFeedbacks();
@@ -231,6 +245,33 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
       unsubAudit();
     };
   }, []);
+
+  async function handleSaveKitchenPermissions(e: React.FormEvent) {
+    e.preventDefault();
+    if (!db) return;
+    setIsUpdatingLock(true);
+    setSaveSuccessNotice(false);
+    try {
+      const configRef = doc(db, "platform_config", "settings");
+      await setDoc(configRef, {
+        menuEditingEnabled: isMenuEditingUnlocked,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+
+      await logSuperAdminActivity(
+        "all", 
+        "Kitchen Permission Updated", 
+        `Super Admin explicitly ${isMenuEditingUnlocked ? "GRANTED" : "REVOKED"} menu-editing access for Mess Admins.`
+      );
+      setSaveSuccessNotice(true);
+      setTimeout(() => setSaveSuccessNotice(false), 4000);
+    } catch (err) {
+      console.error("Failed to update kitchen access state:", err);
+      alert("Failed to save permission changes.");
+    } finally {
+      setIsUpdatingLock(false);
+    }
+  }
 
   const allMesses = useMemo(() => {
     const combined = [...DEFAULT_STATIC_MESSES];
@@ -284,7 +325,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
 
     if (!window.confirm(`🚨 Transmit automated ${mealName} push alerts across all student endpoints?`)) return;
 
-   // 🔒 Obtain current operator's Firebase ID token safely with optional chaining
+    // 🔒 Obtain current operator's Firebase ID token safely with optional chaining
     const currentUser = auth?.currentUser;
     const adminToken = currentUser ? await currentUser.getIdToken() : "";
 
@@ -363,7 +404,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
     e.preventDefault();
     if (!broadcastTitle.trim() || !broadcastBody.trim() || !db) return;
 
-   // 🔒 Obtain current operator's Firebase ID token safely with optional chaining
+    // 🔒 Obtain current operator's Firebase ID token safely with optional chaining
     const currentUser = auth?.currentUser;
     const adminToken = currentUser ? await currentUser.getIdToken() : "";
 
@@ -453,6 +494,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
         <div className="flex-1 p-4 space-y-1.5 overflow-y-auto">
           <p className="px-4 text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2 mt-2">Infrastructure</p>
           <NavButton id="overview" icon={Activity} label="HQ Overview" />
+          <NavButton id="roles" icon={KeyRound} label="Roles & Permissions" />
           <NavButton id="feedbacks" icon={MessageSquare} label="Campus Feedback" badge={pendingFeedbacksCount} />
           <NavButton id="complaints" icon={AlertTriangle} label="Campus Complaints" badge={pendingComplaintsCount} />
           <NavButton id="broadcasts" icon={Megaphone} label="Broadcast Management" />
@@ -493,7 +535,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                 <PlusCircle className="w-4 h-4" /> Add New Mess &amp; Menu
               </Link>
             </div>
-            
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <MetricCard title="Registered Students" value={students.length} icon={Users} color="bg-blue-50 text-blue-600" />
               <MetricCard title="Mess Facilities" value={allMesses.length} icon={Utensils} color="bg-purple-50 text-purple-600" />
@@ -575,6 +617,71 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
               </div>
 
             </div>
+          </div>
+        )}
+
+        {/* ================= TAB 1.5: ROLES & PERMISSIONS ================= */}
+        {activeTab === "roles" && (
+          <div className="space-y-6 animate-fade-in pb-12 max-w-3xl">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-black text-foreground">Roles &amp; Kitchen Permissions</h1>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Control operational access and menu-editing privileges across campus mess panels.</p>
+            </div>
+
+            <form onSubmit={handleSaveKitchenPermissions} className="bg-white rounded-3xl border border-border p-6 shadow-card space-y-6">
+              <div className="flex items-center gap-3 pb-4 border-b border-border">
+                <div className="h-10 w-10 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center font-bold">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-foreground">Mess Admin Menu Editing Control</h2>
+                  <p className="text-xs text-muted-foreground">Dynamically grant or revoke permission for standard Mess Admins to modify daily food items.</p>
+                </div>
+              </div>
+
+              <div className="bg-[#fbf7f2] border border-border p-4 rounded-2xl flex items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <span className="text-xs font-bold text-foreground block">
+                    {isMenuEditingUnlocked ? "🔓 Menu Editing Status: UNLOCKED" : "🔒 Menu Editing Status: LOCKED"}
+                  </span>
+                  <p className="text-[11px] text-muted-foreground">
+                    {isMenuEditingUnlocked 
+                      ? "Mess Admins are currently permitted to update and overwrite daily menu items." 
+                      : "Mess Admins are restricted. Only Super Admin authorization allows menu modifications."}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsMenuEditingUnlocked(!isMenuEditingUnlocked)}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer shadow-xs flex items-center gap-2 shrink-0 ${
+                    isMenuEditingUnlocked 
+                      ? "bg-emerald-600 text-white" 
+                      : "bg-zinc-900 text-white"
+                  }`}
+                >
+                  {isMenuEditingUnlocked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                  {isMenuEditingUnlocked ? "Unlocked" : "Locked"}
+                </button>
+              </div>
+
+              {saveSuccessNotice && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold rounded-xl flex items-center gap-2 animate-fade-in">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                  Kitchen permissions successfully saved and synchronized across all dashboards!
+                </div>
+              )}
+
+              <div className="pt-2 flex justify-end">
+                <button
+                  type="submit"
+                  disabled={isUpdatingLock}
+                  className="gradient-warm text-white px-6 py-3 rounded-2xl text-xs font-bold shadow-card transition active:scale-95 disabled:opacity-40 cursor-pointer flex items-center gap-2"
+                >
+                  {isUpdatingLock ? "Saving Changes..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
           </div>
         )}
 

@@ -27,7 +27,7 @@ import {
   type Overrides,
 } from "@/lib/messhub";
 import { db } from "@/lib/firebase";
-import { 
+import {  
   collection, 
   query, 
   where, 
@@ -40,7 +40,7 @@ import {
   setDoc,
   writeBatch
 } from "firebase/firestore";
-import { 
+import {  
   Plus, 
   Trash2, 
   Save, 
@@ -258,6 +258,9 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
   const [firestoreOverrides, setFirestoreOverrides] = useState<SpecialOverride[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
+  // 🔒 Kitchen Lock Permission State from Super Admin
+  const [isMenuEditingAllowed, setIsMenuEditingAllowed] = useState(false);
+
   const [menu, setMenu] = useState<AdminDayMenu>({
     breakfast: [],
     lunch: [],
@@ -298,6 +301,20 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
   }, [menu, initialLoadedMenu]);
 
   const hasUnsavedChanges = pendingSummary.length > 0;
+
+  // Listen to Super Admin's Kitchen Lock Setting
+  useEffect(() => {
+    if (!db) return;
+    const configRef = doc(db, "platform_config", "settings");
+    const unsubscribe = onSnapshot(configRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setIsMenuEditingAllowed(!!docSnap.data().menuEditingEnabled);
+      } else {
+        setIsMenuEditingAllowed(false); // Default locked
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (!db) return;
@@ -439,6 +456,10 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
   }
 
   const handleAddItem = (meal: keyof AdminDayMenu) => {
+    if (!isMenuEditingAllowed) {
+      alert("🔒 Kitchen editing is currently locked by the Super Admin.");
+      return;
+    }
     setMenu((prev) => ({
       ...prev,
       [meal]: [...prev[meal], { name: "", servingSize: "1 Portion", calories: 200, protein: 8, carbs: 25, fat: 5, recipe: { ingredients: "", method: "" } }],
@@ -446,6 +467,10 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
   };
 
   const handleRemoveItem = (meal: keyof AdminDayMenu, index: number) => {
+    if (!isMenuEditingAllowed) {
+      alert("🔒 Kitchen editing is currently locked by the Super Admin.");
+      return;
+    }
     setMenu((prev) => ({
       ...prev,
       [meal]: prev[meal].filter((_, i) => i !== index),
@@ -458,6 +483,7 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
     field: keyof AdminDishItem,
     value: any
   ) => {
+    if (!isMenuEditingAllowed) return;
     setMenu((prev) => {
       const updatedMeal = [...prev[meal]];
       updatedMeal[index] = { ...updatedMeal[index], [field]: value };
@@ -466,6 +492,10 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
   };
 
   async function handleSaveChanges() {
+    if (!isMenuEditingAllowed) {
+      alert("🔒 Kitchen editing is currently locked by the Super Admin. You cannot publish changes.");
+      return;
+    }
     if (!hasUnsavedChanges) {
       alert("ℹ️ No changes detected!\n\nYou have not modified any dishes.");
       return;
@@ -505,6 +535,11 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
   }
 
   async function handleExcelImport(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!isMenuEditingAllowed) {
+      alert("🔒 Kitchen editing is currently locked by the Super Admin.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file || !db) return;
     const firestoreDb = db;
@@ -798,8 +833,8 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                 </div>
                 <button
                   onClick={handleSaveChanges}
-                  disabled={isSaving}
-                  className="w-full mt-2 gradient-warm text-white py-2 rounded-xl text-[11px] font-bold shadow-xs cursor-pointer active:scale-95 transition"
+                  disabled={isSaving || !isMenuEditingAllowed}
+                  className="w-full mt-2 gradient-warm text-white py-2 rounded-xl text-[11px] font-bold shadow-xs cursor-pointer active:scale-95 transition disabled:opacity-40"
                 >
                   {isSaving ? "Publishing..." : "Publish All Changes"}
                 </button>
@@ -839,6 +874,21 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
 
       <main className="flex-1 p-4 md:p-8 max-w-5xl overflow-y-auto">
         
+        {/* 🔒 Kitchen Lock Banner Warning if locked */}
+        {!isMenuEditingAllowed && (
+          <div className="mb-6 bg-amber-50 border border-amber-300 rounded-3xl p-4 shadow-xs flex items-center gap-3">
+            <div className="h-10 w-10 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 font-bold">
+              <Lock className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-xs font-black uppercase tracking-wider text-amber-900">Kitchen Editing Locked by Super Admin</h2>
+              <p className="text-[11px] text-amber-800 font-medium">
+                Menu modifications are currently restricted. Only Super Admin authorization allows publishing or editing daily food items.
+              </p>
+            </div>
+          </div>
+        )}
+
         {activeTab === "menu" && (
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card p-5 rounded-3xl border border-border shadow-card">
@@ -879,7 +929,9 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                 />
                 <label
                   htmlFor="admin-excel-import"
-                  className="px-3.5 py-2.5 rounded-2xl text-xs font-bold border border-border bg-background hover:bg-muted text-foreground transition flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+                  className={`px-3.5 py-2.5 rounded-2xl text-xs font-bold border border-border bg-background transition flex items-center gap-1.5 shadow-xs ${
+                    isMenuEditingAllowed ? "hover:bg-muted text-foreground cursor-pointer active:scale-95" : "opacity-40 cursor-not-allowed"
+                  }`}
                 >
                   <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
                   <span>{isImportingExcel ? "Importing..." : "Import Excel / CSV"}</span>
@@ -887,11 +939,13 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
 
                 <button
                   onClick={handleSaveChanges}
-                  disabled={isSaving}
-                  className={`px-5 py-2.5 rounded-2xl text-xs font-bold shadow-card active:scale-95 transition flex items-center justify-center gap-2 cursor-pointer ${
-                    hasUnsavedChanges
-                      ? "gradient-warm text-white"
-                      : "bg-muted text-muted-foreground border border-border"
+                  disabled={isSaving || !isMenuEditingAllowed}
+                  className={`px-5 py-2.5 rounded-2xl text-xs font-bold shadow-card transition flex items-center justify-center gap-2 ${
+                    !isMenuEditingAllowed
+                      ? "bg-muted text-muted-foreground border border-border opacity-40 cursor-not-allowed"
+                      : hasUnsavedChanges
+                        ? "gradient-warm text-white active:scale-95 cursor-pointer"
+                        : "bg-muted text-muted-foreground border border-border cursor-pointer"
                   }`}
                 >
                   <Save className="w-4 h-4" />
@@ -940,8 +994,11 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                       </h3>
                       <button
                         type="button"
+                        disabled={!isMenuEditingAllowed}
                         onClick={() => handleAddItem(mealType)}
-                        className="text-[11px] font-bold text-primary bg-background border border-border px-3 py-1.5 rounded-xl flex items-center gap-1 hover:bg-muted/50 transition cursor-pointer shadow-xs"
+                        className={`text-[11px] font-bold px-3 py-1.5 rounded-xl flex items-center gap-1 transition shadow-xs ${
+                          isMenuEditingAllowed ? "text-primary bg-background border border-border hover:bg-muted/50 cursor-pointer" : "opacity-40 bg-muted text-muted-foreground cursor-not-allowed"
+                        }`}
                       >
                         <Plus className="w-3.5 h-3.5" /> Add Dish
                       </button>
@@ -971,20 +1028,22 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                                 <div className="w-full sm:flex-1">
                                   <input
                                     type="text"
+                                    disabled={!isMenuEditingAllowed}
                                     placeholder="Enter dish name..."
                                     value={item.name}
                                     onChange={(e) => handleItemFieldChange(mealType, idx, "name", e.target.value)}
-                                    className="w-full bg-card border border-border px-3 py-2 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:border-primary shadow-xs"
+                                    className="w-full bg-card border border-border px-3 py-2 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:border-primary shadow-xs disabled:opacity-60"
                                   />
                                 </div>
 
                                 <div className="w-full sm:w-32">
                                   <input
                                     type="text"
+                                    disabled={!isMenuEditingAllowed}
                                     placeholder="1 Bowl (150g)"
                                     value={item.servingSize || ""}
                                     onChange={(e) => handleItemFieldChange(mealType, idx, "servingSize", e.target.value)}
-                                    className="w-full bg-card border border-border px-2.5 py-2 rounded-xl text-xs font-semibold text-foreground focus:outline-none focus:border-primary shadow-xs"
+                                    className="w-full bg-card border border-border px-2.5 py-2 rounded-xl text-xs font-semibold text-foreground focus:outline-none focus:border-primary shadow-xs disabled:opacity-60"
                                   />
                                 </div>
 
@@ -1015,8 +1074,9 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
 
                                   <button
                                     type="button"
+                                    disabled={!isMenuEditingAllowed}
                                     onClick={() => handleRemoveItem(mealType, idx)}
-                                    className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50 transition cursor-pointer"
+                                    className={`p-1.5 rounded-lg transition ${isMenuEditingAllowed ? "text-red-500 hover:text-red-700 hover:bg-red-50 cursor-pointer" : "text-muted-foreground opacity-40 cursor-not-allowed"}`}
                                     title="Delete Dish"
                                   >
                                     <Trash2 className="w-4 h-4" />
@@ -1028,32 +1088,34 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                                 <div className="mt-2 pt-2 border-t border-border/80 grid grid-cols-1 sm:grid-cols-2 gap-3 bg-muted/20 p-3 rounded-xl">
                                   <div>
                                     <label className="block text-[9px] uppercase font-bold text-muted-foreground mb-1">
-                                      Chef Standard Ingredients & Ratios
+                                      Chef Standard Ingredients &amp; Ratios
                                     </label>
                                     <textarea
                                       rows={2}
+                                      disabled={!isMenuEditingAllowed}
                                       value={item.recipe?.ingredients || ""}
                                       onChange={(e) => {
                                         const r = { ...(item.recipe || {}), ingredients: e.target.value };
                                         handleItemFieldChange(mealType, idx, "recipe", r);
                                       }}
                                       placeholder="e.g. 10kg Rice, 2kg Paneer, Spices ratio..."
-                                      className="w-full bg-card border border-border rounded-xl p-2 text-xs text-foreground resize-none focus:outline-none focus:border-primary"
+                                      className="w-full bg-card border border-border rounded-xl p-2 text-xs text-foreground resize-none focus:outline-none focus:border-primary disabled:opacity-60"
                                     />
                                   </div>
                                   <div>
                                     <label className="block text-[9px] uppercase font-bold text-muted-foreground mb-1">
-                                      Cooking Guidelines & Prep Method
+                                      Cooking Guidelines &amp; Prep Method
                                     </label>
                                     <textarea
                                       rows={2}
+                                      disabled={!isMenuEditingAllowed}
                                       value={item.recipe?.method || ""}
                                       onChange={(e) => {
                                         const r = { ...(item.recipe || {}), method: e.target.value };
                                         handleItemFieldChange(mealType, idx, "recipe", r);
                                       }}
                                       placeholder="Step-by-step preparation method for kitchen team..."
-                                      className="w-full bg-card border border-border rounded-xl p-2 text-xs text-foreground resize-none focus:outline-none focus:border-primary"
+                                      className="w-full bg-card border border-border rounded-xl p-2 text-xs text-foreground resize-none focus:outline-none focus:border-primary disabled:opacity-60"
                                     />
                                   </div>
                                 </div>
@@ -1083,8 +1145,11 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
               </div>
 
               <button
+                disabled={!isMenuEditingAllowed}
                 onClick={() => setShowOverrideEditor(selectedDate)}
-                className="gradient-warm text-white px-4 py-2.5 rounded-2xl text-xs font-bold shadow-card active:scale-95 transition flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+                className={`px-4 py-2.5 rounded-2xl text-xs font-bold shadow-card transition flex items-center gap-1.5 ${
+                  isMenuEditingAllowed ? "gradient-warm text-white active:scale-95 cursor-pointer" : "bg-muted text-muted-foreground opacity-40 cursor-not-allowed"
+                }`}
               >
                 <Plus className="w-4 h-4" /> Add Special Date
               </button>
@@ -1125,12 +1190,16 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
 
                         <div className="flex gap-2 self-end sm:self-center">
                           <button
+                            disabled={!isMenuEditingAllowed}
                             onClick={() => setShowOverrideEditor(k)}
-                            className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-bold hover:bg-muted transition cursor-pointer flex items-center gap-1"
+                            className={`rounded-xl border border-border px-3 py-1.5 text-xs font-bold transition flex items-center gap-1 ${
+                              isMenuEditingAllowed ? "bg-background hover:bg-muted text-foreground cursor-pointer" : "bg-muted opacity-40 cursor-not-allowed"
+                            }`}
                           >
                             <Edit3 className="w-3 h-3" /> Edit
                           </button>
                           <button
+                            disabled={!isMenuEditingAllowed}
                             onClick={async () => {
                               if (!confirm(`Delete special override for ${k}?`)) return;
                               await deleteFirestoreOverride(messId, k);
@@ -1140,7 +1209,9 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                               setOverrides(next);
                               saveOverrides(messId, next);
                             }}
-                            className="rounded-xl border border-destructive/40 bg-background px-3 py-1.5 text-xs font-bold text-destructive hover:bg-destructive/10 transition cursor-pointer flex items-center gap-1"
+                            className={`rounded-xl border px-3 py-1.5 text-xs font-bold transition flex items-center gap-1 ${
+                              isMenuEditingAllowed ? "border-destructive/40 bg-background text-destructive hover:bg-destructive/10 cursor-pointer" : "border-border bg-muted text-muted-foreground opacity-40 cursor-not-allowed"
+                            }`}
                           >
                             <Trash2 className="w-3 h-3" /> Delete
                           </button>
@@ -1182,7 +1253,7 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
 
                 <div>
                   <label className="block text-[10px] uppercase font-bold text-muted-foreground mb-1">
-                    Message Details & Links
+                    Message Details &amp; Links
                   </label>
                   <textarea
                     rows={4}
@@ -1495,7 +1566,7 @@ function AdminDishFeedbackViewer({ messId }: { messId: MessId }) {
   );
 }
 
-function OverrideEditor({ 
+function OverrideEditor({  
   initialKey, 
   existing, 
   existingOverrideData,
