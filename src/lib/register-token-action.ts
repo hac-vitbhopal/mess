@@ -8,7 +8,10 @@ const tokenPayloadSchema = z.object({
   token: z.string().trim().min(10).max(500),
   messId: z.string().trim().min(1).max(50),
   name: z.string().trim().max(100).nullable().optional(),
-  email: z.string().email().optional().or(z.literal("")), // ⚡ Enforce optional valid email check
+  email: z.preprocess(
+    (val) => (typeof val === "string" && val.trim() === "" ? undefined : val),
+    z.string().email().nullable().optional()
+  ),
 });
 
 export const registerFcmToken = createServerFn({
