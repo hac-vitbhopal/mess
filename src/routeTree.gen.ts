@@ -9,37 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SuperAdminRouteImport } from './routes/super-admin'
-import { Route as PrivacyRouteImport } from './routes/privacy'
-import { Route as NutritionistRouteImport } from './routes/nutritionist'
-import { Route as AdminRouteImport } from './routes/admin'
-import { Route as AddMessRouteImport } from './routes/add-mess'
-import { Route as AdminNotificationsRouteImport } from './routes/AdminNotifications'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminNotificationsRouteImport } from './routes/AdminNotifications'
+import { Route as AddMessRouteImport } from './routes/add-mess'
+import { Route as AdminRouteImport } from './routes/admin'
+import { Route as NutritionistRouteImport } from './routes/nutritionist'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as SuperAdminRouteImport } from './routes/super-admin'
 
-const SuperAdminRoute = SuperAdminRouteImport.update({
-  id: '/super-admin',
-  path: '/super-admin',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PrivacyRoute = PrivacyRouteImport.update({
-  id: '/privacy',
-  path: '/privacy',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const NutritionistRoute = NutritionistRouteImport.update({
-  id: '/nutritionist',
-  path: '/nutritionist',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminRoute = AdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AddMessRoute = AddMessRouteImport.update({
-  id: '/add-mess',
-  path: '/add-mess',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminNotificationsRoute = AdminNotificationsRouteImport.update({
@@ -47,9 +27,29 @@ const AdminNotificationsRoute = AdminNotificationsRouteImport.update({
   path: '/AdminNotifications',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AddMessRoute = AddMessRouteImport.update({
+  id: '/add-mess',
+  path: '/add-mess',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NutritionistRoute = NutritionistRouteImport.update({
+  id: '/nutritionist',
+  path: '/nutritionist',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SuperAdminRoute = SuperAdminRouteImport.update({
+  id: '/super-admin',
+  path: '/super-admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -123,39 +123,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/super-admin': {
-      id: '/super-admin'
-      path: '/super-admin'
-      fullPath: '/super-admin'
-      preLoaderRoute: typeof SuperAdminRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/privacy': {
-      id: '/privacy'
-      path: '/privacy'
-      fullPath: '/privacy'
-      preLoaderRoute: typeof PrivacyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/nutritionist': {
-      id: '/nutritionist'
-      path: '/nutritionist'
-      fullPath: '/nutritionist'
-      preLoaderRoute: typeof NutritionistRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin': {
-      id: '/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AdminRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/add-mess': {
-      id: '/add-mess'
-      path: '/add-mess'
-      fullPath: '/add-mess'
-      preLoaderRoute: typeof AddMessRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/AdminNotifications': {
@@ -165,11 +137,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminNotificationsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/add-mess': {
+      id: '/add-mess'
+      path: '/add-mess'
+      fullPath: '/add-mess'
+      preLoaderRoute: typeof AddMessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/nutritionist': {
+      id: '/nutritionist'
+      path: '/nutritionist'
+      fullPath: '/nutritionist'
+      preLoaderRoute: typeof NutritionistRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/super-admin': {
+      id: '/super-admin'
+      path: '/super-admin'
+      fullPath: '/super-admin'
+      preLoaderRoute: typeof SuperAdminRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
