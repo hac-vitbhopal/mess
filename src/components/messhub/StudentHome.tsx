@@ -579,28 +579,37 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
       </section>
 
       {/* 📱 PWA Install Floating Banner / Button (Renders when browser allows installation) */}
-      {isInstallable && (
-        <div className="my-6 px-5">
-          <div className="rounded-2xl border border-primary/30 bg-primary/10 p-4 flex items-center justify-between gap-3 shadow-md">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl gradient-warm flex items-center justify-center text-white shrink-0 shadow-sm">
-                <Download className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-foreground">Install MessHub App</h4>
-                <p className="text-[11px] text-muted-foreground">Add to home screen for offline support &amp; fast access.</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handleInstallClick}
-              className="bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-xs font-bold shadow-xs transition hover:opacity-90 cursor-pointer shrink-0"
-            >
-              Install App
-            </button>
-          </div>
-        </div>
-      )}
+      {/* 📱 PWA Install Permanent Banner */}
+<div className="my-6 px-5">
+  <div className="rounded-2xl border border-primary/30 bg-primary/10 p-4 flex items-center justify-between gap-3 shadow-md">
+    <div className="flex items-center gap-3">
+      <div className="w-10 h-10 rounded-xl gradient-warm flex items-center justify-center text-white shrink-0 shadow-sm">
+        <Download className="w-5 h-5" />
+      </div>
+      <div>
+        <h4 className="text-xs font-bold text-foreground">Install MessHub App</h4>
+        <p className="text-[11px] text-muted-foreground">Add to home screen for offline support &amp; fast access.</p>
+      </div>
+    </div>
+    <button
+      type="button"
+      onClick={async () => {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          const { outcome } = await deferredPrompt.userChoice;
+          if (outcome === "accepted") {
+            setDeferredPrompt(null);
+          }
+        } else {
+          alert("To install MessHub, tap your browser's menu (...) or share icon and select 'Add to Home Screen'.");
+        }
+      }}
+      className="bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-xs font-bold shadow-xs transition hover:opacity-90 cursor-pointer shrink-0"
+    >
+      Install App
+    </button>
+  </div>
+</div>
 
       {/* 🚀 Professional Footer */}
       <footer className="mt-12 px-5 py-6 border-t border-border/60 text-center text-xs text-muted-foreground space-y-1">
@@ -697,7 +706,7 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
         }
       }
 
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyxSQO8yoPm0foZaPUXZaOMIWG3v2S1ysDVj_tpGeF_DigIML9AHaN1TvoIJda19Z9q/exec";      const formData = new URLSearchParams();
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwHFLMEE5jRNIM2o-0Y_0QI-a2Q2GWxnwu2Mtu5lAXBxXAqorEQipIZM-YNMi_b0p1F/exec";      const formData = new URLSearchParams();
       formData.append("name", profile.name || "VIT Student");
       formData.append("email", profile.email || "N/A");
       formData.append("mess", profile.messId);
@@ -893,13 +902,13 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
                     </div>
 
                     {isObject && (
-                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-semibold pt-0.5 flex-wrap">
-                        {item.servingSize && <span className="bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-md border border-slate-200">🍽️ {item.servingSize}</span>}
-                        {item.calories !== undefined && <span className="bg-orange-50 text-orange-700 px-2.5 py-0.5 rounded-md border border-orange-200">🔥 {item.calories} kcal</span>}
-                        {item.protein !== undefined && <span className="bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-md border border-emerald-200">💪 {item.protein}g Protein</span>}
-                        {item.carbs !== undefined && <span className="bg-amber-50 text-amber-700 px-2.5 py-0.5 rounded-md border border-amber-200">🌾 {item.carbs}g Carbs</span>}
-                      </div>
-                    )}
+  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-semibold pt-0.5 flex-wrap">
+    {item.servingSize && <span className="bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-md border border-slate-200">🍽️ {item.servingSize}</span>}
+    {Number(item.calories) > 0 && <span className="bg-orange-50 text-orange-700 px-2.5 py-0.5 rounded-md border border-orange-200">🔥 {item.calories} kcal</span>}
+    {Number(item.protein) > 0 && <span className="bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-md border border-emerald-200">💪 {item.protein}g Protein</span>}
+    {Number(item.carbs) > 0 && <span className="bg-amber-50 text-amber-700 px-2.5 py-0.5 rounded-md border border-amber-200">🌾 {item.carbs}g Carbs</span>}
+  </div>
+)}
 
                     {isExpanded && isObject && (
                       <div className="mt-2 pt-3 border-t border-border/80 space-y-3 text-xs animate-fade-in bg-card p-3 rounded-xl border">
