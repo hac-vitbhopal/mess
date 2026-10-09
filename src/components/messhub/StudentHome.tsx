@@ -914,14 +914,40 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
                       )}
                     </div>
 
-                    {isObject && (
-  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-semibold pt-0.5 flex-wrap">
-    {item.servingSize && <span className="bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-md border border-slate-200">🍽️ {item.servingSize}</span>}
-    {Number(item.calories) > 0 && <span className="bg-orange-50 text-orange-700 px-2.5 py-0.5 rounded-md border border-orange-200">🔥 {item.calories} kcal</span>}
-    {Number(item.protein) > 0 && <span className="bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-md border border-emerald-200">💪 {item.protein}g Protein</span>}
-    {Number(item.carbs) > 0 && <span className="bg-amber-50 text-amber-700 px-2.5 py-0.5 rounded-md border border-amber-200">🌾 {item.carbs}g Carbs</span>}
-  </div>
-)}
+                    {isObject && (() => {
+  const serving = item.servingSize || item.ServingSize;
+  const calories = Number(item.calories ?? item.Energy_kcal);
+  const protein = Number(item.protein ?? item.Protein_g);
+  const carbs = Number(item.carbs ?? item.Carbs_g);
+
+  const hasAnyBadge = Boolean(serving) || calories > 0 || protein > 0 || carbs > 0;
+  if (!hasAnyBadge) return null;
+
+  return (
+    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-semibold pt-0.5 flex-wrap">
+      {serving && (
+        <span className="bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-md border border-slate-200">
+          🍽️ {serving}
+        </span>
+      )}
+      {calories > 0 && (
+        <span className="bg-orange-50 text-orange-700 px-2.5 py-0.5 rounded-md border border-orange-200">
+          🔥 {calories} kcal
+        </span>
+      )}
+      {protein > 0 && (
+        <span className="bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-md border border-emerald-200">
+          💪 {protein}g Protein
+        </span>
+      )}
+      {carbs > 0 && (
+        <span className="bg-amber-50 text-amber-700 px-2.5 py-0.5 rounded-md border border-amber-200">
+          🌾 {carbs}g Carbs
+        </span>
+      )}
+    </div>
+  );
+})()}
 
                     {isExpanded && isObject && (
                       <div className="mt-2 pt-3 border-t border-border/80 space-y-3 text-xs animate-fade-in bg-card p-3 rounded-xl border">
