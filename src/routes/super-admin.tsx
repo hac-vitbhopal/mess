@@ -36,7 +36,7 @@ export const Route = createFileRoute("/super-admin")({
 
 /**
  * Audit Logger: Ensures only validated super-admin operators can write audit records.
- * Sanitize lengths and types to mitigate injection or payload bloat.
+ * Sanitizes lengths and types to mitigate injection or payload bloat.
  */
 async function logSuperAdminActivity(messId: string, action: string, details: string) {
   if (!db) return;
@@ -214,7 +214,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
       setStudents(list);
     });
 
-    // Load recent feedback submissions without composite queries to prevent indexing crashes
     const feedbacksQuery = query(collection(db, "item_feedback"), orderBy("createdAt", "desc"), limit(2000));
     const unsubFeedbacks = onSnapshot(feedbacksQuery, (snap) => {
       setFeedbacks(snap.docs.map(d => ({ id: d.id, ...d.data() } as ItemFeedback)));
@@ -1066,19 +1065,21 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
   const activeWeekday = new Date().getDay();
 
   // 1. Fetch live daily menu from Firestore with weekly fallback
+  // FIX: Stable 'firestore' variable assignment satisfies TypeScript overload safely without null union mismatch
   useEffect(() => {
     if (!db || !selectedMessId) return;
+    const firestore = db;
 
     async function loadMenuData() {
       try {
-        const dailyDocRef = doc(db, "daily_menus", `${selectedMessId}_${todayDateStr}`);
+        const dailyDocRef = doc(firestore, "daily_menus", `${selectedMessId}_${todayDateStr}`);
         const dailySnap = await getDoc(dailyDocRef);
 
         let menuPayload: any = null;
         if (dailySnap.exists()) {
           menuPayload = dailySnap.data();
         } else {
-          const weeklyDocRef = doc(db, "mess_menus", `${selectedMessId}_${activeWeekday}`);
+          const weeklyDocRef = doc(firestore, "mess_menus", `${selectedMessId}_${activeWeekday}`);
           const weeklySnap = await getDoc(weeklyDocRef);
           if (weeklySnap.exists()) {
             menuPayload = weeklySnap.data();
