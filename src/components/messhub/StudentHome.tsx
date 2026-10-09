@@ -274,7 +274,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
     }
 
     setIsSubmittingFeedback(true);
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyxSQO8yoPm0foZaPUXZaOMIWG3v2S1ysDVj_tpGeF_DigIML9AHaN1TvoIJda19Z9q/exec";
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxT3Ily2dZ5NlkRKoGafA0UgvZufYMLKNgmgfpdIl_1u1inhpm5tbetXgDFQqv_tg4Y/exec";
 
     const formData = new URLSearchParams();
     formData.append("name", profile.name || "VIT Student");
