@@ -10,6 +10,8 @@ import {
   verifyAdminPasscode,
   MESSES as DEFAULT_STATIC_MESSES,
   MEAL_DEFS,
+  currentAndNextMeal,
+  HARDCODED_WEEKLY_MENUS,
   deleteBroadcasts,
   toggleFeedbackStatus,
   type MealKey,
@@ -19,7 +21,7 @@ import {
   ShieldCheck, Users, Activity, MessageSquare, Megaphone, 
   LogOut, Menu, X, Clock, CheckSquare, Square, Star, 
   CheckCircle2, AlertCircle, Trash2, TrendingUp, Send, CheckCircle,
-  PlusCircle, History, Utensils, Download, AlertTriangle, Lock, Unlock, KeyRound, Calendar
+  PlusCircle, History, Utensils, Download, AlertTriangle, Lock, Unlock, KeyRound, Search
 } from "lucide-react";
 
 export const Route = createFileRoute("/super-admin")({
@@ -32,20 +34,38 @@ export const Route = createFileRoute("/super-admin")({
   component: SuperAdminGatekeeper,
 });
 
+/**
+ * Audit Logger: Ensures only validated super-admin operators can write audit records.
+ * Sanitize lengths and types to mitigate injection or payload bloat.
+ */
 async function logSuperAdminActivity(messId: string, action: string, details: string) {
   if (!db) return;
   try {
     const session = getAdminSession();
+    if (!session || session.role !== "super-admin") return;
     await addDoc(collection(db, "admin_audit_logs"), {
-      messId,
-      action,
-      details,
-      operatorRole: session?.role || "super-admin",
+      messId: String(messId || "all").slice(0, 50).trim(),
+      action: String(action || "").slice(0, 100).trim(),
+      details: String(details || "").slice(0, 500).trim(),
+      operatorRole: "super-admin",
       timestamp: serverTimestamp(),
     });
   } catch (err) {
     console.error("Failed to write super admin audit log:", err);
   }
+}
+
+/**
+ * Excel / CSV Formula Injection Guard:
+ * Prevents execution of spreadsheet macros (=, +, -, @, \t, \r) injected via student remarks or names.
+ */
+function sanitizeExcelCell(val: any): string {
+  if (val === null || val === undefined) return "N/A";
+  const str = String(val).trim();
+  if (/^[=+@\-\t\r]/.test(str)) {
+    return `'${str}`;
+  }
+  return str;
 }
 
 function SuperAdminGatekeeper() {
@@ -74,7 +94,8 @@ function SuperAdminGatekeeper() {
 
   function handleVerifyPasscode(e: React.FormEvent) {
     e.preventDefault();
-    const matchedAuth = verifyAdminPasscode(passcode);
+    const cleanPass = passcode.trim();
+    const matchedAuth = verifyAdminPasscode(cleanPass);
 
     if (matchedAuth && matchedAuth.role === "super-admin") {
       setAuthError(false);
@@ -156,7 +177,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
   // Local Action States
-  const currentWeekday = new Date().getDay();
   const [selectedMealKey, setSelectedMealKey] = useState<MealKey>("lunch");
   const [isFiringMealAlert, setIsFiringMealAlert] = useState(false);
   const [targetMessId, setTargetMessId] = useState<string>("all");
@@ -171,11 +191,10 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
   const [isUpdatingLock, setIsUpdatingLock] = useState(false);
   const [saveSuccessNotice, setSaveSuccessNotice] = useState(false);
 
-  // ⚡ Bounded Firebase Sync Listeners
+  // ⚡ Single-source Bounded Firebase Listeners
   useEffect(() => {
     if (!db) return;
 
-    // Fetch live Kitchen Lock configuration state
     const configRef = doc(db, "platform_config", "settings");
     const unsubConfig = onSnapshot(configRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -195,9 +214,12 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
       setStudents(list);
     });
 
-    const feedbacksQuery = query(collection(db, "item_feedback"), orderBy("createdAt", "desc"), limit(250));
+    // Load recent feedback submissions without composite queries to prevent indexing crashes
+    const feedbacksQuery = query(collection(db, "item_feedback"), orderBy("createdAt", "desc"), limit(2000));
     const unsubFeedbacks = onSnapshot(feedbacksQuery, (snap) => {
       setFeedbacks(snap.docs.map(d => ({ id: d.id, ...d.data() } as ItemFeedback)));
+    }, (err) => {
+      console.warn("Item feedbacks listener error:", err);
     });
 
     const complaintsQuery = query(collection(db, "complaints"), orderBy("createdAt", "desc"), limit(250));
@@ -253,7 +275,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
     try {
       const configRef = doc(db, "platform_config", "settings");
       await setDoc(configRef, {
-        menuEditingEnabled: isMenuEditingUnlocked,
+        menuEditingEnabled: Boolean(isMenuEditingUnlocked),
         updatedAt: serverTimestamp(),
         updatedByRole: "super-admin"
       }, { merge: true });
@@ -382,21 +404,23 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
 
   async function handleDeployCustomBroadcast(e: React.FormEvent) {
     e.preventDefault();
-    if (!broadcastTitle.trim() || !broadcastBody.trim() || !db) return;
+    const cleanTitle = broadcastTitle.trim().slice(0, 150);
+    const cleanBody = broadcastBody.trim().slice(0, 1000);
+    if (!cleanTitle || !cleanBody || !db) return;
 
     setIsBroadcastingCustom(true);
     try {
       await addDoc(collection(db, "broadcasts"), {
         messId: targetMessId,
-        title: broadcastTitle.trim(),
-        body: broadcastBody.trim(),
+        title: cleanTitle,
+        body: cleanBody,
         createdAt: serverTimestamp(),
       });
 
       await logSuperAdminActivity(
         targetMessId,
         "Custom Broadcast Sent",
-        `Target: ${targetMessId} | Title: "${broadcastTitle.trim()}"`
+        `Target: ${targetMessId} | Title: "${cleanTitle}"`
       );
 
       setBroadcastTitle("");
@@ -463,7 +487,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           <NavButton id="complaints" icon={AlertTriangle} label="Campus Complaints" badge={pendingComplaintsCount} />
           <NavButton id="broadcasts" icon={Megaphone} label="Broadcast Management" />
           <NavButton id="students" icon={Users} label="Student Directory" />
-          <NavButton id="analytics" icon={TrendingUp} label="Mess Analytics & Reports" />
+          <NavButton id="analytics" icon={TrendingUp} label="Dish Ratings & Telemetry" />
           <NavButton id="audit" icon={History} label="System Audit Logs" badge={auditLogs.length} />
         </div>
 
@@ -500,7 +524,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
               </Link>
             </div>
 
-            {/* Interactive Clickable Metric Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <MetricCard 
                 title="Registered Students" 
@@ -534,7 +557,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              
               <div className="bg-white rounded-3xl border border-border p-5 shadow-card flex flex-col h-[460px]">
                 <div className="pb-3 border-b border-border flex items-center justify-between">
                   <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
@@ -605,7 +627,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                   )}
                 </div>
               </div>
-
             </div>
           </div>
         )}
@@ -706,7 +727,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              
               <div className="rounded-3xl border border-border bg-white p-5 shadow-card flex flex-col justify-between">
                 <div>
                   <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
@@ -803,7 +823,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                   </button>
                 </form>
               </div>
-
             </div>
 
             <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
@@ -887,7 +906,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                 )}
               </div>
             </div>
-
           </div>
         )}
 
@@ -907,15 +925,16 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                     return;
                   }
                   const rows = students.map((s) => ({
-                    "Student Name": s.name || "Anonymous",
-                    "Email": s.email || "N/A",
-                    "Assigned Mess": s.messId || "N/A",
-                    "Last Active": s.lastActiveAt?.toDate ? s.lastActiveAt.toDate().toLocaleString() : "Recent"
+                    "Student Name": sanitizeExcelCell(s.name || "Anonymous"),
+                    "Email": sanitizeExcelCell(s.email || "N/A"),
+                    "Assigned Mess": sanitizeExcelCell(s.messId || "N/A"),
+                    "Last Active": s.lastActiveAt?.toDate ? s.lastActiveAt.toDate().toLocaleString("en-IN") : "Recent"
                   }));
                   const ws = XLSX.utils.json_to_sheet(rows);
                   const wb = XLSX.utils.book_new();
                   XLSX.utils.book_append_sheet(wb, ws, "StudentDirectory");
                   XLSX.writeFile(wb, `MessHub_Students_${new Date().toISOString().split("T")[0]}.xlsx`);
+                  logSuperAdminActivity("all", "Export Students", "Super Admin exported student directory to Excel");
                 }}
                 className="gradient-warm text-white px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-card transition active:scale-95 cursor-pointer self-start sm:self-auto"
               >
@@ -965,9 +984,9 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           </div>
         )}
 
-        {/* ================= TAB 6: MESS ANALYTICS & REPORTS ================= */}
+        {/* ================= TAB 6: DISH RATINGS & TELEMETRY ================= */}
         {activeTab === "analytics" && (
-          <MessAnalyticsTab feedbacks={feedbacks} allMesses={allMesses} />
+          <MessDishRatingsTab allMesses={allMesses} rawFeedbacks={feedbacks} />
         )}
 
         {/* ================= TAB 7: MASTER AUDIT LOGS ================= */}
@@ -1022,20 +1041,76 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
   );
 }
 
-/* ---------------- 📊 MESS ANALYTICS & DEEP DIVE MODULE (WITH TIME-RANGE FILTER) ---------------- */
-function MessAnalyticsTab({ feedbacks, allMesses }: { feedbacks: ItemFeedback[]; allMesses: any[] }) {
+/* ---------------- 🍲 DEDICATED DISH-BY-DISH MEAL RATINGS & AUDIT COMPONENT ---------------- */
+function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; rawFeedbacks: ItemFeedback[] }) {
   const [selectedMessId, setSelectedMessId] = useState<string>(allMesses[0]?.id || "jmb");
+  
+  // Auto-detect live serving meal window or fallback to lunch
+  const { current: liveMeal } = useMemo(() => currentAndNextMeal(new Date()), []);
+  const [selectedMeal, setSelectedMeal] = useState<MealKey | "all">(() => liveMeal?.key || "lunch");
+  
   const [timeRange, setTimeRange] = useState<"day" | "week" | "month" | "all">("all");
+  const [menuItemsMap, setMenuItemsMap] = useState<Record<MealKey, string[]>>({
+    breakfast: [],
+    lunch: [],
+    snacks: [],
+    dinner: []
+  });
+  const [searchQuery, setSearchQuery] = useState("");
 
-  // Filter feedback by selected mess facility AND time range
-  const messFeedbacks = useMemo(() => {
+  const todayDateStr = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, []);
+
+  const activeWeekday = new Date().getDay();
+
+  // 1. Fetch live daily menu from Firestore with weekly fallback
+  useEffect(() => {
+    if (!db || !selectedMessId) return;
+
+    async function loadMenuData() {
+      try {
+        const dailyDocRef = doc(db, "daily_menus", `${selectedMessId}_${todayDateStr}`);
+        const dailySnap = await getDoc(dailyDocRef);
+
+        let menuPayload: any = null;
+        if (dailySnap.exists()) {
+          menuPayload = dailySnap.data();
+        } else {
+          const weeklyDocRef = doc(db, "mess_menus", `${selectedMessId}_${activeWeekday}`);
+          const weeklySnap = await getDoc(weeklyDocRef);
+          if (weeklySnap.exists()) {
+            menuPayload = weeklySnap.data();
+          } else {
+            menuPayload = HARDCODED_WEEKLY_MENUS[selectedMessId]?.[activeWeekday] || null;
+          }
+        }
+
+        const map: Record<MealKey, string[]> = { breakfast: [], lunch: [], snacks: [], dinner: [] };
+        if (menuPayload) {
+          MEAL_DEFS.forEach((m) => {
+            const rawList = menuPayload[m.key] || [];
+            map[m.key] = rawList.map((item: any) => typeof item === "object" ? item.name : item).filter(Boolean);
+          });
+        }
+        setMenuItemsMap(map);
+      } catch (err) {
+        console.error("Error loading menu for dish ratings tab:", err);
+      }
+    }
+
+    loadMenuData();
+  }, [selectedMessId, todayDateStr, activeWeekday]);
+
+  // 2. Safe in-memory filtering: avoids composite index errors in Firestore
+  const filteredFeedbacks = useMemo(() => {
     const now = new Date();
-    return feedbacks.filter((f) => {
+    return rawFeedbacks.filter((f) => {
       if (f.messId !== selectedMessId) return false;
       if (timeRange === "all") return true;
-
       const fDate = f.createdAt?.toDate ? f.createdAt.toDate() : new Date();
-      
+
       if (timeRange === "day") {
         return fDate.toDateString() === now.toDateString();
       }
@@ -1049,103 +1124,245 @@ function MessAnalyticsTab({ feedbacks, allMesses }: { feedbacks: ItemFeedback[];
       }
       return true;
     });
-  }, [feedbacks, selectedMessId, timeRange]);
+  }, [rawFeedbacks, selectedMessId, timeRange]);
 
-  // Compute date range badge text
-  const dateRangeBadge = useMemo(() => {
-    const now = new Date();
-    if (timeRange === "day") return `Today (${now.toLocaleDateString("en-IN")})`;
-    if (timeRange === "week") {
-      const startW = new Date();
-      startW.setDate(now.getDate() - 7);
-      return `Past 7 Days (${startW.toLocaleDateString("en-IN")} – ${now.toLocaleDateString("en-IN")})`;
-    }
-    if (timeRange === "month") return `This Month (${now.toLocaleString("default", { month: "long" })} ${now.getFullYear()})`;
-    return "All-Time Cumulative Record";
-  }, [timeRange]);
+  // 3. Compute per-dish ratings and aggregate across meal periods
+  const dishGroupAnalytics = useMemo(() => {
+    const dishScores: Record<string, { total: number; count: number; stars: Record<number, number>; mealKey: string }> = {};
 
-  const stats = useMemo(() => {
-    const totalCount = messFeedbacks.length;
-    if (totalCount === 0) {
-      return { avgRating: "0.0", totalCount: 0, starCounts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }, topDishes: [] };
-    }
-
-    let sum = 0;
-    const starCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    const dishScores: Record<string, { total: number; count: number }> = {};
-
-    messFeedbacks.forEach((f) => {
+    filteredFeedbacks.forEach((f) => {
+      if (!f.itemName) return;
+      const key = f.itemName.trim().toLowerCase();
       const r = Math.min(5, Math.max(1, Math.round(f.rating || 5)));
-      sum += f.rating || 0;
-      starCounts[r] = (starCounts[r] || 0) + 1;
-
-      if (f.itemName) {
-        if (!dishScores[f.itemName]) dishScores[f.itemName] = { total: 0, count: 0 };
-        dishScores[f.itemName].total += f.rating || 0;
-        dishScores[f.itemName].count += 1;
+      
+      if (!dishScores[key]) {
+        dishScores[key] = {
+          total: 0,
+          count: 0,
+          stars: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+          mealKey: f.mealKey || "lunch"
+        };
       }
+      dishScores[key].total += f.rating || 0;
+      dishScores[key].count += 1;
+      dishScores[key].stars[r] = (dishScores[key].stars[r] || 0) + 1;
     });
 
-    const avgRating = (sum / totalCount).toFixed(2);
-    const topDishes = Object.entries(dishScores)
-      .map(([name, data]) => ({ name, avg: (data.total / data.count).toFixed(1), count: data.count }))
-      .sort((a, b) => parseFloat(b.avg) - parseFloat(a.avg))
-      .slice(0, 5);
+    const categories: Record<MealKey, any[]> = {
+      breakfast: [],
+      lunch: [],
+      snacks: [],
+      dinner: []
+    };
 
-    return { avgRating, totalCount, starCounts, topDishes };
-  }, [messFeedbacks]);
+    MEAL_DEFS.forEach((m) => {
+      const items = menuItemsMap[m.key] || [];
+      const analyzedItems = items.map((itemName) => {
+        const key = itemName.trim().toLowerCase();
+        const stat = dishScores[key];
+        const count = stat ? stat.count : 0;
+        const avg = count > 0 ? (stat.total / count).toFixed(1) : "Unrated";
+        const stars = stat ? stat.stars : { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        return {
+          name: itemName,
+          mealKey: m.key,
+          avg,
+          count,
+          stars
+        };
+      });
 
-  function exportMessReportToExcel() {
-    if (messFeedbacks.length === 0) {
-      alert("No data available to export for this facility and timeframe.");
+      // Include ratings logged for dishes outside the static list
+      Object.entries(dishScores).forEach(([k, stat]) => {
+        if (stat.mealKey === m.key && !items.some(it => it.trim().toLowerCase() === k)) {
+          const formattedName = k.charAt(0).toUpperCase() + k.slice(1);
+          analyzedItems.push({
+            name: formattedName,
+            mealKey: m.key,
+            avg: (stat.total / stat.count).toFixed(1),
+            count: stat.count,
+            stars: stat.stars
+          });
+        }
+      });
+
+      categories[m.key] = analyzedItems;
+    });
+
+    return categories;
+  }, [filteredFeedbacks, menuItemsMap]);
+
+  // Overall facility metrics calculation
+  const overallFacilityMetrics = useMemo(() => {
+    let sum = 0;
+    let count = 0;
+    filteredFeedbacks.forEach((f) => {
+      sum += f.rating || 0;
+      count++;
+    });
+    return {
+      avg: count > 0 ? (sum / count).toFixed(2) : "0.0",
+      total: count
+    };
+  }, [filteredFeedbacks]);
+
+  // Comprehensive Multi-Sheet Excel Telemetry Generator with Formula Injection Defense
+  function exportCleanMealReportToExcel() {
+    if (filteredFeedbacks.length === 0) {
+      alert("⚠️ No feedback submissions available for this facility and timeframe.");
       return;
     }
 
-    const currentMessMeta = allMesses.find(m => m.id === selectedMessId);
-    const messTitle = currentMessMeta ? `${currentMessMeta.name} ${currentMessMeta.subtitle || ""}` : selectedMessId;
+    const currentMess = allMesses.find((m) => m.id === selectedMessId);
+    const messTitle = currentMess ? `${currentMess.name} ${currentMess.subtitle || ""}` : selectedMessId;
 
-    const summaryData = [
-      { Metric: "Mess Facility", Value: messTitle },
-      { Metric: "Selected Timeframe", Value: dateRangeBadge },
-      { Metric: "Total Feedback Submissions", Value: stats.totalCount },
-      { Metric: "Average Star Rating", Value: `${stats.avgRating} / 5.0 ⭐` },
-      { Metric: "Export Generated On", Value: new Date().toLocaleString("en-IN") }
+    // --- SHEET 1: EXECUTIVE AUDIT & OVERVIEW ---
+    const summarySheetRows = [
+      { Parameter: "Campus Mess Facility", Value: sanitizeExcelCell(messTitle) },
+      { Parameter: "Facility System ID", Value: sanitizeExcelCell(selectedMessId.toUpperCase()) },
+      { Parameter: "Selected Filter Timeframe", Value: sanitizeExcelCell(timeRange.toUpperCase()) },
+      { Parameter: "Active / Live Service Window", Value: sanitizeExcelCell(liveMeal ? liveMeal.name : "Off-Service Hours") },
+      { Parameter: "Facility Overall Star Rating", Value: `${overallFacilityMetrics.avg} / 5.0 ⭐` },
+      { Parameter: "Total Reviews Recorded", Value: overallFacilityMetrics.total },
+      { Parameter: "Export Operator Role", Value: "Super-Admin (Root)" },
+      { Parameter: "Report Generation Timestamp", Value: new Date().toLocaleString("en-IN") },
     ];
 
-    const detailRows = messFeedbacks.map((f) => ({
-      "Date / Time": f.createdAt?.toDate ? f.createdAt.toDate().toLocaleString("en-IN") : "Recent",
-      "Student Name": f.studentName,
-      "Student Email": f.studentEmail || "N/A",
-      "Meal Service": f.mealKey.toUpperCase(),
-      "Dish Name": f.itemName,
-      "Rating": f.rating,
-      "Comments": f.comment || "None",
-      "Status": f.status === "solved" ? "Resolved" : "Pending"
+    // --- SHEET 2: ALL MEALS DISH PERFORMANCE MATRIX ---
+    const detailedDishRows: any[] = [];
+    MEAL_DEFS.forEach((m) => {
+      const mealItems = dishGroupAnalytics[m.key] || [];
+      mealItems.forEach((d) => {
+        const avgNum = parseFloat(d.avg);
+        const qualityStatus = isNaN(avgNum) 
+          ? "Unrated" 
+          : avgNum >= 4.0 
+            ? "High Rating" 
+            : avgNum <= 2.5 
+              ? "Needs Inspection" 
+              : "Standard";
+
+        detailedDishRows.push({
+          "Meal Session": sanitizeExcelCell(m.name),
+          "Meal Key": sanitizeExcelCell(m.key.toUpperCase()),
+          "Dish Name": sanitizeExcelCell(d.name),
+          "Average Star Rating": d.avg === "Unrated" ? "Unrated" : `${d.avg} ⭐`,
+          "Total Student Reviews": d.count,
+          "5 Star Reviews": d.stars[5] || 0,
+          "4 Star Reviews": d.stars[4] || 0,
+          "3 Star Reviews": d.stars[3] || 0,
+          "2 Star Reviews": d.stars[2] || 0,
+          "1 Star Reviews": d.stars[1] || 0,
+          "Quality Health Check": qualityStatus,
+        });
+      });
+    });
+
+    // --- SHEET 3: MEAL CATEGORY SUMMARY (BREAKFAST vs LUNCH vs SNACKS vs DINNER) ---
+    const categorySummaryRows = MEAL_DEFS.map((m) => {
+      const mealItems = dishGroupAnalytics[m.key] || [];
+      let totalMealVotes = 0;
+      let totalMealScore = 0;
+
+      mealItems.forEach((d) => {
+        if (d.count > 0 && d.avg !== "Unrated") {
+          totalMealVotes += d.count;
+          totalMealScore += parseFloat(d.avg) * d.count;
+        }
+      });
+
+      const categoryAvg = totalMealVotes > 0 ? (totalMealScore / totalMealVotes).toFixed(2) : "0.0";
+
+      return {
+        "Meal Period": sanitizeExcelCell(m.name),
+        "Schedule Timing": `${m.startH.toString().padStart(2, "0")}:${m.startM.toString().padStart(2, "0")} - ${m.endH.toString().padStart(2, "0")}:${m.endM.toString().padStart(2, "0")}`,
+        "Total Menu Items": mealItems.length,
+        "Total Student Ratings": totalMealVotes,
+        "Average Meal Score": `${categoryAvg} / 5.0 ⭐`,
+      };
+    });
+
+    // --- SHEET 4: ITEMIZED STUDENT SUBMISSIONS (RAW FEEDBACK LOG) ---
+    const rawFeedbacksData = filteredFeedbacks.map((f) => ({
+      "Timestamp": f.createdAt?.toDate ? f.createdAt.toDate().toLocaleString("en-IN") : "Recent",
+      "Student Name": sanitizeExcelCell(f.studentName || "Anonymous Student"),
+      "Student Email": sanitizeExcelCell(f.studentEmail || "N/A"),
+      "Assigned Mess": sanitizeExcelCell(f.messId?.toUpperCase() || selectedMessId.toUpperCase()),
+      "Meal Service": sanitizeExcelCell(f.mealKey ? f.mealKey.toUpperCase() : "GENERAL"),
+      "Dish Item": sanitizeExcelCell(f.itemName),
+      "Rating Awarded": Number(f.rating) || 5,
+      "Student Comment": sanitizeExcelCell(f.comment || "No specific remark provided"),
+      "Resolution Status": f.status === "solved" ? "Resolved" : "Pending Action",
     }));
 
+    // Build Excel Workbook
     const wb = XLSX.utils.book_new();
-    const wsSummary = XLSX.utils.json_to_sheet(summaryData);
-    const wsDetails = XLSX.utils.json_to_sheet(detailRows);
 
-    XLSX.utils.book_append_sheet(wb, wsSummary, "Facility Summary");
-    XLSX.utils.book_append_sheet(wb, wsDetails, "Itemized Feedbacks");
+    const wsSummary = XLSX.utils.json_to_sheet(summarySheetRows);
+    const wsDishes = XLSX.utils.json_to_sheet(detailedDishRows);
+    const wsCategory = XLSX.utils.json_to_sheet(categorySummaryRows);
+    const wsRaw = XLSX.utils.json_to_sheet(rawFeedbacksData);
 
-    XLSX.writeFile(wb, `MessHub_Report_${selectedMessId.toUpperCase()}_${timeRange}_${new Date().toISOString().split("T")[0]}.xlsx`);
+    const setColWidths = (ws: XLSX.WorkSheet) => {
+      const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as string[][];
+      const colWidths = (data[0] || []).map((_, colIdx) => ({
+        wch: Math.max(...data.map((row) => (row[colIdx] ? String(row[colIdx]).length + 4 : 12)), 14),
+      }));
+      ws["!cols"] = colWidths;
+    };
+
+    setColWidths(wsSummary);
+    setColWidths(wsDishes);
+    setColWidths(wsCategory);
+    setColWidths(wsRaw);
+
+    XLSX.utils.book_append_sheet(wb, wsSummary, "Executive Audit");
+    XLSX.utils.book_append_sheet(wb, wsDishes, "Meals & Dish Matrix");
+    XLSX.utils.book_append_sheet(wb, wsCategory, "Meal Sessions Summary");
+    XLSX.utils.book_append_sheet(wb, wsRaw, "Itemized Feedback Logs");
+
+    const sanitizedFileNameMess = selectedMessId.replace(/[^a-zA-Z0-9_-]/g, "");
+    XLSX.writeFile(
+      wb,
+      `MessHub_Detailed_Audit_${sanitizedFileNameMess.toUpperCase()}_${new Date().toISOString().split("T")[0]}.xlsx`
+    );
+
+    logSuperAdminActivity(
+      selectedMessId,
+      "Excel Audit Export",
+      `Super Admin downloaded detailed meals & dish rating matrix for ${selectedMessId.toUpperCase()}`
+    );
   }
+
+  const activeCategoryList = useMemo(() => {
+    let list: any[] = [];
+    if (selectedMeal === "all") {
+      MEAL_DEFS.forEach(m => {
+        list = [...list, ...dishGroupAnalytics[m.key]];
+      });
+    } else {
+      list = dishGroupAnalytics[selectedMeal] || [];
+    }
+
+    if (searchQuery.trim()) {
+      list = list.filter(d => d.name.toLowerCase().includes(searchQuery.toLowerCase().trim()));
+    }
+    return list;
+  }, [dishGroupAnalytics, selectedMeal, searchQuery]);
 
   return (
     <div className="space-y-6 animate-fade-in pb-12">
+      {/* Top Header & Selectors */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-foreground">Mess Analytics &amp; Reports</h1>
+          <h1 className="text-2xl sm:text-3xl font-black text-foreground">Dish Ratings &amp; Telemetry</h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-            Viewing telemetry for <span className="font-bold text-primary">{dateRangeBadge}</span>
+            Full itemized rating distributions across meal counters for <span className="font-bold text-primary">{selectedMessId.toUpperCase()}</span>.
           </p>
         </div>
 
-        {/* Filters Group */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* Timeframe Selector */}
+          {/* Timeframe selector */}
           <div className="flex items-center gap-1 bg-white border border-border p-1 rounded-2xl shadow-card">
             {(["day", "week", "month", "all"] as const).map((t) => (
               <button
@@ -1155,12 +1372,12 @@ function MessAnalyticsTab({ feedbacks, allMesses }: { feedbacks: ItemFeedback[];
                   timeRange === t ? "bg-foreground text-background shadow-xs" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {t === "day" ? "Today" : t === "week" ? "Past Week" : t === "month" ? "This Month" : "All Time"}
+                {t === "day" ? "Today" : t === "week" ? "Past 7 Days" : t === "month" ? "This Month" : "All Time"}
               </button>
             ))}
           </div>
 
-          {/* Mess Facility Selector */}
+          {/* Facility Selector */}
           <div className="flex items-center gap-2 bg-white border border-border p-1.5 rounded-2xl shadow-card">
             <select
               value={selectedMessId}
@@ -1174,15 +1391,24 @@ function MessAnalyticsTab({ feedbacks, allMesses }: { feedbacks: ItemFeedback[];
               ))}
             </select>
           </div>
+
+          <button
+            type="button"
+            onClick={exportCleanMealReportToExcel}
+            className="gradient-warm text-white px-4 py-2.5 rounded-2xl text-xs font-bold shadow-card transition active:scale-95 flex items-center gap-2 cursor-pointer"
+          >
+            <Download className="w-4 h-4" /> Export Report to Excel
+          </button>
         </div>
       </div>
 
+      {/* KPI Stats Banner */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-5 rounded-3xl border border-border shadow-card flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1">Facility Rating</p>
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1">Facility Average</p>
             <p className="text-3xl font-black text-foreground flex items-center gap-1.5">
-              {stats.avgRating} <span className="text-amber-500 text-xl">⭐</span>
+              {overallFacilityMetrics.avg} <span className="text-amber-500 text-xl">⭐</span>
             </p>
           </div>
           <div className="p-3.5 rounded-2xl bg-amber-50 text-amber-600">
@@ -1192,8 +1418,8 @@ function MessAnalyticsTab({ feedbacks, allMesses }: { feedbacks: ItemFeedback[];
 
         <div className="bg-white p-5 rounded-3xl border border-border shadow-card flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1">Total Submissions</p>
-            <p className="text-3xl font-black text-foreground">{stats.totalCount}</p>
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1">Total Dish Reviews</p>
+            <p className="text-3xl font-black text-foreground">{overallFacilityMetrics.total}</p>
           </div>
           <div className="p-3.5 rounded-2xl bg-blue-50 text-blue-600">
             <MessageSquare className="w-6 h-6" />
@@ -1202,80 +1428,140 @@ function MessAnalyticsTab({ feedbacks, allMesses }: { feedbacks: ItemFeedback[];
 
         <div className="bg-white p-5 rounded-3xl border border-border shadow-card flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1">Export Action</p>
-            <button
-              type="button"
-              onClick={exportMessReportToExcel}
-              className="mt-1 gradient-warm text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs transition active:scale-95 flex items-center gap-1.5 cursor-pointer"
-            >
-              <Download className="w-4 h-4" /> Download Facility Excel
-            </button>
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1">Live Meal Serving</p>
+            <p className="text-2xl font-black text-foreground capitalize flex items-center gap-1.5">
+              {liveMeal ? `${liveMeal.name}` : "Off Hours"}
+            </p>
           </div>
-          <div className="p-3.5 rounded-2xl bg-emerald-50 text-emerald-600">
-            <TrendingUp className="w-6 h-6" />
+          <div className="p-3.5 rounded-2xl bg-orange-50 text-orange-600">
+            <Utensils className="w-6 h-6" />
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        <div className="bg-white rounded-3xl border border-border p-6 shadow-card space-y-4">
-          <h2 className="text-sm font-bold text-foreground flex items-center gap-2 pb-3 border-b border-border">
-            <span>📊</span> Star Rating Breakdown ({dateRangeBadge})
-          </h2>
+      {/* Interactive Meal Session Filter Bar */}
+      <div className="bg-white rounded-3xl border border-border p-2.5 shadow-card flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => setSelectedMeal("all")}
+            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+              selectedMeal === "all"
+                ? "bg-[#221510] text-white shadow-xs"
+                : "text-muted-foreground hover:bg-zinc-100 hover:text-foreground"
+            }`}
+          >
+            All Meals
+          </button>
 
-          <div className="space-y-3 pt-1">
-            {[5, 4, 3, 2, 1].map((stars) => {
-              const count = stats.starCounts[stars] || 0;
-              const percentage = stats.totalCount > 0 ? Math.round((count / stats.totalCount) * 100) : 0;
+          {MEAL_DEFS.map((m) => {
+            const isLive = liveMeal?.key === m.key;
+            const isSelected = selectedMeal === m.key;
 
-              return (
-                <div key={stars} className="space-y-1">
-                  <div className="flex items-center justify-between text-xs font-semibold">
-                    <span className="flex items-center gap-1 text-foreground">
-                      {stars} <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
-                    </span>
-                    <span className="text-muted-foreground">{count} votes ({percentage}%)</span>
-                  </div>
-                  <div className="h-2.5 w-full bg-zinc-100 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-amber-500 rounded-full transition-all duration-500" 
-                      style={{ width: `${percentage}%` }} 
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+            return (
+              <button
+                key={m.key}
+                type="button"
+                onClick={() => setSelectedMeal(m.key)}
+                className={`relative px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  isSelected
+                    ? "bg-[#221510] text-white shadow-xs"
+                    : "text-muted-foreground hover:bg-zinc-100 hover:text-foreground"
+                }`}
+              >
+                <span>{m.icon}</span>
+                <span>{m.name}</span>
+                {isLive && (
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse ml-0.5" title="Live Now" />
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        <div className="bg-white rounded-3xl border border-border p-6 shadow-card space-y-4">
-          <h2 className="text-sm font-bold text-foreground flex items-center gap-2 pb-3 border-b border-border">
-            <span>🏆</span> Top Liked / Rated Dishes ({dateRangeBadge})
-          </h2>
+        <div className="relative w-full sm:w-64">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search dish in spread..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full rounded-xl border border-border bg-[#fbf7f2] pl-8 pr-3 py-1.5 text-xs font-medium outline-none focus:border-primary"
+          />
+        </div>
+      </div>
 
-          <div className="space-y-3 pt-1">
-            {stats.topDishes.length === 0 ? (
-              <p className="py-12 text-center text-xs italic text-muted-foreground">No dish ratings recorded for this timeframe.</p>
-            ) : (
-              stats.topDishes.map((dish, idx) => (
-                <div key={idx} className="bg-[#fbf7f2] border border-border/70 p-3.5 rounded-2xl flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="h-7 w-7 rounded-xl bg-primary/10 text-primary font-black text-xs flex items-center justify-center shrink-0">
-                      #{idx + 1}
-                    </span>
-                    <span className="font-bold text-xs text-foreground truncate">{dish.name}</span>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <span className="text-xs font-black text-amber-600">{dish.avg} ⭐</span>
-                    <p className="text-[9px] text-muted-foreground font-semibold">({dish.count} reviews)</p>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+      {/* Dish Ratings Table */}
+      <div className="bg-white rounded-3xl border border-border p-5 shadow-card">
+        <div className="pb-3 border-b border-border flex items-center justify-between">
+          <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
+            <Utensils className="w-4 h-4 text-primary" /> Active Dish Spread ({activeCategoryList.length} items)
+          </h2>
+          <span className="text-[10px] font-bold bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded-md uppercase">
+            {selectedMeal === "all" ? "Combined Spread" : `${selectedMeal} Session`}
+          </span>
         </div>
 
+        <div className="mt-4 overflow-x-auto max-h-[550px] overflow-y-auto">
+          {activeCategoryList.length === 0 ? (
+            <p className="py-12 text-center text-xs italic text-muted-foreground">No dishes found for this meal category or search query.</p>
+          ) : (
+            <table className="w-full text-left text-xs whitespace-nowrap">
+              <thead className="bg-zinc-50 sticky top-0">
+                <tr className="border-b border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <th className="py-3 px-4">Dish Name</th>
+                  <th className="py-3 px-4">Meal</th>
+                  <th className="py-3 px-4">Average Rating</th>
+                  <th className="py-3 px-4">Total Reviews</th>
+                  <th className="py-3 px-4">Star Distribution (5★ to 1★)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/40">
+                {activeCategoryList.map((dish, idx) => (
+                  <tr key={idx} className="transition hover:bg-[#fbf7f2]">
+                    <td className="py-3.5 px-4 font-bold text-foreground">
+                      {dish.name}
+                    </td>
+                    <td className="py-3.5 px-4 font-bold text-[10px] uppercase text-zinc-500">
+                      {dish.mealKey}
+                    </td>
+                    <td className="py-3.5 px-4 font-black text-sm">
+                      {dish.avg === "Unrated" ? (
+                        <span className="text-zinc-400 font-semibold text-xs">Unrated</span>
+                      ) : (
+                        <span className="text-amber-600 flex items-center gap-1">
+                          {dish.avg} <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 font-semibold text-muted-foreground">
+                      {dish.count} reviews
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-center gap-1.5 text-[10px] font-bold">
+                        <span className="bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-200">
+                          5★: {dish.stars[5]}
+                        </span>
+                        <span className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200">
+                          4★: {dish.stars[4]}
+                        </span>
+                        <span className="bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded border border-amber-200">
+                          3★: {dish.stars[3]}
+                        </span>
+                        <span className="bg-orange-50 text-orange-700 px-1.5 py-0.5 rounded border border-orange-200">
+                          2★: {dish.stars[2]}
+                        </span>
+                        <span className="bg-red-50 text-red-700 px-1.5 py-0.5 rounded border border-red-200">
+                          1★: {dish.stars[1]}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1334,13 +1620,13 @@ function SuperAdminFeedbackViewer({ feedbacks }: { feedbacks: ItemFeedback[] }) 
 
     const exportRows = filtered.map((f) => ({
       "Date / Time": f.createdAt?.toDate ? f.createdAt.toDate().toLocaleString("en-IN") : "Recent",
-      "Student Name": f.studentName,
-      "Student Email": f.studentEmail || "",
-      "Mess Facility": f.messId,
-      "Meal": f.mealKey,
-      "Dish Name": f.itemName,
-      "Rating (Out of 5)": f.rating,
-      "Feedback Comment": f.comment || "",
+      "Student Name": sanitizeExcelCell(f.studentName),
+      "Student Email": sanitizeExcelCell(f.studentEmail || ""),
+      "Mess Facility": sanitizeExcelCell(f.messId),
+      "Meal": sanitizeExcelCell(f.mealKey),
+      "Dish Name": sanitizeExcelCell(f.itemName),
+      "Rating (Out of 5)": Number(f.rating) || 0,
+      "Feedback Comment": sanitizeExcelCell(f.comment || ""),
       "Resolution Status": f.status === "solved" ? "Resolved" : "Pending"
     }));
 
@@ -1348,6 +1634,7 @@ function SuperAdminFeedbackViewer({ feedbacks }: { feedbacks: ItemFeedback[] }) 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "CampusFeedback");
     XLSX.writeFile(wb, `MessHub_Feedback_${timeRange}_${new Date().toISOString().split("T")[0]}.xlsx`);
+    logSuperAdminActivity("all", "Export Feedbacks", "Super Admin exported campus feedbacks to Excel");
   }
 
   return (
@@ -1536,10 +1823,10 @@ function SuperAdminComplaintsViewer({ complaints }: { complaints: any[] }) {
 
     const exportRows = filtered.map((c) => ({
       "Date / Time": c.createdAt?.toDate ? c.createdAt.toDate().toLocaleString("en-IN") : "Recent",
-      "Student Name": c.studentName || "Anonymous",
-      "Mess Facility": c.messId || "N/A",
-      "Category": c.category || "General",
-      "Message / Issue": c.message || c.issue_or_feedback || "",
+      "Student Name": sanitizeExcelCell(c.studentName || "Anonymous"),
+      "Mess Facility": sanitizeExcelCell(c.messId || "N/A"),
+      "Category": sanitizeExcelCell(c.category || "General"),
+      "Message / Issue": sanitizeExcelCell(c.message || c.issue_or_feedback || ""),
       "Resolution Status": c.status === "solved" ? "Resolved" : "Pending"
     }));
 
@@ -1547,6 +1834,7 @@ function SuperAdminComplaintsViewer({ complaints }: { complaints: any[] }) {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "CampusComplaints");
     XLSX.writeFile(wb, `MessHub_Complaints_${timeRange}_${new Date().toISOString().split("T")[0]}.xlsx`);
+    logSuperAdminActivity("all", "Export Complaints", "Super Admin exported complaints to Excel");
   }
 
   return (
