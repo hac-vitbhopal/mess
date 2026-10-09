@@ -276,7 +276,7 @@ useEffect(() => {
     setIsSubmittingFeedback(true);
     
     // Copy the exact Web App URL using the copy button from Apps Script deployment
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzQ1BO92k8gqEnU6ILSL_EpDU6gwtc0M_025J1XuZQmmV3RMweFW_SA_j0ylW3MeaXd/exec";
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby2rNRVWEm9cMA3ly6kVjABuaTWHjfOe72bdw8PEgebjjqoXRE5ccdNc4uEQ32HYNCq/exec";
 
     const formData = new URLSearchParams();
     formData.append("secretKey", "mhub_sec_9f83a21b47c0e812d4a57891"); // Must match SECRET_API_KEY in Script Properties
@@ -712,7 +712,7 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
       }
 
       // 2. Dispatch to the identical Google Apps Script Webhook URL
-      const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzQ1BO92k8gqEnU6ILSL_EpDU6gwtc0M_025J1XuZQmmV3RMweFW_SA_j0ylW3MeaXd/exec";
+      const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby2rNRVWEm9cMA3ly6kVjABuaTWHjfOe72bdw8PEgebjjqoXRE5ccdNc4uEQ32HYNCq/exec";
 
       const formData = new URLSearchParams();
 formData.append("secretKey", "mhub_sec_9f83a21b47c0e812d4a57891");
