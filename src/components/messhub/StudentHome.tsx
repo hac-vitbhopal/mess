@@ -64,13 +64,13 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
     }
   };
 
-  useEffect(() => {
-    if (profile?.name && profile?.messId) {
-      logStudentOnboarding(profile).catch((err) =>
-        console.error("[StudentHome] Onboarding active ping error:", err)
-      );
-    }
-  }, [profile]);
+useEffect(() => {
+  if (profile?.name && profile?.messId) {
+    logStudentOnboarding(profile).catch((err) =>
+      console.error("[StudentHome] Onboarding active ping error:", err)
+    );
+  }
+}, [profile]);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -274,12 +274,16 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
     }
 
     setIsSubmittingFeedback(true);
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxT3Ily2dZ5NlkRKoGafA0UgvZufYMLKNgmgfpdIl_1u1inhpm5tbetXgDFQqv_tg4Y/exec";
+    
+    // Copy the exact Web App URL using the copy button from Apps Script deployment
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzQ1BO92k8gqEnU6ILSL_EpDU6gwtc0M_025J1XuZQmmV3RMweFW_SA_j0ylW3MeaXd/exec";
 
     const formData = new URLSearchParams();
+    formData.append("secretKey", "mhub_sec_9f83a21b47c0e812d4a57891"); // Must match SECRET_API_KEY in Script Properties
     formData.append("name", profile.name || "VIT Student");
     formData.append("email", profile.email || "N/A");
     formData.append("mess", messLabelStr);
+    formData.append("rating", "-"); // Explicitly denotes no star rating for general complaints
     formData.append("message", `[Complaint - ${category.toUpperCase()}] ${feedbackMessage.trim()}`);
 
     try {
@@ -689,6 +693,7 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
 
     setIsSubmitting(true);
     try {
+      // 1. Log to Firestore
       for (const dish of selectedDishes) {
         const validation = DishFeedbackSchema.safeParse({
           studentName: profile.name,
@@ -706,11 +711,19 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
         }
       }
 
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwHFLMEE5jRNIM2o-0Y_0QI-a2Q2GWxnwu2Mtu5lAXBxXAqorEQipIZM-YNMi_b0p1F/exec";      const formData = new URLSearchParams();
-      formData.append("name", profile.name || "VIT Student");
-      formData.append("email", profile.email || "N/A");
-      formData.append("mess", profile.messId);
-      formData.append("message", `[Multiple Dish Feedback - ${selectedMeal.toUpperCase()}] Dishes: ${selectedDishes.join(", ")} | Rating: ${rating}/5 | Comment: ${comment || "None"}`);
+      // 2. Dispatch to the identical Google Apps Script Webhook URL
+      const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzQ1BO92k8gqEnU6ILSL_EpDU6gwtc0M_025J1XuZQmmV3RMweFW_SA_j0ylW3MeaXd/exec";
+
+      const formData = new URLSearchParams();
+formData.append("secretKey", "mhub_sec_9f83a21b47c0e812d4a57891");
+formData.append("name", profile.name || "VIT Student");
+formData.append("email", profile.email || "N/A");
+formData.append("mess", profile.messId);
+formData.append("rating", String(rating || 5)); // Writes directly to Column E
+formData.append(
+  "message",
+  `[Multiple Dish Feedback - ${selectedMeal.toUpperCase()}] Dishes: ${selectedDishes.join(", ")} | Rating: ${rating}/5 | Comment: ${comment.trim() || "None"}`
+); // Writes directly to Column F
 
       await fetch(GOOGLE_SCRIPT_URL, {
         method: "POST",

@@ -1,48 +1,53 @@
 import admin from "firebase-admin";
 
-function getAdminApp() {
+function getAdminApp(): admin.app.App | null {
   if (admin.apps.length > 0) {
     return admin.apps[0]!;
   }
 
-  // Fallback to VITE_ prefixed keys if running in local dev server
   const projectId = process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   let privateKey = process.env.FIREBASE_PRIVATE_KEY;
 
   if (privateKey) {
-    // Sanitize quotes and escaped newline characters from .env files
     privateKey = privateKey.replace(/^["']|["']$/g, "").replace(/\\n/g, "\n");
   }
 
   if (!projectId || !clientEmail || !privateKey) {
-    console.error("[Firebase Admin] Missing credentials:", {
+    console.warn("[Firebase Admin] Service account credentials not found. Admin features will be unavailable in local dev until set.", {
       projectId: !!projectId,
       clientEmail: !!clientEmail,
       privateKey: !!privateKey,
     });
-    throw new Error("Missing Firebase Admin Service Account credentials in environment variables.");
+    return null;
   }
 
-  return admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId,
-      clientEmail,
-      privateKey,
-    }),
-  });
+  try {
+    return admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId,
+        clientEmail,
+        privateKey,
+      }),
+    });
+  } catch (err) {
+    console.error("[Firebase Admin] Initialization error:", err);
+    return null;
+  }
 }
 
 const app = getAdminApp();
-const firestore = admin.firestore(app);
 
-// ⚡ SAFE CHECK: Wrap settings() to prevent re-initialization crashes during Vite reloads
-try {
-  firestore.settings({ preferRest: true });
-} catch (e) {
-  // Ignore duplicate settings application during Vite HMR reloads
+let firestoreInstance: admin.firestore.Firestore | null = null;
+if (app) {
+  firestoreInstance = admin.firestore(app);
+  try {
+    firestoreInstance.settings({ preferRest: true });
+  } catch (e) {
+    // Ignore duplicate settings application during Vite HMR reloads
+  }
 }
 
-export const adminDb = firestore;
-export const adminMessaging = admin.messaging(app);
-export const adminAuth = admin.auth(app); // 🔒 Added to export Firebase Admin Auth
+export const adminDb = firestoreInstance;
+export const adminMessaging = app ? admin.messaging(app) : null;
+export const adminAuth = app ? admin.auth(app) : null;

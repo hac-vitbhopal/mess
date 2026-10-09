@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
-import { db, auth } from "@/lib/firebase"; // 🔒 Added auth import for secure token retrieval
+import { db } from "@/lib/firebase"; 
 import { collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, limit, doc, getDoc, updateDoc, deleteDoc, setDoc } from "firebase/firestore";
 import { 
   getAdminSession, 
@@ -15,12 +15,11 @@ import {
   type MealKey,
   type ItemFeedback
 } from "@/lib/messhub";
-import { sendFcmNotification } from "@/lib/broadcast-action";
 import { 
   ShieldCheck, Users, Activity, MessageSquare, Megaphone, 
   LogOut, Menu, X, Clock, CheckSquare, Square, Star, 
   CheckCircle2, AlertCircle, Trash2, TrendingUp, Send, CheckCircle,
-  PlusCircle, History, Utensils, Download, AlertTriangle, Lock, Unlock, KeyRound
+  PlusCircle, History, Utensils, Download, AlertTriangle, Lock, Unlock, KeyRound, Calendar
 } from "lucide-react";
 
 export const Route = createFileRoute("/super-admin")({
@@ -196,12 +195,12 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
       setStudents(list);
     });
 
-    const feedbacksQuery = query(collection(db, "item_feedback"), orderBy("createdAt", "desc"), limit(100));
+    const feedbacksQuery = query(collection(db, "item_feedback"), orderBy("createdAt", "desc"), limit(250));
     const unsubFeedbacks = onSnapshot(feedbacksQuery, (snap) => {
       setFeedbacks(snap.docs.map(d => ({ id: d.id, ...d.data() } as ItemFeedback)));
     });
 
-    const complaintsQuery = query(collection(db, "complaints"), orderBy("createdAt", "desc"), limit(100));
+    const complaintsQuery = query(collection(db, "complaints"), orderBy("createdAt", "desc"), limit(250));
     const unsubComplaints = onSnapshot(complaintsQuery, (snap) => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setComplaints(list);
@@ -256,6 +255,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
       await setDoc(configRef, {
         menuEditingEnabled: isMenuEditingUnlocked,
         updatedAt: serverTimestamp(),
+        updatedByRole: "super-admin"
       }, { merge: true });
 
       await logSuperAdminActivity(
@@ -323,11 +323,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
     const selectedDef = MEAL_DEFS.find((m) => m.key === selectedMealKey);
     const mealName = selectedDef ? selectedDef.name : selectedMealKey;
 
-    if (!window.confirm(`🚨 Transmit automated ${mealName} push alerts across all student endpoints?`)) return;
-
-    // 🔒 Obtain current operator's Firebase ID token safely with optional chaining
-    const currentUser = auth?.currentUser;
-    const adminToken = currentUser ? await currentUser.getIdToken() : "";
+    if (!window.confirm(`🚨 Transmit automated ${mealName} announcement across all student endpoints?`)) return;
 
     setIsFiringMealAlert(true);
     try {
@@ -360,38 +356,22 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           console.warn(`Could not fetch daily menu for ${mess.id}:`, e);
         }
 
-        if (items.length === 0) {
-          try {
-            const recurringDoc = await getDoc(doc(db, "mess_menus", `${mess.id}_day_${currentWeekday}`));
-            if (recurringDoc.exists()) {
-              const data = recurringDoc.data();
-              const mealList = data?.[selectedMealKey] || [];
-              items = mealList.map((d: any) => (typeof d === "string" ? d : d.name)).filter(Boolean);
-            }
-          } catch (e) {
-            console.warn(`Could not fetch recurring menu for ${mess.id}:`, e);
-          }
-        }
-
         const itemSummary = items.length > 0
           ? items.slice(0, 3).join(", ") + (items.length > 3 ? "..." : "")
           : "Freshly cooked menu choices";
 
         const finalBodyText = `${template.bodyPrefix}${itemSummary}. Come down to the hall!`;
 
-        await sendFcmNotification({
-          data: { 
-            topic: `mess_${mess.id}`, 
-            title: template.title, 
-            body: finalBodyText, 
-            url: "/", 
-            adminToken // 🔒 Required secure operator token
-          }
-        }).catch((e) => console.error("Notification push warning:", e));
+        await addDoc(collection(db, "broadcasts"), {
+          messId: mess.id,
+          title: template.title,
+          body: finalBodyText,
+          createdAt: serverTimestamp(),
+        });
       }
 
-      await logSuperAdminActivity("all", "Automated Meal Push", `Fired live alert for ${mealName} across all messes`);
-      alert(`🚀 Success! Menu notification dispatched across all devices!`);
+      await logSuperAdminActivity("all", "Automated Meal Push", `Dispatched live announcement for ${mealName} across all messes`);
+      alert(`🚀 Success! Menu announcement dispatched to student feeds!`);
     } catch (error) {
       console.error(error);
       alert("Meal transmission failure.");
@@ -404,30 +384,13 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
     e.preventDefault();
     if (!broadcastTitle.trim() || !broadcastBody.trim() || !db) return;
 
-    // 🔒 Obtain current operator's Firebase ID token safely with optional chaining
-    const currentUser = auth?.currentUser;
-    const adminToken = currentUser ? await currentUser.getIdToken() : "";
-
     setIsBroadcastingCustom(true);
     try {
-      const targetTopic = targetMessId === "all" ? "mess_all" : `mess_${targetMessId}`;
-      const detectedUrlMatch = broadcastBody.match(/(https?:\/\/[^\s]+)/);
-      let targetUrl = "/";
-      if (detectedUrlMatch) {
-        const candidate = detectedUrlMatch[0];
-        if (candidate.startsWith("https://") || candidate.startsWith("http://")) {
-          targetUrl = candidate;
-        }
-      }
-
-      await sendFcmNotification({
-        data: { 
-          topic: targetTopic, 
-          title: broadcastTitle.trim(), 
-          body: broadcastBody.trim(), 
-          url: targetUrl, 
-          adminToken // 🔒 Required secure operator token
-        }
+      await addDoc(collection(db, "broadcasts"), {
+        messId: targetMessId,
+        title: broadcastTitle.trim(),
+        body: broadcastBody.trim(),
+        createdAt: serverTimestamp(),
       });
 
       await logSuperAdminActivity(
@@ -438,9 +401,10 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
 
       setBroadcastTitle("");
       setBroadcastBody("");
-      alert(`⚡ Custom broadcast successfully deployed!`);
+      alert(`⚡ Custom broadcast successfully deployed to student feeds!`);
     } catch (error) {
-      alert("Custom broadcast failure.");
+      console.error("Broadcast deployment error:", error);
+      alert("Custom broadcast failure. Please check console.");
     } finally {
       setIsBroadcastingCustom(false);
     }
@@ -499,7 +463,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           <NavButton id="complaints" icon={AlertTriangle} label="Campus Complaints" badge={pendingComplaintsCount} />
           <NavButton id="broadcasts" icon={Megaphone} label="Broadcast Management" />
           <NavButton id="students" icon={Users} label="Student Directory" />
-          <NavButton id="analytics" icon={TrendingUp} label="Click Analytics" />
+          <NavButton id="analytics" icon={TrendingUp} label="Mess Analytics & Reports" />
           <NavButton id="audit" icon={History} label="System Audit Logs" badge={auditLogs.length} />
         </div>
 
@@ -536,11 +500,37 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
               </Link>
             </div>
 
+            {/* Interactive Clickable Metric Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <MetricCard title="Registered Students" value={students.length} icon={Users} color="bg-blue-50 text-blue-600" />
-              <MetricCard title="Mess Facilities" value={allMesses.length} icon={Utensils} color="bg-purple-50 text-purple-600" />
-              <MetricCard title="Pending Feedback" value={pendingFeedbacksCount} icon={MessageSquare} color="bg-amber-50 text-amber-600" alert={pendingFeedbacksCount > 0} />
-              <MetricCard title="Open Complaints" value={pendingComplaintsCount} icon={AlertTriangle} color="bg-red-50 text-red-600" alert={pendingComplaintsCount > 0} />
+              <MetricCard 
+                title="Registered Students" 
+                value={students.length} 
+                icon={Users} 
+                color="bg-blue-50 text-blue-600" 
+                onClick={() => setActiveTab("students")}
+              />
+              <MetricCard 
+                title="Mess Facilities" 
+                value={allMesses.length} 
+                icon={Utensils} 
+                color="bg-purple-50 text-purple-600" 
+              />
+              <MetricCard 
+                title="Pending Feedback" 
+                value={pendingFeedbacksCount} 
+                icon={MessageSquare} 
+                color="bg-amber-50 text-amber-600" 
+                alert={pendingFeedbacksCount > 0} 
+                onClick={() => setActiveTab("feedbacks")}
+              />
+              <MetricCard 
+                title="Open Complaints" 
+                value={pendingComplaintsCount} 
+                icon={AlertTriangle} 
+                color="bg-red-50 text-red-600" 
+                alert={pendingComplaintsCount > 0} 
+                onClick={() => setActiveTab("complaints")}
+              />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -975,72 +965,9 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           </div>
         )}
 
-        {/* ================= TAB 6: CLICK ANALYTICS ================= */}
+        {/* ================= TAB 6: MESS ANALYTICS & REPORTS ================= */}
         {activeTab === "analytics" && (
-          <div className="space-y-6 animate-fade-in pb-12">
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-black text-foreground">Broadcast Link Click Analytics</h1>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Real-time telemetry tracking student interactions with links embedded in broadcasts.</p>
-            </div>
-
-            <div className="bg-white rounded-3xl border border-border p-5 shadow-card">
-              <div className="flex items-center justify-between pb-3 border-b border-border">
-                <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
-                  <span>📊</span> Engagement Telemetry
-                </h2>
-                <span className="rounded-full bg-primary/10 text-primary font-bold px-3 py-1 text-xs">
-                  Total Clicks: {clickLogs.length}
-                </span>
-              </div>
-
-              <div className="mt-4 overflow-x-auto max-h-[500px] overflow-y-auto">
-                {clickLogs.length === 0 ? (
-                  <p className="py-12 text-center text-xs italic text-muted-foreground">No link clicks recorded yet.</p>
-                ) : (
-                  <table className="w-full text-left text-xs whitespace-nowrap">
-                    <thead className="bg-zinc-50 sticky top-0">
-                      <tr className="border-b border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
-                        <th className="py-3 px-4">Student Name</th>
-                        <th className="py-3 px-4">Mess</th>
-                        <th className="py-3 px-4">Broadcast Title</th>
-                        <th className="py-3 px-4">Link Clicked</th>
-                        <th className="py-3 px-4 text-right">Time</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/40">
-                      {clickLogs.map((log) => {
-                        const rawUrl = log.clickedUrl || "";
-                        const isSafe = rawUrl.startsWith("http://") || rawUrl.startsWith("https://");
-                        const safeHref = isSafe ? rawUrl : "#";
-
-                        return (
-                          <tr key={log.id} className="transition hover:bg-[#fbf7f2]">
-                            <td className="py-3.5 px-4 font-bold text-foreground">{log.userName}</td>
-                            <td className="py-3.5 px-4 font-bold uppercase text-[10px] text-red-500">{log.userMess}</td>
-                            <td className="py-3.5 px-4 text-muted-foreground max-w-[150px] truncate">{log.broadcastTitle}</td>
-                            <td className="py-3.5 px-4">
-                              <a 
-                                href={safeHref} 
-                                target="_blank" 
-                                rel="noreferrer" 
-                                className={`max-w-[200px] truncate block font-medium ${isSafe ? "text-primary underline" : "text-muted-foreground no-underline"}`}
-                                title={isSafe ? rawUrl : "Unsafe URL blocked"}
-                              >
-                                {rawUrl}
-                              </a>
-                            </td>
-                            <td className="py-3.5 px-4 text-right text-muted-foreground text-[10px]">
-                              {log.clickedAt?.toDate ? log.clickedAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now"}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
-          </div>
+          <MessAnalyticsTab feedbacks={feedbacks} allMesses={allMesses} />
         )}
 
         {/* ================= TAB 7: MASTER AUDIT LOGS ================= */}
@@ -1095,11 +1022,275 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
   );
 }
 
+/* ---------------- 📊 MESS ANALYTICS & DEEP DIVE MODULE (WITH TIME-RANGE FILTER) ---------------- */
+function MessAnalyticsTab({ feedbacks, allMesses }: { feedbacks: ItemFeedback[]; allMesses: any[] }) {
+  const [selectedMessId, setSelectedMessId] = useState<string>(allMesses[0]?.id || "jmb");
+  const [timeRange, setTimeRange] = useState<"day" | "week" | "month" | "all">("all");
+
+  // Filter feedback by selected mess facility AND time range
+  const messFeedbacks = useMemo(() => {
+    const now = new Date();
+    return feedbacks.filter((f) => {
+      if (f.messId !== selectedMessId) return false;
+      if (timeRange === "all") return true;
+
+      const fDate = f.createdAt?.toDate ? f.createdAt.toDate() : new Date();
+      
+      if (timeRange === "day") {
+        return fDate.toDateString() === now.toDateString();
+      }
+      if (timeRange === "week") {
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(now.getDate() - 7);
+        return fDate >= oneWeekAgo;
+      }
+      if (timeRange === "month") {
+        return fDate.getMonth() === now.getMonth() && fDate.getFullYear() === now.getFullYear();
+      }
+      return true;
+    });
+  }, [feedbacks, selectedMessId, timeRange]);
+
+  // Compute date range badge text
+  const dateRangeBadge = useMemo(() => {
+    const now = new Date();
+    if (timeRange === "day") return `Today (${now.toLocaleDateString("en-IN")})`;
+    if (timeRange === "week") {
+      const startW = new Date();
+      startW.setDate(now.getDate() - 7);
+      return `Past 7 Days (${startW.toLocaleDateString("en-IN")} – ${now.toLocaleDateString("en-IN")})`;
+    }
+    if (timeRange === "month") return `This Month (${now.toLocaleString("default", { month: "long" })} ${now.getFullYear()})`;
+    return "All-Time Cumulative Record";
+  }, [timeRange]);
+
+  const stats = useMemo(() => {
+    const totalCount = messFeedbacks.length;
+    if (totalCount === 0) {
+      return { avgRating: "0.0", totalCount: 0, starCounts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }, topDishes: [] };
+    }
+
+    let sum = 0;
+    const starCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    const dishScores: Record<string, { total: number; count: number }> = {};
+
+    messFeedbacks.forEach((f) => {
+      const r = Math.min(5, Math.max(1, Math.round(f.rating || 5)));
+      sum += f.rating || 0;
+      starCounts[r] = (starCounts[r] || 0) + 1;
+
+      if (f.itemName) {
+        if (!dishScores[f.itemName]) dishScores[f.itemName] = { total: 0, count: 0 };
+        dishScores[f.itemName].total += f.rating || 0;
+        dishScores[f.itemName].count += 1;
+      }
+    });
+
+    const avgRating = (sum / totalCount).toFixed(2);
+    const topDishes = Object.entries(dishScores)
+      .map(([name, data]) => ({ name, avg: (data.total / data.count).toFixed(1), count: data.count }))
+      .sort((a, b) => parseFloat(b.avg) - parseFloat(a.avg))
+      .slice(0, 5);
+
+    return { avgRating, totalCount, starCounts, topDishes };
+  }, [messFeedbacks]);
+
+  function exportMessReportToExcel() {
+    if (messFeedbacks.length === 0) {
+      alert("No data available to export for this facility and timeframe.");
+      return;
+    }
+
+    const currentMessMeta = allMesses.find(m => m.id === selectedMessId);
+    const messTitle = currentMessMeta ? `${currentMessMeta.name} ${currentMessMeta.subtitle || ""}` : selectedMessId;
+
+    const summaryData = [
+      { Metric: "Mess Facility", Value: messTitle },
+      { Metric: "Selected Timeframe", Value: dateRangeBadge },
+      { Metric: "Total Feedback Submissions", Value: stats.totalCount },
+      { Metric: "Average Star Rating", Value: `${stats.avgRating} / 5.0 ⭐` },
+      { Metric: "Export Generated On", Value: new Date().toLocaleString("en-IN") }
+    ];
+
+    const detailRows = messFeedbacks.map((f) => ({
+      "Date / Time": f.createdAt?.toDate ? f.createdAt.toDate().toLocaleString("en-IN") : "Recent",
+      "Student Name": f.studentName,
+      "Student Email": f.studentEmail || "N/A",
+      "Meal Service": f.mealKey.toUpperCase(),
+      "Dish Name": f.itemName,
+      "Rating": f.rating,
+      "Comments": f.comment || "None",
+      "Status": f.status === "solved" ? "Resolved" : "Pending"
+    }));
+
+    const wb = XLSX.utils.book_new();
+    const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+    const wsDetails = XLSX.utils.json_to_sheet(detailRows);
+
+    XLSX.utils.book_append_sheet(wb, wsSummary, "Facility Summary");
+    XLSX.utils.book_append_sheet(wb, wsDetails, "Itemized Feedbacks");
+
+    XLSX.writeFile(wb, `MessHub_Report_${selectedMessId.toUpperCase()}_${timeRange}_${new Date().toISOString().split("T")[0]}.xlsx`);
+  }
+
+  return (
+    <div className="space-y-6 animate-fade-in pb-12">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-black text-foreground">Mess Analytics &amp; Reports</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
+            Viewing telemetry for <span className="font-bold text-primary">{dateRangeBadge}</span>
+          </p>
+        </div>
+
+        {/* Filters Group */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Timeframe Selector */}
+          <div className="flex items-center gap-1 bg-white border border-border p-1 rounded-2xl shadow-card">
+            {(["day", "week", "month", "all"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTimeRange(t)}
+                className={`px-3 py-1.5 text-[11px] font-bold rounded-xl capitalize transition cursor-pointer ${
+                  timeRange === t ? "bg-foreground text-background shadow-xs" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t === "day" ? "Today" : t === "week" ? "Past Week" : t === "month" ? "This Month" : "All Time"}
+              </button>
+            ))}
+          </div>
+
+          {/* Mess Facility Selector */}
+          <div className="flex items-center gap-2 bg-white border border-border p-1.5 rounded-2xl shadow-card">
+            <select
+              value={selectedMessId}
+              onChange={(e) => setSelectedMessId(e.target.value)}
+              className="rounded-xl border border-border bg-[#fbf7f2] px-3 py-1.5 text-xs font-bold outline-none focus:border-primary cursor-pointer"
+            >
+              {allMesses.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} {m.subtitle ? `(${m.subtitle})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white p-5 rounded-3xl border border-border shadow-card flex items-center justify-between">
+          <div>
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1">Facility Rating</p>
+            <p className="text-3xl font-black text-foreground flex items-center gap-1.5">
+              {stats.avgRating} <span className="text-amber-500 text-xl">⭐</span>
+            </p>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-amber-50 text-amber-600">
+            <Star className="w-6 h-6 fill-amber-500" />
+          </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-3xl border border-border shadow-card flex items-center justify-between">
+          <div>
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1">Total Submissions</p>
+            <p className="text-3xl font-black text-foreground">{stats.totalCount}</p>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-blue-50 text-blue-600">
+            <MessageSquare className="w-6 h-6" />
+          </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-3xl border border-border shadow-card flex items-center justify-between">
+          <div>
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1">Export Action</p>
+            <button
+              type="button"
+              onClick={exportMessReportToExcel}
+              className="mt-1 gradient-warm text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs transition active:scale-95 flex items-center gap-1.5 cursor-pointer"
+            >
+              <Download className="w-4 h-4" /> Download Facility Excel
+            </button>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-emerald-50 text-emerald-600">
+            <TrendingUp className="w-6 h-6" />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        <div className="bg-white rounded-3xl border border-border p-6 shadow-card space-y-4">
+          <h2 className="text-sm font-bold text-foreground flex items-center gap-2 pb-3 border-b border-border">
+            <span>📊</span> Star Rating Breakdown ({dateRangeBadge})
+          </h2>
+
+          <div className="space-y-3 pt-1">
+            {[5, 4, 3, 2, 1].map((stars) => {
+              const count = stats.starCounts[stars] || 0;
+              const percentage = stats.totalCount > 0 ? Math.round((count / stats.totalCount) * 100) : 0;
+
+              return (
+                <div key={stars} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs font-semibold">
+                    <span className="flex items-center gap-1 text-foreground">
+                      {stars} <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                    </span>
+                    <span className="text-muted-foreground">{count} votes ({percentage}%)</span>
+                  </div>
+                  <div className="h-2.5 w-full bg-zinc-100 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-amber-500 rounded-full transition-all duration-500" 
+                      style={{ width: `${percentage}%` }} 
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-3xl border border-border p-6 shadow-card space-y-4">
+          <h2 className="text-sm font-bold text-foreground flex items-center gap-2 pb-3 border-b border-border">
+            <span>🏆</span> Top Liked / Rated Dishes ({dateRangeBadge})
+          </h2>
+
+          <div className="space-y-3 pt-1">
+            {stats.topDishes.length === 0 ? (
+              <p className="py-12 text-center text-xs italic text-muted-foreground">No dish ratings recorded for this timeframe.</p>
+            ) : (
+              stats.topDishes.map((dish, idx) => (
+                <div key={idx} className="bg-[#fbf7f2] border border-border/70 p-3.5 rounded-2xl flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="h-7 w-7 rounded-xl bg-primary/10 text-primary font-black text-xs flex items-center justify-center shrink-0">
+                      #{idx + 1}
+                    </span>
+                    <span className="font-bold text-xs text-foreground truncate">{dish.name}</span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-xs font-black text-amber-600">{dish.avg} ⭐</span>
+                    <p className="text-[9px] text-muted-foreground font-semibold">({dish.count} reviews)</p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- 🧩 UI HELPER COMPONENTS ---------------- */
 
-function MetricCard({ title, value, icon: Icon, color, alert }: any) {
+function MetricCard({ title, value, icon: Icon, color, alert, onClick }: any) {
   return (
-    <div className="bg-white p-5 rounded-3xl border border-border shadow-card flex items-center justify-between relative overflow-hidden">
+    <div 
+      onClick={onClick}
+      className={`bg-white p-5 rounded-3xl border border-border shadow-card flex items-center justify-between relative overflow-hidden transition ${
+        onClick ? "cursor-pointer hover:border-primary hover:shadow-lg active:scale-[0.99]" : ""
+      }`}
+    >
       {alert && <span className="absolute top-0 right-0 w-2 h-full bg-red-500 animate-pulse" />}
       <div>
         <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1">{title}</p>
@@ -1114,20 +1305,34 @@ function MetricCard({ title, value, icon: Icon, color, alert }: any) {
 
 function SuperAdminFeedbackViewer({ feedbacks }: { feedbacks: ItemFeedback[] }) {
   const [filter, setFilter] = useState<"all" | "unsolved" | "solved">("all");
+  const [timeRange, setTimeRange] = useState<"day" | "week" | "month" | "all">("all");
 
   const filtered = feedbacks.filter((f) => {
-    if (filter === "unsolved") return f.status === "unsolved";
-    if (filter === "solved") return f.status === "solved";
+    const isSolved = f.status === "solved";
+    if (filter === "unsolved" && isSolved) return false;
+    if (filter === "solved" && !isSolved) return false;
+
+    if (timeRange === "all") return true;
+    const fDate = f.createdAt?.toDate ? f.createdAt.toDate() : new Date();
+    const now = new Date();
+
+    if (timeRange === "day") return fDate.toDateString() === now.toDateString();
+    if (timeRange === "week") {
+      const ago = new Date();
+      ago.setDate(now.getDate() - 7);
+      return fDate >= ago;
+    }
+    if (timeRange === "month") return fDate.getMonth() === now.getMonth() && fDate.getFullYear() === now.getFullYear();
     return true;
   });
 
   function exportFeedbackToExcel() {
-    if (feedbacks.length === 0) {
-      alert("No feedback records available to export.");
+    if (filtered.length === 0) {
+      alert("No feedback records available for this timeframe.");
       return;
     }
 
-    const exportRows = feedbacks.map((f) => ({
+    const exportRows = filtered.map((f) => ({
       "Date / Time": f.createdAt?.toDate ? f.createdAt.toDate().toLocaleString("en-IN") : "Recent",
       "Student Name": f.studentName,
       "Student Email": f.studentEmail || "",
@@ -1142,38 +1347,54 @@ function SuperAdminFeedbackViewer({ feedbacks }: { feedbacks: ItemFeedback[] }) 
     const ws = XLSX.utils.json_to_sheet(exportRows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "CampusFeedback");
-    XLSX.writeFile(wb, `MessHub_CampusFeedback_${new Date().toISOString().split("T")[0]}.xlsx`);
+    XLSX.writeFile(wb, `MessHub_Feedback_${timeRange}_${new Date().toISOString().split("T")[0]}.xlsx`);
   }
 
   return (
     <div className="bg-white border border-border rounded-3xl p-5 shadow-card space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
-        <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl border border-border w-fit">
-          {(["all", "unsolved", "solved"] as const).map((type) => (
-            <button
-              key={type}
-              onClick={() => setFilter(type)}
-              className={`px-4 py-1.5 text-[11px] font-bold rounded-lg capitalize transition cursor-pointer ${
-                filter === type ? "bg-foreground text-background shadow-xs" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {type}
-            </button>
-          ))}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-border">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl border border-border w-fit">
+            {(["all", "unsolved", "solved"] as const).map((type) => (
+              <button
+                key={type}
+                onClick={() => setFilter(type)}
+                className={`px-3 py-1.5 text-[11px] font-bold rounded-lg capitalize transition cursor-pointer ${
+                  filter === type ? "bg-foreground text-background shadow-xs" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {type}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl border border-border w-fit">
+            {(["day", "week", "month", "all"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTimeRange(t)}
+                className={`px-3 py-1.5 text-[11px] font-bold rounded-lg capitalize transition cursor-pointer ${
+                  timeRange === t ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t === "day" ? "Today" : t === "week" ? "Past Week" : t === "month" ? "This Month" : "All Time"}
+              </button>
+            ))}
+          </div>
         </div>
 
         <button
           type="button"
           onClick={exportFeedbackToExcel}
-          className="text-xs font-bold text-slate-700 bg-background hover:bg-slate-100 border border-border px-3 py-2 rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-2xs self-start sm:self-auto"
+          className="text-xs font-bold text-slate-700 bg-background hover:bg-slate-100 border border-border px-3 py-2 rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-2xs self-start lg:self-auto"
         >
-          <Download className="w-3.5 h-3.5 text-emerald-600" /> Export Feedback to Excel
+          <Download className="w-3.5 h-3.5 text-emerald-600" /> Export Filtered Feedbacks
         </button>
       </div>
 
       <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1">
         {filtered.length === 0 ? (
-          <p className="py-12 text-center text-xs italic text-muted-foreground">No feedback entries found matching filter.</p>
+          <p className="py-12 text-center text-xs italic text-muted-foreground">No feedback entries found matching timeframe &amp; filter.</p>
         ) : (
           filtered.map((item) => {
             const isSolved = item.status === "solved";
@@ -1217,6 +1438,9 @@ function SuperAdminFeedbackViewer({ feedbacks }: { feedbacks: ItemFeedback[] }) 
                     <span>👤 {item.studentName} {item.studentEmail ? `(${item.studentEmail})` : ""}</span>
                     <span className="w-1 h-1 rounded-full bg-zinc-300" />
                     <span className="bg-zinc-100 text-zinc-700 px-2 py-0.5 rounded uppercase font-bold text-[9px] tracking-wider">{item.messId}</span>
+                    <span className="text-[10px] text-zinc-400 ml-auto">
+                      {item.createdAt?.toDate ? item.createdAt.toDate().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : "Recent"}
+                    </span>
                   </div>
 
                   {item.comment && (
@@ -1248,11 +1472,24 @@ function SuperAdminFeedbackViewer({ feedbacks }: { feedbacks: ItemFeedback[] }) 
 
 function SuperAdminComplaintsViewer({ complaints }: { complaints: any[] }) {
   const [filter, setFilter] = useState<"all" | "unsolved" | "solved">("all");
+  const [timeRange, setTimeRange] = useState<"day" | "week" | "month" | "all">("all");
 
   const filtered = complaints.filter((c) => {
     const isSolved = c.status === "solved";
-    if (filter === "unsolved") return !isSolved;
-    if (filter === "solved") return isSolved;
+    if (filter === "unsolved" && isSolved) return false;
+    if (filter === "solved" && !isSolved) return false;
+
+    if (timeRange === "all") return true;
+    const cDate = c.createdAt?.toDate ? c.createdAt.toDate() : new Date();
+    const now = new Date();
+
+    if (timeRange === "day") return cDate.toDateString() === now.toDateString();
+    if (timeRange === "week") {
+      const ago = new Date();
+      ago.setDate(now.getDate() - 7);
+      return cDate >= ago;
+    }
+    if (timeRange === "month") return cDate.getMonth() === now.getMonth() && cDate.getFullYear() === now.getFullYear();
     return true;
   });
 
@@ -1292,12 +1529,12 @@ function SuperAdminComplaintsViewer({ complaints }: { complaints: any[] }) {
   }
 
   function exportComplaintsToExcel() {
-    if (complaints.length === 0) {
-      alert("No complaint records available to export.");
+    if (filtered.length === 0) {
+      alert("No complaint records available for this timeframe.");
       return;
     }
 
-    const exportRows = complaints.map((c) => ({
+    const exportRows = filtered.map((c) => ({
       "Date / Time": c.createdAt?.toDate ? c.createdAt.toDate().toLocaleString("en-IN") : "Recent",
       "Student Name": c.studentName || "Anonymous",
       "Mess Facility": c.messId || "N/A",
@@ -1309,38 +1546,54 @@ function SuperAdminComplaintsViewer({ complaints }: { complaints: any[] }) {
     const ws = XLSX.utils.json_to_sheet(exportRows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "CampusComplaints");
-    XLSX.writeFile(wb, `MessHub_Complaints_${new Date().toISOString().split("T")[0]}.xlsx`);
+    XLSX.writeFile(wb, `MessHub_Complaints_${timeRange}_${new Date().toISOString().split("T")[0]}.xlsx`);
   }
 
   return (
     <div className="bg-white border border-border rounded-3xl p-5 shadow-card space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
-        <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl border border-border w-fit">
-          {(["all", "unsolved", "solved"] as const).map((type) => (
-            <button
-              key={type}
-              onClick={() => setFilter(type)}
-              className={`px-4 py-1.5 text-[11px] font-bold rounded-lg capitalize transition cursor-pointer ${
-                filter === type ? "bg-foreground text-background shadow-xs" : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {type}
-            </button>
-          ))}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-border">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl border border-border w-fit">
+            {(["all", "unsolved", "solved"] as const).map((type) => (
+              <button
+                key={type}
+                onClick={() => setFilter(type)}
+                className={`px-3 py-1.5 text-[11px] font-bold rounded-lg capitalize transition cursor-pointer ${
+                  filter === type ? "bg-foreground text-background shadow-xs" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {type}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl border border-border w-fit">
+            {(["day", "week", "month", "all"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTimeRange(t)}
+                className={`px-3 py-1.5 text-[11px] font-bold rounded-lg capitalize transition cursor-pointer ${
+                  timeRange === t ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t === "day" ? "Today" : t === "week" ? "Past Week" : t === "month" ? "This Month" : "All Time"}
+              </button>
+            ))}
+          </div>
         </div>
 
         <button
           type="button"
           onClick={exportComplaintsToExcel}
-          className="text-xs font-bold text-slate-700 bg-background hover:bg-slate-100 border border-border px-3 py-2 rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-2xs self-start sm:self-auto"
+          className="text-xs font-bold text-slate-700 bg-background hover:bg-slate-100 border border-border px-3 py-2 rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-2xs self-start lg:self-auto"
         >
-          <Download className="w-3.5 h-3.5 text-emerald-600" /> Export Complaints to Excel
+          <Download className="w-3.5 h-3.5 text-emerald-600" /> Export Filtered Complaints
         </button>
       </div>
 
       <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1">
         {filtered.length === 0 ? (
-          <p className="py-12 text-center text-xs italic text-muted-foreground">No complaint records found matching filter.</p>
+          <p className="py-12 text-center text-xs italic text-muted-foreground">No complaint records found matching timeframe &amp; filter.</p>
         ) : (
           filtered.map((item) => {
             const isSolved = item.status === "solved";
@@ -1378,8 +1631,8 @@ function SuperAdminComplaintsViewer({ complaints }: { complaints: any[] }) {
                   <div className="text-[11px] text-muted-foreground font-medium flex items-center gap-2 mt-1">
                     <span>👤 {item.studentName || "Anonymous"} {item.email ? `(${item.email})` : ""}</span>
                     <span className="w-1 h-1 rounded-full bg-zinc-300" />
-                    <span className="text-[10px] text-zinc-400">
-                      {item.createdAt?.toDate ? item.createdAt.toDate().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : "Just now"}
+                    <span className="text-[10px] text-zinc-400 ml-auto">
+                      {item.createdAt?.toDate ? item.createdAt.toDate().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : "Recent"}
                     </span>
                   </div>
 

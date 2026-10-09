@@ -30,7 +30,7 @@ export const auth = app ? getAuth(app) : null;
 export const googleProvider = new GoogleAuthProvider();
 
 // 📊 ANALYTICS EXPORT (Safe client-side initialization)
-export const analytics = (app && typeof window !== "undefined") ? getAnalytics(app) : null;
+export const analytics = app && typeof window !== "undefined" ? getAnalytics(app) : null;
 
 export async function requestNotificationPermission() {
   if (!("Notification" in window)) {
@@ -44,7 +44,7 @@ export async function requestNotificationPermission() {
   return await Notification.requestPermission();
 }
 
-export async function subscribeToMessTopic(messId: string, name?: string) {
+export async function subscribeToMessTopic(messId: string, name?: string, email?: string) {
   try {
     const activeApp = getFirebaseApp();
     if (!activeApp) {
@@ -54,19 +54,16 @@ export async function subscribeToMessTopic(messId: string, name?: string) {
 
     const permission = await requestNotificationPermission();
     if (permission !== "granted") {
-      console.error("[FCM] Cannot continue without permission.");
+      console.warn("[FCM] Notification permission was not granted.");
       return;
     }
 
     console.log("[FCM] Importing messaging...");
-
     const { getMessaging, getToken, onMessage } = await import("firebase/messaging");
-    
-    // Safely retrieve messaging instance from activeApp
+
     const messaging = getMessaging(activeApp);
 
     console.log("[FCM] Registering service worker...");
-
     const registration = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
     await navigator.serviceWorker.ready;
 
@@ -74,11 +71,10 @@ export async function subscribeToMessTopic(messId: string, name?: string) {
 
     const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
     if (!vapidKey) {
-      throw new Error("Missing VITE_FIREBASE_VAPID_KEY");
+      throw new Error("Missing VITE_FIREBASE_VAPID_KEY in environment variables.");
     }
 
     console.log("[FCM] Getting token...");
-
     const token = await getToken(messaging, {
       vapidKey,
       serviceWorkerRegistration: registration,
@@ -89,31 +85,43 @@ export async function subscribeToMessTopic(messId: string, name?: string) {
       return;
     }
 
-    console.log("FCM Token:", token);
+    console.log("[FCM] Generated Token:", token);
 
-    // Save token, messId, and name to Firestore
-    await registerFcmToken({
-      data: {
-        token,
-        messId,
-        name,
-      },
-    });
+    // Call server action with matching payload schema
+    try {
+      const res = await registerFcmToken({
+        data: {
+          token,
+          messId,
+          name: name || null,
+          email: email || null,
+        },
+      });
 
-    console.log("[FCM] Token and profile successfully saved to Firestore.");
+      if (res?.success) {
+        console.log("[FCM] Token registered and subscribed successfully.");
+      } else {
+        console.warn("[FCM] Server token registration reported:", res?.error);
+      }
+    } catch (serverErr) {
+      console.warn("[FCM] Server registration skipped/failed:", serverErr);
+    }
 
+    // Set up foreground message listener
     onMessage(messaging, (payload) => {
-      console.log("[FCM] Foreground message:", payload);
+      console.log("[FCM] Foreground message received:", payload);
 
-      new Notification(
-        payload.data?.title || payload.notification?.title || "MessHub",
-        {
-          body: payload.data?.body || payload.notification?.body || "",
-          icon: "/mess_logo.png",
-        }
-      );
+      if (Notification.permission === "granted") {
+        new Notification(
+          payload.data?.title || payload.notification?.title || "MessHub",
+          {
+            body: payload.data?.body || payload.notification?.body || "",
+            icon: "/mess_logo.png",
+          }
+        );
+      }
     });
   } catch (err) {
-    console.error("[FCM] Fatal Error:", err);
+    console.error("[FCM] Subscription error:", err);
   }
 }

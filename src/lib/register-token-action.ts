@@ -1,7 +1,7 @@
 "use server";
 
 import { createServerFn } from "@tanstack/react-start";
-import { adminDb } from "./firebase-admin";
+import { adminDb, adminMessaging } from "./firebase-admin";
 import { z } from "zod";
 
 const tokenPayloadSchema = z.object({
@@ -17,12 +17,23 @@ const tokenPayloadSchema = z.object({
 export const registerFcmToken = createServerFn({
   method: "POST",
 })
-  .validator((data: unknown) => tokenPayloadSchema.parse(data))
+  .validator((data: unknown) => {
+    const parsed = tokenPayloadSchema.safeParse(data);
+    if (!parsed.success) {
+      throw new Error(`Invalid token payload: ${parsed.error.issues.map(i => i.message).join(", ")}`);
+    }
+    return parsed.data;
+  })
   .handler(async ({ data }) => {
     const { token, messId, name, email } = data;
 
+    // Check if Admin SDK is configured
+    if (!adminDb || !adminMessaging) {
+      console.warn("[FCM Server] Skipping server registration: Admin SDK credentials not configured in environment.");
+      return { success: true, warning: "Admin SDK not configured in local environment." };
+    }
+
     try {
-      // 🔒 Optional validation: If an email is provided, ensure it belongs to VIT Bhopal domain
       if (email && email.trim() !== "") {
         const lowerEmail = email.toLowerCase().trim();
         if (!lowerEmail.endsWith("@vitbhopal.ac.in")) {
@@ -30,6 +41,7 @@ export const registerFcmToken = createServerFn({
         }
       }
 
+      // 1. Save token document
       await adminDb
         .collection("fcm_tokens")
         .doc(token)
@@ -44,15 +56,18 @@ export const registerFcmToken = createServerFn({
           { merge: true }
         );
 
+      // 2. Subscribe to FCM topic
+      await adminMessaging.subscribeToTopic([token], `mess_${messId}`);
+      await adminMessaging.subscribeToTopic([token], "mess_all");
+
       return { success: true };
     } catch (err: any) {
-      console.error("Failed to save token:", err);
-      // 🔒 Prevent raw internal error leaks
-      return { 
-        success: false, 
-        error: err.message?.includes("Unauthorized domain") 
-          ? err.message 
-          : "An error occurred while registering the notification device." 
+      console.error("Failed to register token:", err);
+      return {
+        success: false,
+        error: err.message?.includes("Unauthorized domain")
+          ? err.message
+          : "An error occurred while registering the notification device.",
       };
     }
-  });
+  }); 
