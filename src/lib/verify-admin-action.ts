@@ -33,6 +33,11 @@ export const verifyAdminAccessKey = createServerFn({
     // 🔒 2. If an ID token was provided, verify admin custom claims via Firebase Admin SDK
     if (idToken) {
       try {
+        // Ensure adminAuth is initialized before calling methods
+        if (!adminAuth) {
+          throw new Error("Firebase Admin Auth SDK not initialized.");
+        }
+
         const decodedToken = await adminAuth.verifyIdToken(idToken);
         if (!decodedToken.admin && decodedToken.email !== process.env.SUPER_ADMIN_EMAIL) {
           throw new Error("Unauthorized administrative privilege.");

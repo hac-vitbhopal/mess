@@ -44,14 +44,26 @@ export const sendFcmNotification = createServerFn({
   .handler(async ({ data }) => {
     let { topic, title, body, url, adminToken } = data;
 
+    // 🔒 0. STRICT SDK INITIALIZATION GUARD (Prevents TypeScript null errors)
+    if (!adminAuth || !adminDb || !adminMessaging) {
+      console.error("[Firebase Admin SDK Error]: SDK components uninitialized in server environment.");
+      return {
+        success: false,
+        error: "Server configuration error: Firebase Admin SDK is not available.",
+      };
+    }
+
     try {
       // 🔒 1. CRYPTOGRAPHIC AUTHENTICATION & RBAC VERIFICATION
       try {
         const decodedToken = await adminAuth.verifyIdToken(adminToken);
-        if (!decodedToken.admin) {
+        const isSuperAdminEmail = process.env.SUPER_ADMIN_EMAIL && decodedToken.email === process.env.SUPER_ADMIN_EMAIL;
+        
+        if (!decodedToken.admin && !isSuperAdminEmail) {
           throw new Error("Unauthorized: Operator lacks administrative privileges.");
         }
       } catch (authErr) {
+        console.error("[Authentication Failure]:", authErr);
         throw new Error("Authentication failed: Invalid or expired operator token.");
       }
 
@@ -188,7 +200,7 @@ export const sendFcmNotification = createServerFn({
               code === "messaging/invalid-registration-token"
             ) {
               deletes.push(
-                adminDb
+                adminDb!
                   .collection("fcm_tokens")
                   .doc(batch[index].docId)
                   .delete()
@@ -207,7 +219,7 @@ export const sendFcmNotification = createServerFn({
       };
     } catch (err: any) {
       console.error("[FCM Broadcast Error]:", err);
-      // 🔒 Prevent internal error structure leaking to anonymous callers
+      // 🔒 Prevent internal error structure leaking to callers
       return {
         success: false,
         error: "An internal server error occurred while dispatching notifications.",
