@@ -1,10 +1,32 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useState, useEffect, useMemo } from "react";
+import * as XLSX from "xlsx";
+import { db } from "@/lib/firebase"; 
+import { collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, limit, doc, getDoc, updateDoc, deleteDoc, setDoc, getDocs } from "firebase/firestore";
+import { 
+  getAdminSession, 
+  saveAdminSession, 
+  clearAdminSession, 
+  verifyAdminPasscode,
+  MESSES as DEFAULT_STATIC_MESSES,
+  MEAL_DEFS,
+  deleteBroadcasts,
+  toggleFeedbackStatus,
+  type MealKey,
+  type ItemFeedback
+} from "@/lib/messhub";
+import { 
+  ShieldCheck, Users, Activity, MessageSquare, Megaphone, 
+  LogOut, Menu, X, Clock, CheckSquare, Square, Star, 
+  CheckCircle2, AlertCircle, Trash2, TrendingUp, Send, CheckCircle,
+  PlusCircle, History, Utensils, Download, AlertTriangle, Lock, Unlock, KeyRound, Calendar
+} from "lucide-react";
 
 export const Route = createFileRoute("/privacy")({
   head: () => ({
     meta: [
-      { title: "Privacy Policy & Disclaimer — MessHub" },
-      { name: "description", content: "MessHub platform terms of use and privacy disclaimer." },
+      { title: "Privacy Policy & Terms of Use — MessHub" },
+      { name: "description", content: "MessHub platform terms of use and privacy disclaimer under the Hostel Administrative Council." },
     ],
   }),
   component: PrivacyPolicyPage,
@@ -31,55 +53,64 @@ function PrivacyPolicyPage() {
             Privacy Policy & Terms of Use
           </h1>
           <p className="text-[#C2410C]/80 text-xs mt-1 font-medium">
-            MessHub Student Utility Infrastructure
+            MessHub | Hostel Administrative Council
           </p>
         </div>
 
         <div className="bg-white rounded-3xl p-6 sm:p-8 border-2 border-[#FFEDD5] shadow-sm space-y-5">
           
-          {/* Section 1: Independent App Disclaimer */}
+          {/* Section 1: Official Administrative Ownership */}
           <div>
             <h2 className="font-bold text-[#C2410C] uppercase tracking-wider text-xs mb-1.5 flex items-center gap-1.5">
-              <span>⚠️</span> 1. Independent Student Utility
+              <span>🏛️</span> 1. Official Administrative Ownership
             </h2>
-            <p className="text-[#221510]/90 text-xs sm:text-sm">
-              MessHub is an independent, community-built platform created solely for student convenience. It does <strong>not</strong> represent, manage, or hold official ownership of any mess facility or catering service.
+            <p className="text-[#221510]/90 text-xs sm:text-sm leading-relaxed">
+              MessHub is an official digital utility platform operating under the Hostel Administrative Council to facilitate access to mess schedules, menu updates, announcements, and student feedback. The platform is intended to improve communication and coordination between hostel administration and students.
             </p>
           </div>
 
           <div className="h-[1px] w-full bg-[#FFEDD5]" />
 
-          {/* Section 2: Data Privacy */}
+          {/* Section 2: Data Privacy Notice */}
           <div>
             <h2 className="font-bold text-[#C2410C] uppercase tracking-wider text-xs mb-1.5 flex items-center gap-1.5">
               <span>🔒</span> 2. Data Privacy Notice
             </h2>
-            <p className="text-[#221510]/90 text-xs sm:text-sm">
-              We value your privacy. MessHub <strong>does not collect or store any personal email address or phone number</strong> during onboarding. Enabling push notifications is <strong>solely voluntary</strong> and used exclusively so you can receive timely updates regarding meal schedules and broadcasts sent by the mess admin.
+            <p className="text-[#221510]/90 text-xs sm:text-sm leading-relaxed">
+              The Hostel Administrative Council respects users' privacy and aims to handle information responsibly. We seek to limit the collection and use of personal information to what is necessary for the platform's functionality. However, absolute confidentiality, security, or privacy cannot be guaranteed. Users are advised not to submit sensitive personal information unless necessary. Any information submitted through feedback forms or enabled notification services may be processed for administrative, communication, or service-improvement purposes.
             </p>
           </div>
 
           <div className="h-[1px] w-full bg-[#FFEDD5]" />
 
-          {/* Section 3: Menu Updates & Feedback Form */}
+          {/* Section 3: Feedback, Bug Reports & Technical Support */}
           <div>
             <h2 className="font-bold text-[#C2410C] uppercase tracking-wider text-xs mb-1.5 flex items-center gap-1.5">
-              <span>📝</span> 3. Menu Updates & Feedback
+              <span>📝</span> 3. Feedback, Bug Reports & Technical Support
             </h2>
-            <p className="text-[#221510]/90 text-xs sm:text-sm">
-              For any mess menu updates, corrections, or suggestions, please fill out the feedback form available in the app dashboard. Kindly include your <strong>email address and phone number</strong> in the description if you require further follow-up or contact from the admin.
+            <p className="text-[#221510]/90 text-xs sm:text-sm leading-relaxed">
+              For website-related issues, technical bugs, errors, suggestions, or general feedback about MessHub, please contact the administrator through the official administrative email address provided on the website.
+            </p>
+            <p className="text-[#221510]/90 text-xs sm:text-sm leading-relaxed mt-2">
+              When reporting an issue, please describe the problem clearly and include relevant details to help the administration investigate and resolve it efficiently.
             </p>
           </div>
 
           <div className="h-[1px] w-full bg-[#FFEDD5]" />
 
-          {/* Section 4: Food Quality & Operational Disclaimer */}
+          {/* Section 4: Food & Mess Service Complaints */}
           <div>
             <h2 className="font-bold text-[#C2410C] uppercase tracking-wider text-xs mb-1.5 flex items-center gap-1.5">
-              <span>🍲</span> 4. Food & Service Disclaimer
+              <span>🍲</span> 4. Food & Mess Service Complaints
             </h2>
-            <p className="text-[#221510]/90 text-xs sm:text-sm">
-              MessHub is strictly a digital schedule provider. We are <strong>not responsible for food quality, taste, hygiene, menu changes, or service availability</strong>. For any food-related issues, complaints, or inquiries, please contact your respective mess owners or catering management directly.
+            <p className="text-[#221510]/90 text-xs sm:text-sm leading-relaxed">
+              For complaints or concerns regarding food quality, taste, hygiene, menu discrepancies, meal schedules, or mess services, please use the feedback form available on the MessHub website.
+            </p>
+            <p className="text-[#221510]/90 text-xs sm:text-sm leading-relaxed mt-2">
+              Students are requested to provide accurate details, select the appropriate feedback category, and communicate their concerns in respectful and constructive language. Clear and properly completed feedback helps the administration review complaints and take appropriate action.
+            </p>
+            <p className="text-[#221510]/90 text-xs sm:text-sm leading-relaxed mt-2">
+              MessHub facilitates the submission of feedback but does not guarantee a particular outcome or resolution timeframe.
             </p>
           </div>
 
@@ -87,7 +118,7 @@ function PrivacyPolicyPage() {
       </main>
 
       <footer className="mt-10 text-center text-[11px] text-[#C2410C]/60 font-medium">
-        &copy; {new Date().getFullYear()} MessHub. Built by students, for students.
+        &copy; {new Date().getFullYear()} MessHub. Operated under the Hostel Administrative Council.
       </footer>
     </div>
   );
