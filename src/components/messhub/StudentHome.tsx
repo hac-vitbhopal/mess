@@ -276,7 +276,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
 
     setIsSubmittingFeedback(true);
     
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/library/d/1kIoKrh_5IGS2099EiGbA29HReuLSRWjXF4qI-Vq2eRy6Yl6tXMKiLn-L/2";
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx5ixNijfyjthVlHvDQ9qSsEHsoDmo37PU6Q0hU69Dy_Mn2g4zOn3OheVBKdBs9p_w8/exec";
 
     const formData = new URLSearchParams();
     formData.append("secretKey", "mhub_sec_9f83a21b47c0e812d4a57891");
@@ -694,7 +694,7 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
         }
       }
 
-      const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/library/d/1kIoKrh_5IGS2099EiGbA29HReuLSRWjXF4qI-Vq2eRy6Yl6tXMKiLn-L/2";
+      const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx5ixNijfyjthVlHvDQ9qSsEHsoDmo37PU6Q0hU69Dy_Mn2g4zOn3OheVBKdBs9p_w8/exec";
 
       const formData = new URLSearchParams();
       formData.append("secretKey", "mhub_sec_9f83a21b47c0e812d4a57891");
