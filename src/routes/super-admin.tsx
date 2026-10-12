@@ -21,8 +21,9 @@ import {
   ShieldCheck, Users, Activity, MessageSquare, Megaphone, 
   LogOut, Menu, X, Clock, CheckSquare, Square, Star, 
   CheckCircle2, AlertCircle, Trash2, TrendingUp, Send, CheckCircle,
-  PlusCircle, History, Utensils, Download, AlertTriangle, Lock, Unlock, KeyRound, Search
+  PlusCircle, History, Utensils, Download, AlertTriangle, Lock, Unlock, KeyRound, Search, Sparkles
 } from "lucide-react";
+import { NavratriSpecialAdminHub } from "@/components/messhub/NavratriSpecial";
 
 export const Route = createFileRoute("/super-admin")({
   head: () => ({
@@ -34,10 +35,6 @@ export const Route = createFileRoute("/super-admin")({
   component: SuperAdminGatekeeper,
 });
 
-/**
- * Audit Logger: Ensures only validated super-admin operators can write audit records.
- * Sanitizes lengths and types to mitigate injection or payload bloat.
- */
 async function logSuperAdminActivity(messId: string, action: string, details: string) {
   if (!db) return;
   try {
@@ -55,10 +52,6 @@ async function logSuperAdminActivity(messId: string, action: string, details: st
   }
 }
 
-/**
- * Excel / CSV Formula Injection Guard:
- * Prevents execution of spreadsheet macros (=, +, -, @, \t, \r) injected via student remarks or names.
- */
 function sanitizeExcelCell(val: any): string {
   if (val === null || val === undefined) return "N/A";
   const str = String(val).trim();
@@ -163,7 +156,7 @@ function SuperAdminGatekeeper() {
 
 /* ---------------- 👑 PLATFORM MASTER SAAS DASHBOARD ---------------- */
 function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
-  const [activeTab, setActiveTab] = useState<"overview" | "roles" | "feedbacks" | "complaints" | "broadcasts" | "students" | "analytics" | "audit">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "roles" | "feedbacks" | "complaints" | "broadcasts" | "students" | "analytics" | "navratri" | "audit">("overview");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Global Realtime Datasets
@@ -487,6 +480,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           <NavButton id="broadcasts" icon={Megaphone} label="Broadcast Management" />
           <NavButton id="students" icon={Users} label="Student Directory" />
           <NavButton id="analytics" icon={TrendingUp} label="Dish Ratings & Telemetry" />
+          <NavButton id="navratri" icon={Sparkles} label="🌟 Navratri Special Hub" />
           <NavButton id="audit" icon={History} label="System Audit Logs" badge={auditLogs.length} />
         </div>
 
@@ -626,6 +620,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                   )}
                 </div>
               </div>
+
             </div>
           </div>
         )}
@@ -988,7 +983,12 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           <MessDishRatingsTab allMesses={allMesses} rawFeedbacks={feedbacks} />
         )}
 
-        {/* ================= TAB 7: MASTER AUDIT LOGS ================= */}
+        {/* ================= TAB 7: NAVRATRI SPECIAL HUB ================= */}
+        {activeTab === "navratri" && (
+          <NavratriSpecialAdminHub allMesses={allMesses} />
+        )}
+
+        {/* ================= TAB 8: MASTER AUDIT LOGS ================= */}
         {activeTab === "audit" && (
           <div className="space-y-6 animate-fade-in pb-12">
             <div>
@@ -1044,7 +1044,6 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
 function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; rawFeedbacks: ItemFeedback[] }) {
   const [selectedMessId, setSelectedMessId] = useState<string>(allMesses[0]?.id || "jmb");
   
-  // Auto-detect live serving meal window or fallback to lunch
   const { current: liveMeal } = useMemo(() => currentAndNextMeal(new Date()), []);
   const [selectedMeal, setSelectedMeal] = useState<MealKey | "all">(() => liveMeal?.key || "lunch");
   
@@ -1064,8 +1063,6 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
 
   const activeWeekday = new Date().getDay();
 
-  // 1. Fetch live daily menu from Firestore with weekly fallback
-  // FIX: Stable 'firestore' variable assignment satisfies TypeScript overload safely without null union mismatch
   useEffect(() => {
     if (!db || !selectedMessId) return;
     const firestore = db;
@@ -1104,7 +1101,6 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
     loadMenuData();
   }, [selectedMessId, todayDateStr, activeWeekday]);
 
-  // 2. Safe in-memory filtering: avoids composite index errors in Firestore
   const filteredFeedbacks = useMemo(() => {
     const now = new Date();
     return rawFeedbacks.filter((f) => {
@@ -1127,7 +1123,6 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
     });
   }, [rawFeedbacks, selectedMessId, timeRange]);
 
-  // 3. Compute per-dish ratings and aggregate across meal periods
   const dishGroupAnalytics = useMemo(() => {
     const dishScores: Record<string, { total: number; count: number; stars: Record<number, number>; mealKey: string }> = {};
 
@@ -1173,7 +1168,6 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
         };
       });
 
-      // Include ratings logged for dishes outside the static list
       Object.entries(dishScores).forEach(([k, stat]) => {
         if (stat.mealKey === m.key && !items.some(it => it.trim().toLowerCase() === k)) {
           const formattedName = k.charAt(0).toUpperCase() + k.slice(1);
@@ -1193,7 +1187,6 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
     return categories;
   }, [filteredFeedbacks, menuItemsMap]);
 
-  // Overall facility metrics calculation
   const overallFacilityMetrics = useMemo(() => {
     let sum = 0;
     let count = 0;
@@ -1207,7 +1200,6 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
     };
   }, [filteredFeedbacks]);
 
-  // Comprehensive Multi-Sheet Excel Telemetry Generator with Formula Injection Defense
   function exportCleanMealReportToExcel() {
     if (filteredFeedbacks.length === 0) {
       alert("⚠️ No feedback submissions available for this facility and timeframe.");
@@ -1217,7 +1209,6 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
     const currentMess = allMesses.find((m) => m.id === selectedMessId);
     const messTitle = currentMess ? `${currentMess.name} ${currentMess.subtitle || ""}` : selectedMessId;
 
-    // --- SHEET 1: EXECUTIVE AUDIT & OVERVIEW ---
     const summarySheetRows = [
       { Parameter: "Campus Mess Facility", Value: sanitizeExcelCell(messTitle) },
       { Parameter: "Facility System ID", Value: sanitizeExcelCell(selectedMessId.toUpperCase()) },
@@ -1229,7 +1220,6 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
       { Parameter: "Report Generation Timestamp", Value: new Date().toLocaleString("en-IN") },
     ];
 
-    // --- SHEET 2: ALL MEALS DISH PERFORMANCE MATRIX ---
     const detailedDishRows: any[] = [];
     MEAL_DEFS.forEach((m) => {
       const mealItems = dishGroupAnalytics[m.key] || [];
@@ -1259,7 +1249,6 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
       });
     });
 
-    // --- SHEET 3: MEAL CATEGORY SUMMARY (BREAKFAST vs LUNCH vs SNACKS vs DINNER) ---
     const categorySummaryRows = MEAL_DEFS.map((m) => {
       const mealItems = dishGroupAnalytics[m.key] || [];
       let totalMealVotes = 0;
@@ -1283,7 +1272,6 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
       };
     });
 
-    // --- SHEET 4: ITEMIZED STUDENT SUBMISSIONS (RAW FEEDBACK LOG) ---
     const rawFeedbacksData = filteredFeedbacks.map((f) => ({
       "Timestamp": f.createdAt?.toDate ? f.createdAt.toDate().toLocaleString("en-IN") : "Recent",
       "Student Name": sanitizeExcelCell(f.studentName || "Anonymous Student"),
@@ -1296,7 +1284,6 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
       "Resolution Status": f.status === "solved" ? "Resolved" : "Pending Action",
     }));
 
-    // Build Excel Workbook
     const wb = XLSX.utils.book_new();
 
     const wsSummary = XLSX.utils.json_to_sheet(summarySheetRows);
@@ -1353,7 +1340,6 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
 
   return (
     <div className="space-y-6 animate-fade-in pb-12">
-      {/* Top Header & Selectors */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-foreground">Dish Ratings &amp; Telemetry</h1>
@@ -1363,7 +1349,6 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Timeframe selector */}
           <div className="flex items-center gap-1 bg-white border border-border p-1 rounded-2xl shadow-card">
             {(["day", "week", "month", "all"] as const).map((t) => (
               <button
@@ -1378,7 +1363,6 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
             ))}
           </div>
 
-          {/* Facility Selector */}
           <div className="flex items-center gap-2 bg-white border border-border p-1.5 rounded-2xl shadow-card">
             <select
               value={selectedMessId}
@@ -1403,7 +1387,6 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
         </div>
       </div>
 
-      {/* KPI Stats Banner */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-5 rounded-3xl border border-border shadow-card flex items-center justify-between">
           <div>
@@ -1440,7 +1423,6 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
         </div>
       </div>
 
-      {/* Interactive Meal Session Filter Bar */}
       <div className="bg-white rounded-3xl border border-border p-2.5 shadow-card flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
           <button
@@ -1492,7 +1474,6 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
         </div>
       </div>
 
-      {/* Dish Ratings Table */}
       <div className="bg-white rounded-3xl border border-border p-5 shadow-card">
         <div className="pb-3 border-b border-border flex items-center justify-between">
           <h2 className="text-sm font-bold text-foreground flex items-center gap-2">

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { db } from "@/lib/firebase";
 import { DishFeedbackSchema, checkRateLimit } from "@/lib/security";
-import { collection, query, where, orderBy, onSnapshot, doc, getDoc, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, query, where, orderBy, onSnapshot, doc, getDoc, addDoc, serverTimestamp, setDoc, deleteDoc } from "firebase/firestore";
 import { z } from "zod";
 import {
   MEAL_DEFS,
@@ -21,6 +21,7 @@ import {
 } from "@/lib/messhub";
 import { Link } from "@tanstack/react-router";
 import { Star, Clock, Sparkles, ChevronDown, ChevronUp, Flame, Dumbbell, Wheat, ChefHat, Info, Download, X } from "lucide-react";
+import { NavratriStudentWidget } from "@/components/messhub/NavratriSpecial";
 
 const CATEGORIES = ["Food quality", "Hygiene", "Timing", "Staff behavior", "Other"] as const;
 
@@ -64,13 +65,13 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
     }
   };
 
-useEffect(() => {
-  if (profile?.name && profile?.messId) {
-    logStudentOnboarding(profile).catch((err) =>
-      console.error("[StudentHome] Onboarding active ping error:", err)
-    );
-  }
-}, [profile]);
+  useEffect(() => {
+    if (profile?.name && profile?.messId) {
+      logStudentOnboarding(profile).catch((err) =>
+        console.error("[StudentHome] Onboarding active ping error:", err)
+      );
+    }
+  }, [profile]);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -275,15 +276,14 @@ useEffect(() => {
 
     setIsSubmittingFeedback(true);
     
-    // Copy the exact Web App URL using the copy button from Apps Script deployment
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby2rNRVWEm9cMA3ly6kVjABuaTWHjfOe72bdw8PEgebjjqoXRE5ccdNc4uEQ32HYNCq/exec";
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyPf7crXL-i7JNp2OAn1iBH_2F3gWDzfQuzP0fM8Ln84NLkPXi70IZUHyeEAV5xwLE9WA/exec";
 
     const formData = new URLSearchParams();
-    formData.append("secretKey", "mhub_sec_9f83a21b47c0e812d4a57891"); // Must match SECRET_API_KEY in Script Properties
+    formData.append("secretKey", "mhub_sec_9f83a21b47c0e812d4a57891");
     formData.append("name", profile.name || "VIT Student");
     formData.append("email", profile.email || "N/A");
     formData.append("mess", messLabelStr);
-    formData.append("rating", "-"); // Explicitly denotes no star rating for general complaints
+    formData.append("rating", "-");
     formData.append("message", `[Complaint - ${category.toUpperCase()}] ${feedbackMessage.trim()}`);
 
     try {
@@ -332,8 +332,9 @@ useEffect(() => {
 
   return (
     <div className="min-h-screen bg-background pb-28 font-sans select-none relative">
+      
       {/* Header */}
-      <header className="safe-top px-5 pt-2 pb-4">
+      <header className="safe-top px-5 pt-4 pb-4">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
           <div className="min-w-0">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">
@@ -427,6 +428,11 @@ useEffect(() => {
             })}
           </ul>
         </div>
+      </section>
+
+      {/* 🌟 NAVRATRI SPECIAL WIDGET (Renders right above Today's Menu grid) */}
+      <section className="mt-6 px-5">
+        <NavratriStudentWidget profile={profile} />
       </section>
 
       {/* Today's Meals Grid */}
@@ -582,62 +588,40 @@ useEffect(() => {
         </div>
       </section>
 
-      {/* 📱 PWA Install Floating Banner / Button (Renders when browser allows installation) */}
-      {/* 📱 PWA Install Permanent Banner */}
-<div className="my-6 px-5">
-  <div className="rounded-2xl border border-primary/30 bg-primary/10 p-4 flex items-center justify-between gap-3 shadow-md">
-    <div className="flex items-center gap-3">
-      <div className="w-10 h-10 rounded-xl gradient-warm flex items-center justify-center text-white shrink-0 shadow-sm">
-        <Download className="w-5 h-5" />
+      {/* PWA Install Permanent Banner */}
+      <div className="my-6 px-5">
+        <div className="rounded-2xl border border-primary/30 bg-primary/10 p-4 flex items-center justify-between gap-3 shadow-md">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl gradient-warm flex items-center justify-center text-white shrink-0 shadow-sm">
+              <Download className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-foreground">Install MessHub App</h4>
+              <p className="text-[11px] text-muted-foreground">Add to home screen for offline support &amp; fast access.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={async () => {
+              if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                if (outcome === "accepted") {
+                  setDeferredPrompt(null);
+                }
+              } else {
+                alert("To install MessHub, tap your browser's menu (...) or share icon and select 'Add to Home Screen'.");
+              }
+            }}
+            className="bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-xs font-bold shadow-xs transition hover:opacity-90 cursor-pointer shrink-0"
+          >
+            Install App
+          </button>
+        </div>
       </div>
-      <div>
-        <h4 className="text-xs font-bold text-foreground">Install MessHub App</h4>
-        <p className="text-[11px] text-muted-foreground">Add to home screen for offline support &amp; fast access.</p>
-      </div>
-    </div>
-    <button
-      type="button"
-      onClick={async () => {
-        if (deferredPrompt) {
-          deferredPrompt.prompt();
-          const { outcome } = await deferredPrompt.userChoice;
-          if (outcome === "accepted") {
-            setDeferredPrompt(null);
-          }
-        } else {
-          alert("To install MessHub, tap your browser's menu (...) or share icon and select 'Add to Home Screen'.");
-        }
-      }}
-      className="bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-xs font-bold shadow-xs transition hover:opacity-90 cursor-pointer shrink-0"
-    >
-      Install App
-    </button>
-  </div>
-</div>
 
-      {/* 🚀 Professional Footer */}
+      {/* Professional Footer */}
       <footer className="mt-12 px-5 py-6 border-t border-border/60 text-center text-xs text-muted-foreground space-y-1">
-        {/* <p>
-          Designed &amp; Built by{" "}
-          <a
-            href="https://itsmeishaan.vercel.app/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-bold text-foreground underline hover:text-primary transition"
-          >
-            Ishaan Mittal
-          </a>{" "}
-          × 
-          
-          <a
-            href="https://vitbhopal.ac.in/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-bold text-foreground underline hover:text-primary transition"
-          >
-            VIT Bhopal University
-          </a>
-        </p> */}
         <p className="text-[11px] opacity-80">
           &copy; {new Date().getFullYear()} MessHub. All rights reserved.
         </p>
@@ -693,7 +677,6 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
 
     setIsSubmitting(true);
     try {
-      // 1. Log to Firestore
       for (const dish of selectedDishes) {
         const validation = DishFeedbackSchema.safeParse({
           studentName: profile.name,
@@ -711,19 +694,18 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
         }
       }
 
-      // 2. Dispatch to the identical Google Apps Script Webhook URL
-      const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby2rNRVWEm9cMA3ly6kVjABuaTWHjfOe72bdw8PEgebjjqoXRE5ccdNc4uEQ32HYNCq/exec";
+      const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyPf7crXL-i7JNp2OAn1iBH_2F3gWDzfQuzP0fM8Ln84NLkPXi70IZUHyeEAV5xwLE9WA/exec";
 
       const formData = new URLSearchParams();
-formData.append("secretKey", "mhub_sec_9f83a21b47c0e812d4a57891");
-formData.append("name", profile.name || "VIT Student");
-formData.append("email", profile.email || "N/A");
-formData.append("mess", profile.messId);
-formData.append("rating", String(rating || 5)); // Writes directly to Column E
-formData.append(
-  "message",
-  `[Multiple Dish Feedback - ${selectedMeal.toUpperCase()}] Dishes: ${selectedDishes.join(", ")} | Rating: ${rating}/5 | Comment: ${comment.trim() || "None"}`
-); // Writes directly to Column F
+      formData.append("secretKey", "mhub_sec_9f83a21b47c0e812d4a57891");
+      formData.append("name", profile.name || "VIT Student");
+      formData.append("email", profile.email || "N/A");
+      formData.append("mess", profile.messId);
+      formData.append("rating", String(rating || 5));
+      formData.append(
+        "message",
+        `[Multiple Dish Feedback - ${selectedMeal.toUpperCase()}] Dishes: ${selectedDishes.join(", ")} | Rating: ${rating}/5 | Comment: ${comment.trim() || "None"}`
+      );
 
       await fetch(GOOGLE_SCRIPT_URL, {
         method: "POST",
