@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp, query, onSnapshot, doc, getDoc, updateDoc, deleteDoc, setDoc } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, where, onSnapshot, doc, getDoc, updateDoc, deleteDoc, setDoc } from "firebase/firestore";
 import { type StudentProfile } from "@/lib/messhub";
 import { Sparkles, CheckCircle, Download, Trash2, Utensils, Calendar } from "lucide-react";
 
@@ -226,7 +226,6 @@ export function NavratriSpecialAdminHub({ allMesses }: { allMesses: any[] }) {
         </div>
       )}
 
-      {/* SaaS Header */}
       <div className="bg-white rounded-3xl border border-border p-6 shadow-card flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-2 bg-orange-100 text-orange-800 px-3 py-1 rounded-full text-xs font-bold mb-2">
@@ -245,8 +244,6 @@ export function NavratriSpecialAdminHub({ allMesses }: { allMesses: any[] }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* Controls & Daily Menu Publishing */}
         <form onSubmit={handleSaveConfig} className="bg-white rounded-3xl border border-border p-6 shadow-card space-y-4 flex flex-col justify-between">
           <div className="space-y-4">
             <div className="pb-3 border-b border-border space-y-3">
@@ -324,7 +321,6 @@ export function NavratriSpecialAdminHub({ allMesses }: { allMesses: any[] }) {
           </div>
         </form>
 
-        {/* Manual Student Registration */}
         <form onSubmit={handleAddManualStudents} className="bg-white rounded-3xl border border-border p-6 shadow-card space-y-4 flex flex-col justify-between">
           <div className="space-y-4">
             <div className="pb-3 border-b border-border">
@@ -370,10 +366,8 @@ export function NavratriSpecialAdminHub({ allMesses }: { allMesses: any[] }) {
             </button>
           </div>
         </form>
-
       </div>
 
-      {/* Registered Students Table */}
       <div className="bg-white rounded-3xl border border-border p-6 shadow-card space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
           <div className="flex items-center gap-3">
@@ -444,7 +438,7 @@ export function NavratriSpecialAdminHub({ allMesses }: { allMesses: any[] }) {
   );
 }
 
-/* ---------------- 🌟 2. STUDENT PORTAL NAVRATRI COMPONENT ---------------- */
+/* ---------------- 🌟 2. STUDENT PORTAL NAVRATRI COMPONENT (COST-OPTIMIZED) ---------------- */
 export function NavratriStudentWidget({ profile }: { profile: StudentProfile }) {
   const [config, setConfig] = useState<any>(null);
   const [isRegisteredForCorrectMess, setIsRegisteredForCorrectMess] = useState(false);
@@ -457,8 +451,9 @@ export function NavratriStudentWidget({ profile }: { profile: StudentProfile }) 
   }, []);
 
   useEffect(() => {
-    if (!db || !profile?.email) return;
+    if (!db || !profile?.email || !profile?.messId) return;
 
+    // 1. Listen only to global platform config
     const unsubConfig = onSnapshot(doc(db, "platform_config", "navratri_settings"), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -470,16 +465,20 @@ export function NavratriStudentWidget({ profile }: { profile: StudentProfile }) 
       }
     });
 
-    const unsubOptInCheck = onSnapshot(collection(db, "navratri_opt_ins"), (snapshot) => {
-      const studentRecord = snapshot.docs.find(d => {
+    // 2. COST-SAVING QUERY: Query ONLY this specific student's email instead of downloading 1000+ docs
+    const q = query(
+      collection(db, "navratri_opt_ins"),
+      where("email", "==", profile.email.toLowerCase())
+    );
+
+    const unsubOptInCheck = onSnapshot(q, (snapshot) => {
+      const match = snapshot.docs.find(d => {
         const data = d.data();
-        const matchesEmail = data.email?.toLowerCase() === profile.email?.toLowerCase();
-        const matchesMess = data.messId?.toLowerCase() === profile.messId?.toLowerCase();
-        return matchesEmail && matchesMess;
+        return data.messId?.toLowerCase() === profile.messId?.toLowerCase();
       });
 
-      setIsRegisteredForCorrectMess(!!studentRecord);
-      setHasOptedIn(!!studentRecord);
+      setIsRegisteredForCorrectMess(!!match);
+      setHasOptedIn(!!match);
     });
 
     return () => {
@@ -494,7 +493,7 @@ export function NavratriStudentWidget({ profile }: { profile: StudentProfile }) 
     try {
       await addDoc(collection(db, "navratri_opt_ins"), {
         name: profile.name || "VIT Student",
-        email: profile.email,
+        email: profile.email.toLowerCase(),
         messId: profile.messId || "jmb",
         source: "student_self_opt_in",
         createdAt: serverTimestamp(),
@@ -519,7 +518,6 @@ export function NavratriStudentWidget({ profile }: { profile: StudentProfile }) 
 
   return (
     <div className="space-y-4">
-      {/* 1. Long Cylindrical Card right above Today's Menu showing Lunch and Dinner */}
       {config.enabled && isRegisteredForCorrectMess && (hasLunch || hasDinner) && (
         <div className="rounded-3xl border border-border bg-card p-5 shadow-card">
           <div className="flex items-center justify-between pb-3 border-b border-border/60">
@@ -569,7 +567,6 @@ export function NavratriStudentWidget({ profile }: { profile: StudentProfile }) 
         </div>
       )}
 
-      {/* 2. Minimalist SaaS Bottom Opt-In Form */}
       {config.optInEnabled && !isRegisteredForCorrectMess && (
         <div className="rounded-2xl border border-border bg-card p-4 shadow-card flex items-center justify-between gap-3 text-foreground">
           <div className="flex items-center gap-3">
@@ -593,7 +590,6 @@ export function NavratriStudentWidget({ profile }: { profile: StudentProfile }) 
         </div>
       )}
 
-      {/* Confirmation badge if registered */}
       {config.optInEnabled && isRegisteredForCorrectMess && (
         <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 flex items-center justify-between gap-3 text-foreground">
           <div className="flex items-center gap-2.5">
