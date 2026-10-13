@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { MESSES, saveDynamicMessMenu, getDynamicMessMenu, type MessId, type DayMenuWithNutrition, type MenuItemWithNutrition } from "@/lib/messhub";
 import { Plus, Trash2, Save, Flame } from "lucide-react";
-
+import { db } from "@/lib/firebase";
 const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const MEAL_TYPES = ["breakfast", "lunch", "snacks", "dinner"] as const;
 
@@ -61,14 +61,28 @@ export function NutritionistAdmin() {
     });
   };
 
-  const handleSave = async () => {
+const handleSave = async () => {
     setIsSaving(true);
     try {
-      await saveDynamicMessMenu(selectedMess, selectedDay, menu);
+      if (!db) {
+        alert("Database connection is not initialized yet. Please try again.");
+        return;
+      }
+
+      const { doc, setDoc, serverTimestamp } = await import("firebase/firestore");
+      const menuId = `${selectedMess}_${selectedDay}`;
+
+      // Save directly with nutritionist role stamp
+      await setDoc(doc(db, "mess_menus", menuId), {
+        ...menu,
+        updatedByRole: "nutritionist",
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+
       alert("Menu and Nutrition data updated successfully!");
     } catch (err) {
       console.error(err);
-      alert("Failed to save menu changes.");
+      alert("Failed to save menu changes. Check permissions.");
     } finally {
       setIsSaving(false);
     }
