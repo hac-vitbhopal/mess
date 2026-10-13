@@ -441,19 +441,36 @@ export function NavratriSpecialAdminHub({ allMesses }: { allMesses: any[] }) {
 /* ---------------- 🌟 2. STUDENT PORTAL NAVRATRI COMPONENT (COST-OPTIMIZED) ---------------- */
 export function NavratriStudentWidget({ profile }: { profile: StudentProfile }) {
   const [config, setConfig] = useState<any>(null);
-  const [isRegisteredForCorrectMess, setIsRegisteredForCorrectMess] = useState(false);
-  const [hasOptedIn, setHasOptedIn] = useState(false);
-  const [isOptingIn, setIsOptingIn] = useState(false);
-
+  
   const todayDateStr = useMemo(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }, []);
 
+  // Cache Key unique to student email and today's date
+  const cacheKey = useMemo(() => {
+    return profile?.email ? `navratri_status_${profile.email.toLowerCase()}_${todayDateStr}` : null;
+  }, [profile?.email, todayDateStr]);
+
+  // Initialize state from localStorage if available (0 Firebase reads!)
+  const [isRegisteredForCorrectMess, setIsRegisteredForCorrectMess] = useState<boolean>(() => {
+    if (typeof window === "undefined" || !cacheKey) return false;
+    const cached = localStorage.getItem(cacheKey);
+    return cached !== null ? JSON.parse(cached) : false;
+  });
+
+  const [hasOptedIn, setHasOptedIn] = useState<boolean>(() => {
+    if (typeof window === "undefined" || !cacheKey) return false;
+    const cached = localStorage.getItem(cacheKey);
+    return cached !== null ? JSON.parse(cached) : false;
+  });
+
+  const [isOptingIn, setIsOptingIn] = useState(false);
+
   useEffect(() => {
     if (!db || !profile?.email || !profile?.messId) return;
 
-    // 1. Listen only to global platform config
+    // 1. Listen only to global platform config (cached globally by browser/Next.js)
     const unsubConfig = onSnapshot(doc(db, "platform_config", "navratri_settings"), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -465,7 +482,12 @@ export function NavratriStudentWidget({ profile }: { profile: StudentProfile }) 
       }
     });
 
-    // 2. COST-SAVING QUERY: Query ONLY this specific student's email instead of downloading 1000+ docs
+    // 2. If already cached in localStorage for today, skip Firestore query entirely!
+    if (cacheKey && localStorage.getItem(cacheKey) !== null) {
+      return () => { unsubConfig(); };
+    }
+
+    // 3. Fallback: Query Firestore ONCE if not cached yet today
     const q = query(
       collection(db, "navratri_opt_ins"),
       where("email", "==", profile.email.toLowerCase())
@@ -477,15 +499,21 @@ export function NavratriStudentWidget({ profile }: { profile: StudentProfile }) 
         return data.messId?.toLowerCase() === profile.messId?.toLowerCase();
       });
 
-      setIsRegisteredForCorrectMess(!!match);
-      setHasOptedIn(!!match);
+      const isRegistered = !!match;
+      setIsRegisteredForCorrectMess(isRegistered);
+      setHasOptedIn(isRegistered);
+
+      // Save to localStorage so future reloads today cost 0 reads
+      if (cacheKey) {
+        localStorage.setItem(cacheKey, JSON.stringify(isRegistered));
+      }
     });
 
     return () => {
       unsubConfig();
       unsubOptInCheck();
     };
-  }, [profile?.email, profile?.messId]);
+  }, [profile?.email, profile?.messId, cacheKey]);
 
   async function handleOptIn() {
     if (!db || !profile?.email) return;
@@ -498,8 +526,15 @@ export function NavratriStudentWidget({ profile }: { profile: StudentProfile }) 
         source: "student_self_opt_in",
         createdAt: serverTimestamp(),
       });
+      
       setHasOptedIn(true);
       setIsRegisteredForCorrectMess(true);
+
+      // Immediately update local cache
+      if (cacheKey) {
+        localStorage.setItem(cacheKey, JSON.stringify(true));
+      }
+
       alert("🌟 Successfully registered for Navratri Special meals!");
     } catch (err) {
       console.error("Opt-in error:", err);

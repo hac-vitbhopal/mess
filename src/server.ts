@@ -49,7 +49,30 @@ export default {
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
+      const normalizedResponse = await normalizeCatastrophicSsrResponse(response);
+
+      // 🚀 Vercel Edge CDN Caching Injection for 10K+ Student Scalability
+      const url = new URL(request.url);
+      const isPublicAssetOrMenu = 
+        normalizedResponse.status === 200 && 
+        !url.pathname.includes("/admin") && 
+        !url.pathname.includes("/nutritionist") && 
+        !url.pathname.includes("/api/");
+
+      if (isPublicAssetOrMenu) {
+        const newHeaders = new Headers(normalizedResponse.headers);
+        if (!newHeaders.has("Cache-Control")) {
+          // Cache publicly for 1 hour, serve stale version while revalidating in background for 24 hours
+          newHeaders.set("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400");
+        }
+        return new Response(normalizedResponse.body, {
+          status: normalizedResponse.status,
+          statusText: normalizedResponse.statusText,
+          headers: newHeaders,
+        });
+      }
+
+      return normalizedResponse;
     } catch (error) {
       console.error(error);
       return new Response(renderErrorPage(), {
