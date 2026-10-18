@@ -11,6 +11,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { LoadingSplash } from "@/components/ui/LoadingSplash"; // 🌟 Imported your Swiggy/Zomato style food-tech loader
 
 function NotFoundComponent() {
   return (
@@ -77,18 +78,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-      { title: "VITMess — Your campus dining companion" },
-      { name: "description", content: "What's being served right now, and when is the next meal. VITMess is a fast, minimal dining companion for university mess halls." },
-      { name: "theme-color", content: "#e07a3e" },
-      { property: "og:title", content: "VITMess — Your campus dining companion" },
+      { title: "VITMESS — Your campus dining companion" },
+      { name: "description", content: "What's being served right now, and when is the next meal. VITMESS is a fast, minimal dining companion for university mess halls." },
+      // 🌟 Updated theme-color to match your new Teal brand identity (#007F86)
+      { name: "theme-color", content: "#007F86" },
+      { property: "og:title", content: "VITMESS — Your campus dining companion" },
       { property: "og:description", content: "Live meal timeline, today's menu and mess announcements — all in one place." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       
-      // 📱 FIXED: Changed the deprecated apple specific meta tag to the standard standard parameter
       { name: "mobile-web-app-capable", content: "yes" },
-      
-      { name: "apple-mobile-web-app-title", content: "VITMess" },
+      { name: "apple-mobile-web-app-title", content: "VITMESS" },
       { name: "apple-mobile-web-app-status-bar-style", content: "default" },
     ],
     links: [
@@ -104,6 +104,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
   errorComponent: ErrorComponent,
+  pendingComponent: LoadingSplash, // 🌟 Triggers the Swiggy/Zomato style food-tech loader during route loading states
 });
 
 function RootShell({ children }: { children: ReactNode }) {
@@ -131,10 +132,10 @@ function RootComponent() {
         navigator.serviceWorker
           .register("/firebase-messaging-sw.js")
           .then((reg) => {
-            console.log("VITMess Service Worker registered with scope: ", reg.scope);
+            console.log("VITMESS Service Worker registered with scope: ", reg.scope);
           })
           .catch((err) => {
-            console.error("VITMess Service Worker registration failed: ", err);
+            console.error("VITMESS Service Worker registration failed: ", err);
           });
       });
     }
