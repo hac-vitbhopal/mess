@@ -119,7 +119,7 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
     <img
       src="/mess_logo.png"
       alt="VITMESS Logo"
-      className="w-full h-full object-contain scale-100" // 👈 Added scale-125 here to safely enlarge it inside the circle
+      className="w-full h-full object-contain scale-120" // 👈 Added scale-125 here to safely enlarge it inside the circle
     />
   </div>
 </div>
