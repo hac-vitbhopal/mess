@@ -77,10 +77,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-      { title: "MessHub — Your campus dining companion" },
-      { name: "description", content: "What's being served right now, and when is the next meal. MessHub is a fast, minimal dining companion for university mess halls." },
+      { title: "VITMess — Your campus dining companion" },
+      { name: "description", content: "What's being served right now, and when is the next meal. VITMess is a fast, minimal dining companion for university mess halls." },
       { name: "theme-color", content: "#e07a3e" },
-      { property: "og:title", content: "MessHub — Your campus dining companion" },
+      { property: "og:title", content: "VITMess — Your campus dining companion" },
       { property: "og:description", content: "Live meal timeline, today's menu and mess announcements — all in one place." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -88,7 +88,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       // 📱 FIXED: Changed the deprecated apple specific meta tag to the standard standard parameter
       { name: "mobile-web-app-capable", content: "yes" },
       
-      { name: "apple-mobile-web-app-title", content: "MessHub" },
+      { name: "apple-mobile-web-app-title", content: "VITMess" },
       { name: "apple-mobile-web-app-status-bar-style", content: "default" },
     ],
     links: [
@@ -131,10 +131,10 @@ function RootComponent() {
         navigator.serviceWorker
           .register("/firebase-messaging-sw.js")
           .then((reg) => {
-            console.log("MessHub Service Worker registered with scope: ", reg.scope);
+            console.log("VITMess Service Worker registered with scope: ", reg.scope);
           })
           .catch((err) => {
-            console.error("MessHub Service Worker registration failed: ", err);
+            console.error("VITMess Service Worker registration failed: ", err);
           });
       });
     }

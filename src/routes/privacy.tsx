@@ -25,8 +25,8 @@ import {
 export const Route = createFileRoute("/privacy")({
   head: () => ({
     meta: [
-      { title: "Privacy Policy & Terms of Use — MessHub" },
-      { name: "description", content: "MessHub platform terms of use and privacy disclaimer under the Hostel Administrative Council." },
+      { title: "Privacy Policy & Terms of Use — VITMess" },
+      { name: "description", content: "VITMess platform terms of use and privacy disclaimer under the Hostel Administrative Council." },
     ],
   }),
   component: PrivacyPolicyPage,
@@ -39,7 +39,7 @@ function PrivacyPolicyPage() {
       {/* Header Navigation */}
       <header className="flex items-center justify-between pb-6 border-b border-[#FFEDD5]">
         <Link to="/" className="text-xs font-bold uppercase tracking-wider text-[#F97316] hover:opacity-80 transition flex items-center gap-1">
-          <span>&larr;</span> Back to MessHub
+          <span>&larr;</span> Back to VITMess
         </Link>
         <span className="text-xs font-bold text-[#C2410C] bg-[#FFEDD5] px-3 py-1 rounded-full">
           Legal & Privacy
@@ -53,7 +53,7 @@ function PrivacyPolicyPage() {
             Privacy Policy & Terms of Use
           </h1>
           <p className="text-[#C2410C]/80 text-xs mt-1 font-medium">
-            MessHub | Hostel Administrative Council
+            VITMess | Hostel Administrative Council
           </p>
         </div>
 
@@ -65,7 +65,7 @@ function PrivacyPolicyPage() {
               <span>🏛️</span> 1. Official Administrative Ownership
             </h2>
             <p className="text-[#221510]/90 text-xs sm:text-sm leading-relaxed">
-              MessHub is an official digital utility platform operating under the Hostel Administrative Council to facilitate access to mess schedules, menu updates, announcements, and student feedback. The platform is intended to improve communication and coordination between hostel administration and students.
+              VITMess is an official digital utility platform operating under the Hostel Administrative Council to facilitate access to mess schedules, menu updates, announcements, and student feedback. The platform is intended to improve communication and coordination between hostel administration and students.
             </p>
           </div>
 
@@ -89,7 +89,7 @@ function PrivacyPolicyPage() {
               <span>📝</span> 3. Feedback, Bug Reports & Technical Support
             </h2>
             <p className="text-[#221510]/90 text-xs sm:text-sm leading-relaxed">
-              For website-related issues, technical bugs, errors, suggestions, or general feedback about MessHub, please contact the administrator through the official administrative email address provided on the website.
+              For website-related issues, technical bugs, errors, suggestions, or general feedback about VITMess, please contact the administrator through the official administrative email address provided on the website.
             </p>
             <p className="text-[#221510]/90 text-xs sm:text-sm leading-relaxed mt-2">
               When reporting an issue, please describe the problem clearly and include relevant details to help the administration investigate and resolve it efficiently.
@@ -104,13 +104,13 @@ function PrivacyPolicyPage() {
               <span>🍲</span> 4. Food & Mess Service Complaints
             </h2>
             <p className="text-[#221510]/90 text-xs sm:text-sm leading-relaxed">
-              For complaints or concerns regarding food quality, taste, hygiene, menu discrepancies, meal schedules, or mess services, please use the feedback form available on the MessHub website.
+              For complaints or concerns regarding food quality, taste, hygiene, menu discrepancies, meal schedules, or mess services, please use the feedback form available on the VITMess website.
             </p>
             <p className="text-[#221510]/90 text-xs sm:text-sm leading-relaxed mt-2">
               Students are requested to provide accurate details, select the appropriate feedback category, and communicate their concerns in respectful and constructive language. Clear and properly completed feedback helps the administration review complaints and take appropriate action.
             </p>
             <p className="text-[#221510]/90 text-xs sm:text-sm leading-relaxed mt-2">
-              MessHub facilitates the submission of feedback but does not guarantee a particular outcome or resolution timeframe.
+              VITMess facilitates the submission of feedback but does not guarantee a particular outcome or resolution timeframe.
             </p>
           </div>
 
@@ -118,7 +118,7 @@ function PrivacyPolicyPage() {
       </main>
 
       <footer className="mt-10 text-center text-[11px] text-[#C2410C]/60 font-medium">
-        &copy; {new Date().getFullYear()} MessHub. Operated under the Hostel Administrative Council.
+        &copy; {new Date().getFullYear()} VITMess. Operated under the Hostel Administrative Council.
       </footer>
     </div>
   );

@@ -28,7 +28,7 @@ import { NavratriSpecialAdminHub } from "@/components/messhub/NavratriSpecial";
 export const Route = createFileRoute("/super-admin")({
   head: () => ({
     meta: [
-      { title: "Master Control SaaS Dashboard — MessHub" },
+      { title: "Master Control SaaS Dashboard — VITMess" },
       { name: "description", content: "Platform super-admin infrastructure console and analytics." },
     ],
   }),
@@ -145,7 +145,7 @@ function SuperAdminGatekeeper() {
         </main>
 
         <footer className="text-center text-[10px] text-zinc-600 font-medium tracking-wide">
-          MESSHUB SYSTEM INFRASTRUCTURE CONSOLE
+          VITMess SYSTEM INFRASTRUCTURE CONSOLE
         </footer>
       </div>
     );
@@ -468,7 +468,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           <div className="h-9 w-9 rounded-xl gradient-warm flex items-center justify-center text-white shadow-sm">
             <ShieldCheck className="w-5 h-5" />
           </div>
-          <span>MessHub HQ</span>
+          <span>VITMess HQ</span>
         </div>
         
         <div className="flex-1 p-4 space-y-1.5 overflow-y-auto">
@@ -909,7 +909,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h1 className="text-2xl sm:text-3xl font-black text-foreground">Student Onboarding Directory</h1>
-                <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Comprehensive real-time directory of every student authenticated on MessHub.</p>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Comprehensive real-time directory of every student authenticated on VITMess.</p>
               </div>
               <button
                 type="button"

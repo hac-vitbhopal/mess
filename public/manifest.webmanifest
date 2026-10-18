@@ -1,13 +1,13 @@
 {
-  "name": "MessHub — Campus Dining Companion",
-  "short_name": "MessHub",
+  "name": "VITMESS — Campus Dining Companion",
+  "short_name": "VITMESS",
   "description": "What's being served right now, and when is the next meal.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#fbf7f2",
-  "theme_color": "#e07a3e",
+  "background_color": "#E9F7F4",
+  "theme_color": "#007F86",
   "icons": [
     {
       "src": "/favicon.ico",
