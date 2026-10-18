@@ -466,7 +466,11 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
       `}>
         <div className="hidden lg:flex items-center gap-2.5 font-black text-xl text-foreground p-6 border-b border-border">
           <div className="h-9 w-9 rounded-xl gradient-warm flex items-center justify-center text-white shadow-sm">
-            <ShieldCheck className="w-5 h-5" />
+            <img
+      src="/mess_logo.png"
+      alt="VITMESS Logo"
+      className="w-full h-full object-contain scale-120" // 👈 Added scale-125 here to safely enlarge it inside the circle
+    />
           </div>
           <span>VITMess HQ</span>
         </div>
