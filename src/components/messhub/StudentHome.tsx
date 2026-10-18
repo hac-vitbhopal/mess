@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { db } from "@/lib/firebase";
 import { DishFeedbackSchema, checkRateLimit } from "@/lib/security";
-import { collection, query, where, orderBy, onSnapshot, doc, getDoc, addDoc, serverTimestamp, setDoc, deleteDoc } from "firebase/firestore";
+import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore";
 import { z } from "zod";
 import {
   MEAL_DEFS,
@@ -19,9 +19,9 @@ import {
   type StudentProfile,
   type SpecialOverride,
 } from "@/lib/messhub";
-import { Link } from "@tanstack/react-router";
-import { Star, Clock, Sparkles, ChevronDown, ChevronUp, Flame, Dumbbell, Wheat, ChefHat, Info, Download, X } from "lucide-react";
+import { Star, Sparkles, ChevronDown, ChevronUp, Download } from "lucide-react";
 import { NavratriStudentWidget } from "@/components/messhub/NavratriSpecial";
+import { MessCountdownTimer } from "@/components/ui/MessCountdownTimer"; // 🌟 Imported the creative timer component
 
 const CATEGORIES = ["Food quality", "Hygiene", "Timing", "Staff behavior", "Other"] as const;
 
@@ -35,7 +35,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
 
   // 📱 PWA Install Prompt State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isInstallable, setIsInstallable] = useState(false);
+  const [, setIsInstallable] = useState(false);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
@@ -54,16 +54,6 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
     };
   }, []);
-
-  const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === "accepted") {
-      setDeferredPrompt(null);
-      setIsInstallable(false);
-    }
-  };
 
   useEffect(() => {
     if (profile?.name && profile?.messId) {
@@ -103,8 +93,8 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
     const unsub = onSnapshot(q, (snapshot) => {
       let foundOverride: SpecialOverride | null = null;
 
-      snapshot.forEach((doc) => {
-        const data = doc.data() as SpecialOverride;
+      snapshot.forEach((docItem) => {
+        const data = docItem.data() as SpecialOverride;
         if (data.date === todayDateStr) {
           const [startH, startM] = (data.startTime || "00:00").split(":").map(Number);
           const [endH, endM] = (data.endTime || "23:59").split(":").map(Number);
@@ -202,6 +192,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
   const { current, next } = useMemo(() => currentAndNextMeal(now), [now]);
   const focus = current ?? next ?? MEAL_DEFS[0];
   const focusIsLive = current !== null;
+  
   const countdown = focusIsLive
     ? countdownTo(focus.endH, focus.endM, now)
     : countdownTo(focus.startH, focus.startM, now);
@@ -209,7 +200,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
   useEffect(() => {
     if (!("Notification" in window) || Notification.permission !== "granted") return;
 
-    const lastNotifiedKey = sessionStorage.getItem("messhub.last_notified_meal");
+    const lastNotifiedKey = sessionStorage.getItem("vitmess.last_notified_meal");
 
     if (focusIsLive && focus && lastNotifiedKey !== focus.key) {
       const items = currentMenu[focus.key] ?? [];
@@ -236,7 +227,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
         } as any);
       });
 
-      sessionStorage.setItem("messhub.last_notified_meal", focus.key);
+      sessionStorage.setItem("vitmess.last_notified_meal", focus.key);
     }
   }, [focus, focusIsLive, currentMenu, todayDateStr]);
 
@@ -250,11 +241,11 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
     
     const broadcastUnsubscribe = onSnapshot(broadcastQuery, (snapshot) => {
       const list = snapshot.docs
-        .map(doc => ({
-          id: doc.id,
-          messId: doc.data().messId,
-          title: doc.data().title,
-          body: doc.data().body
+        .map(docItem => ({
+          id: docItem.id,
+          messId: docItem.data().messId,
+          title: docItem.data().title,
+          body: docItem.data().body
         }))
         .filter(b => b.messId === profile.messId || b.messId === "all");
 
@@ -320,7 +311,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => trackBroadcastClick(b.id, b.title, part)}
-            className="text-primary font-bold underline hover:opacity-80 transition break-all"
+            className="text-[#007F86] font-bold underline hover:opacity-80 transition break-all"
           >
             {part}
           </a>
@@ -331,28 +322,28 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
   }
 
   return (
-    <div className="min-h-screen bg-background pb-28 font-sans select-none relative">
+    <div className="min-h-screen bg-[#E9F7F4] pb-28 font-sans select-none relative text-[#193A40]">
       
       {/* Header */}
-      <header className="safe-top px-5 pt-4 pb-4">
+      <header className="safe-top px-5 pt-4 pb-4 bg-[#FFFFFF] border-b border-[#B5DED4]">
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
           <div className="min-w-0">
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">
+            <p className="text-xs uppercase tracking-wider text-[#193A40]/70 font-semibold">
               {now.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}
             </p>
-            <h1 className="truncate text-2xl font-bold">
+            <h1 className="truncate text-2xl font-black text-[#193A40]">
               {greetingFor(now)}, {profile.name.split(" ")[0]}
             </h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">{messLabelStr}</p>
+            <p className="mt-0.5 text-sm font-medium text-[#193A40]/80">{messLabelStr}</p>
           </div>
           <button
             onClick={() => {
-              if (confirm("Sign out of MessHub?")) {
+              if (confirm("Sign out of VITMESS?")) {
                 clearProfile();
                 onSignOut();
               }
             }}
-            className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-border bg-card text-sm font-semibold shadow-card cursor-pointer"
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-full border-2 border-[#B5DED4] bg-[#E9F7F4] text-sm font-bold text-[#007F86] shadow-sm cursor-pointer"
             aria-label="Sign out"
           >
             {profile.name.charAt(0).toUpperCase()}
@@ -360,68 +351,31 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
         </div>
       </header>
 
-      {/* Hero: current / next meal */}
-      <section className="px-5">
-        <div className="relative overflow-hidden rounded-3xl gradient-warm p-6 text-white shadow-elevated transition-all duration-300 hover:shadow-2xl">
-          <div className="absolute -right-10 -top-10 h-44 w-44 rounded-full bg-white/10 blur-2xl" />
-          
-          <div className="relative">
-            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-white/90 bg-white/15 px-3 py-1 rounded-full backdrop-blur-md border border-white/10">
-              {focusIsLive ? (
-                <>
-                  <span className="live-dot inline-block h-2 w-2 rounded-full bg-white" />
-                  Serving Now
-                </>
-              ) : (
-                <>Next Meal</>
-              )}
-            </div>
-
-            <div className="mt-5 w-full">
-              <h2 className="text-4xl font-black tracking-tight drop-shadow-sm">
-                {focus.name}
-              </h2>
-              <p className="mt-1 text-sm font-medium text-white/80 tracking-wide">
-                {formatTime(focus.startH, focus.startM)} – {formatTime(focus.endH, focus.endM)}
-              </p>
-            </div>
-
-            <div className="my-5 h-[1px] w-full bg-gradient-to-r from-white/20 via-white/10 to-transparent" />
-
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-black/15 rounded-2xl p-4 border border-white/5 backdrop-blur-xs">
-              <div className="text-xs font-bold uppercase tracking-widest text-white/70">
-                {focusIsLive ? "Time Remaining" : "Countdown to Service"}
-              </div>
-              <div className="font-display text-2xl font-black tracking-widest tabular-nums bg-white text-primary px-4 py-1.5 rounded-xl shadow-md">
-                {String(countdown.hours).padStart(2, "0")}:
-                {String(countdown.mins).padStart(2, "0")}:
-                {String(countdown.secs).padStart(2, "0")}
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* Hero: Creative Dynamic Countdown Timer Component */}
+      <section className="px-5 mt-4">
+        <MessCountdownTimer focus={focus} focusIsLive={focusIsLive} countdown={countdown} />
 
         {/* Overview Item List Card Layout */}
-        <div className="mt-4 rounded-2xl border border-border bg-card p-5 shadow-card">
-          <div className="flex items-center justify-between pb-3 border-b border-border/60">
-            <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+        <div className="mt-4 rounded-2xl border-2 border-[#B5DED4] bg-[#FFFFFF] p-5 shadow-sm">
+          <div className="flex items-center justify-between pb-3 border-b border-[#B5DED4]/60">
+            <div className="text-xs font-bold uppercase tracking-wider text-[#193A40]/70">
               Today's {focus.name.toLowerCase()} menu
             </div>
             <button
               onClick={() => setOpenMeal(focus.key)}
-              className="group text-xs font-bold text-primary flex items-center gap-1 cursor-pointer"
+              className="group text-xs font-bold text-[#007F86] flex items-center gap-1 cursor-pointer hover:underline"
             >
               <span>View full schedule</span>
               <span className="transition-transform duration-200 group-hover:translate-x-0.5">&rarr;</span>
             </button>
           </div>
           
-          <ul className="mt-3.5 grid grid-cols-2 gap-x-6 gap-y-2 text-sm text-muted-foreground">
+          <ul className="mt-3.5 grid grid-cols-2 gap-x-6 gap-y-2 text-sm text-[#193A40]">
             {(currentMenu[focus.key] ?? []).map((i: any, idx: number) => {
               const name = typeof i === "object" ? i.name : i;
               return (
-                <li key={idx} className="truncate font-medium flex items-center gap-2 text-muted-foreground">
-                  <span className="h-1 w-1 rounded-full bg-muted-foreground/40" />
+                <li key={idx} className="truncate font-medium flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#007F86]" />
                   <span>{name}</span>
                 </li>
               );
@@ -430,7 +384,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
         </div>
       </section>
 
-      {/* 🌟 NAVRATRI SPECIAL WIDGET (Renders right above Today's Menu grid) */}
+      {/* Navratri Special Widget */}
       <section className="mt-6 px-5">
         <NavratriStudentWidget profile={profile} />
       </section>
@@ -439,14 +393,14 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
       <section className="mt-8">
         <div className="px-5 flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-bold">Today's menu</h3>
-            <p className="text-xs text-muted-foreground">
+            <h3 className="text-lg font-black text-[#193A40]">Today's menu</h3>
+            <p className="text-xs text-[#193A40]/70 font-medium">
               {now.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}
             </p>
           </div>
           {activeOverride && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-3 py-1 rounded-full">
-              <Sparkles className="w-3.5 h-3.5 text-amber-600" /> {activeOverride.label}
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#193A40] bg-[#B5DED4] border border-[#007F86]/30 px-3 py-1 rounded-full">
+              <Sparkles className="w-3.5 h-3.5 text-[#007F86]" /> {activeOverride.label}
             </span>
           )}
         </div>
@@ -460,38 +414,38 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
               <button
                 key={m.key}
                 onClick={() => setOpenMeal(m.key)}
-                className="group flex flex-col justify-between rounded-2xl border border-border bg-card p-4 text-left shadow-card transition hover:border-primary/40 min-h-[140px] cursor-pointer"
+                className="group flex flex-col justify-between rounded-2xl border-2 border-[#B5DED4] bg-[#FFFFFF] p-4 text-left shadow-sm transition hover:border-[#007F86] min-h-[140px] cursor-pointer"
               >
                 <div>
                   <div className="flex items-center justify-between">
                     <span className="text-2xl">{m.icon}</span>
                     {isLive && (
-                      <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary-foreground">
+                      <span className="rounded-full bg-[#007F86] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
                         Live
                       </span>
                     )}
                   </div>
-                  <div className="mt-2 font-semibold text-sm truncate">{m.name}</div>
-                  <div className="text-[11px] text-muted-foreground">
+                  <div className="mt-2 font-bold text-sm text-[#193A40] truncate">{m.name}</div>
+                  <div className="text-[11px] text-[#193A40]/70 font-medium">
                     {formatTime(m.startH, m.startM)} – {formatTime(m.endH, m.endM)}
                   </div>
                 </div>
 
-                <div className="mt-2 space-y-0.5 border-t border-border/60 pt-1.5 w-full overflow-hidden">
+                <div className="mt-2 space-y-0.5 border-t border-[#B5DED4]/60 pt-1.5 w-full overflow-hidden">
                   {mealItems.length > 0 ? (
                     mealItems.slice(0, 2).map((item: any, idx: number) => {
                       const itemName = typeof item === "object" ? item.name : item;
                       return (
-                        <div key={idx} className="text-[11px] text-muted-foreground truncate block">
+                        <div key={idx} className="text-[11px] text-[#193A40]/80 truncate block font-medium">
                           • {itemName}
                         </div>
                       );
                     })
                   ) : (
-                    <div className="text-[11px] italic text-muted-foreground/70">No menu items</div>
+                    <div className="text-[11px] italic text-[#193A40]/50">No menu items</div>
                   )}
                   {mealItems.length > 2 && (
-                    <div className="text-[9px] font-medium text-primary mt-0.5">
+                    <div className="text-[9px] font-bold text-[#007F86] mt-0.5">
                       +{mealItems.length - 2} more
                     </div>
                   )}
@@ -504,15 +458,15 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
 
       {/* Broadcasts */}
       <section className="mt-8 px-5">
-        <h3 className="text-lg font-bold">From your mess</h3>
+        <h3 className="text-lg font-black text-[#193A40]">From your mess</h3>
         <div className="mt-3 space-y-2.5">
           {broadcasts.length === 0 ? (
-            <p className="text-sm italic text-muted-foreground py-2">No announcements at this time.</p>
+            <p className="text-sm italic text-[#193A40]/70 py-2">No announcements at this time.</p>
           ) : (
             broadcasts.map((b) => (
-              <article key={b.id} className="rounded-2xl border border-border bg-card p-4 shadow-card">
-                <h4 className="font-semibold text-foreground">{b.title}</h4>
-                <p className="mt-1 text-sm text-muted-foreground">
+              <article key={b.id} className="rounded-2xl border-2 border-[#B5DED4] bg-[#FFFFFF] p-4 shadow-sm">
+                <h4 className="font-bold text-[#193A40]">{b.title}</h4>
+                <p className="mt-1 text-sm text-[#193A40]/80">
                   {renderBroadcastBody(b)}
                 </p>
               </article>
@@ -528,28 +482,28 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
 
       {/* General Bug / Issue Feedback & Complaint Form */}
       <section className="mt-8 px-5">
-        <div className="rounded-2xl border border-border bg-card p-5 shadow-card w-full">
-          <h3 className="font-bold text-foreground text-sm tracking-tight">Submit a Complaint / Report Issue</h3>
-          <p className="text-[11px] text-muted-foreground mt-0.5">Only your mess admin sees this. Be respectful.</p>
+        <div className="rounded-2xl border-2 border-[#B5DED4] bg-[#FFFFFF] p-5 shadow-sm w-full">
+          <h3 className="font-black text-[#193A40] text-sm tracking-tight">Submit a Complaint / Report Issue</h3>
+          <p className="text-[11px] text-[#193A40]/70 mt-0.5 font-medium">Only your mess admin sees this. Be respectful.</p>
           
           {complaintSent ? (
             <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-5 text-center">
-              <div className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-emerald-500 text-lg text-white font-bold">✓</div>
-              <h4 className="mt-2 text-sm font-bold text-foreground">Complaint received</h4>
-              <p className="mt-0.5 text-xs text-muted-foreground">Your mess admin has been notified.</p>
+              <div className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-emerald-600 text-lg text-white font-bold">✓</div>
+              <h4 className="mt-2 text-sm font-bold text-emerald-900">Complaint received</h4>
+              <p className="mt-0.5 text-xs text-emerald-700">Your mess admin has been notified.</p>
             </div>
           ) : (
             <form onSubmit={handleFeedbackSubmit} className="mt-4 space-y-3.5">
               <div>
-                <span className="mb-2 block text-xs font-semibold text-foreground">Category</span>
+                <span className="mb-2 block text-xs font-bold text-[#193A40]">Category</span>
                 <div className="flex flex-wrap gap-1.5">
                   {CATEGORIES.map((c) => (
                     <button
                       key={c}
                       type="button"
                       onClick={() => setCategory(c)}
-                      className={`rounded-full border px-3 py-1 text-xs transition cursor-pointer ${
-                        category === c ? "border-primary bg-primary text-primary-foreground font-bold" : "border-border bg-background text-muted-foreground"
+                      className={`rounded-full border-2 px-3 py-1 text-xs transition cursor-pointer font-bold ${
+                        category === c ? "border-[#007F86] bg-[#007F86] text-white" : "border-[#B5DED4] bg-[#E9F7F4] text-[#193A40]"
                       }`}
                     >
                       {c}
@@ -559,19 +513,19 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
               </div>
 
               <div>
-                <span className="mb-1.5 block text-xs font-semibold text-foreground">What happened?</span>
+                <span className="mb-1.5 block text-xs font-bold text-[#193A40]">What happened?</span>
                 <textarea
                   rows={4}
                   value={feedbackMessage}
                   onChange={(e) => setFeedbackMessage(e.target.value.slice(0, 3000))}
                   placeholder="Describe the issue (min 10 chars)…"
-                  className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2.5 text-xs font-medium outline-none focus:border-primary transition"
+                  className="w-full resize-none rounded-xl border-2 border-[#B5DED4] bg-[#E9F7F4]/30 px-3 py-2.5 text-xs font-medium outline-none focus:border-[#007F86] transition text-[#193A40]"
                 />
-                <div className="mt-1 text-right text-[10px] text-muted-foreground">{feedbackMessage.length} / 3000</div>
+                <div className="mt-1 text-right text-[10px] text-[#193A40]/60">{feedbackMessage.length} / 3000</div>
               </div>
 
               {complaintError && (
-                <div role="alert" className="rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive font-medium">
+                <div role="alert" className="rounded-xl bg-red-100 px-3 py-2 text-xs text-red-700 font-medium border border-red-200">
                   {complaintError}
                 </div>
               )}
@@ -579,7 +533,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
               <button
                 type="submit"
                 disabled={isSubmittingFeedback || feedbackMessage.trim().length < 10}
-                className="w-full rounded-xl bg-foreground text-background px-3 py-2.5 text-xs font-bold active:scale-[0.99] transition disabled:opacity-40 cursor-pointer shadow-sm"
+                className="w-full rounded-xl bg-[#007F86] text-white px-3 py-2.5 text-xs font-bold active:scale-[0.99] transition disabled:opacity-40 cursor-pointer shadow-sm hover:opacity-90"
               >
                 {isSubmittingFeedback ? "Sending..." : "Send complaint"}
               </button>
@@ -590,14 +544,14 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
 
       {/* PWA Install Permanent Banner */}
       <div className="my-6 px-5">
-        <div className="rounded-2xl border border-primary/30 bg-primary/10 p-4 flex items-center justify-between gap-3 shadow-md">
+        <div className="rounded-2xl border-2 border-[#007F86]/30 bg-[#E9F7F4] p-4 flex items-center justify-between gap-3 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl gradient-warm flex items-center justify-center text-white shrink-0 shadow-sm">
+            <div className="w-10 h-10 rounded-xl bg-[#007F86] flex items-center justify-center text-white shrink-0 shadow-sm">
               <Download className="w-5 h-5" />
             </div>
             <div>
-              <h4 className="text-xs font-bold text-foreground">Install MessHub App</h4>
-              <p className="text-[11px] text-muted-foreground">Add to home screen for offline support &amp; fast access.</p>
+              <h4 className="text-xs font-bold text-[#193A40]">Install VITMESS App</h4>
+              <p className="text-[11px] text-[#193A40]/70">Add to home screen for offline support &amp; fast access.</p>
             </div>
           </div>
           <button
@@ -610,10 +564,10 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
                   setDeferredPrompt(null);
                 }
               } else {
-                alert("To install MessHub, tap your browser's menu (...) or share icon and select 'Add to Home Screen'.");
+                alert("To install VITMESS, tap your browser's menu (...) or share icon and select 'Add to Home Screen'.");
               }
             }}
-            className="bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-xs font-bold shadow-xs transition hover:opacity-90 cursor-pointer shrink-0"
+            className="bg-[#007F86] text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-xs transition hover:opacity-90 cursor-pointer shrink-0"
           >
             Install App
           </button>
@@ -621,9 +575,9 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
       </div>
 
       {/* Professional Footer */}
-      <footer className="mt-12 px-5 py-6 border-t border-border/60 text-center text-xs text-muted-foreground space-y-1">
-        <p className="text-[11px] opacity-80">
-          &copy; {new Date().getFullYear()} MessHub. All rights reserved.
+      <footer className="mt-12 px-5 py-6 border-t border-[#B5DED4] text-center text-xs text-[#193A40]/70 space-y-1 font-medium">
+        <p className="text-[11px]">
+          &copy; {new Date().getFullYear()} VITMESS. All rights reserved.
         </p>
       </footer>
 
@@ -727,16 +681,16 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
   };
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5 shadow-card w-full text-foreground">
-      <h3 className="font-extrabold text-foreground text-sm tracking-tight flex items-center gap-2">
+    <div className="rounded-2xl border-2 border-[#B5DED4] bg-[#FFFFFF] p-5 shadow-sm w-full text-[#193A40]">
+      <h3 className="font-black text-[#193A40] text-sm tracking-tight flex items-center gap-2">
         <span>🍲</span> Rate Today's Dishes (Multi-Select)
       </h3>
-      <p className="text-[11px] text-muted-foreground mt-0.5 font-medium">
+      <p className="text-[11px] text-[#193A40]/70 mt-0.5 font-medium">
         Select multiple items to flag good or bad items from today's spread.
       </p>
 
       <form onSubmit={handleSubmit} className="mt-4 space-y-3">
-        <div className="grid grid-cols-4 gap-1 bg-muted/40 p-1 rounded-xl border border-border/40">
+        <div className="grid grid-cols-4 gap-1 bg-[#E9F7F4] p-1 rounded-xl border border-[#B5DED4]">
           {MEAL_DEFS.map((m) => (
             <button
               key={m.key}
@@ -744,8 +698,8 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
               onClick={() => setSelectedMeal(m.key)}
               className={`py-1.5 text-[10px] font-bold rounded-lg capitalize transition cursor-pointer ${
                 selectedMeal === m.key
-                  ? "bg-primary text-primary-foreground shadow-xs"
-                  : "text-muted-foreground hover:text-foreground"
+                  ? "bg-[#007F86] text-white shadow-xs"
+                  : "text-[#193A40]/70 hover:text-[#193A40]"
               }`}
             >
               {m.key}
@@ -754,11 +708,11 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
         </div>
 
         <div>
-          <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
+          <label className="block text-[10px] font-bold text-[#193A40]/70 uppercase tracking-wider mb-1.5">
             Select Dishes (Check all that apply)
           </label>
           {availableItems.length > 0 ? (
-            <div className="max-h-40 overflow-y-auto space-y-1.5 p-2 bg-background border border-border rounded-xl">
+            <div className="max-h-40 overflow-y-auto space-y-1.5 p-2 bg-[#E9F7F4]/40 border-2 border-[#B5DED4] rounded-xl">
               {availableItems.map((dish: string, idx: number) => {
                 const isChecked = selectedDishes.includes(dish);
                 return (
@@ -767,12 +721,12 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
                     type="button"
                     onClick={() => toggleDishSelection(dish)}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
-                      isChecked ? "bg-primary/10 border border-primary text-foreground" : "bg-card border border-border/60 text-muted-foreground hover:text-foreground"
+                      isChecked ? "bg-[#007F86]/10 border-2 border-[#007F86] text-[#193A40]" : "bg-[#FFFFFF] border border-[#B5DED4] text-[#193A40]/80 hover:text-[#193A40]"
                     }`}
                   >
                     <span className="truncate">{dish}</span>
                     <span className={`w-4 h-4 rounded-md border flex items-center justify-center text-[10px] font-bold ${
-                      isChecked ? "bg-primary border-primary text-white" : "border-muted-foreground/40 bg-background"
+                      isChecked ? "bg-[#007F86] border-[#007F86] text-white" : "border-[#193A40]/30 bg-[#FFFFFF]"
                     }`}>
                       {isChecked ? "✓" : ""}
                     </span>
@@ -781,15 +735,15 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
               })}
             </div>
           ) : (
-            <p className="text-xs italic text-muted-foreground/70 py-1">No items listed for {selectedMeal} today.</p>
+            <p className="text-xs italic text-[#193A40]/60 py-1">No items listed for {selectedMeal} today.</p>
           )}
         </div>
 
         <div>
-          <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">
+          <label className="block text-[10px] font-bold text-[#193A40]/70 uppercase tracking-wider mb-1">
             Overall Rating for Selected Items
           </label>
-          <div className="flex items-center gap-1.5 bg-muted/30 p-2 rounded-xl border border-border/40 justify-center">
+          <div className="flex items-center gap-1.5 bg-[#E9F7F4] p-2 rounded-xl border border-[#B5DED4] justify-center">
             {[1, 2, 3, 4, 5].map((star) => (
               <button
                 key={star}
@@ -799,7 +753,7 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
               >
                 <Star
                   className={`w-6 h-6 ${
-                    star <= rating ? "fill-amber-500 text-amber-500" : "text-muted-foreground/30"
+                    star <= rating ? "fill-amber-500 text-amber-500" : "text-[#193A40]/25"
                   }`}
                 />
               </button>
@@ -808,7 +762,7 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
         </div>
 
         <div>
-          <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">
+          <label className="block text-[10px] font-bold text-[#193A40]/70 uppercase tracking-wider mb-1">
             Specific Comments
           </label>
           <textarea
@@ -816,14 +770,14 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             placeholder="e.g. These items were undercooked / too spicy..."
-            className="w-full resize-none rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium outline-none focus:border-primary transition"
+            className="w-full resize-none rounded-xl border-2 border-[#B5DED4] bg-[#E9F7F4]/30 px-3 py-2 text-xs font-medium outline-none focus:border-[#007F86] transition text-[#193A40]"
           />
         </div>
 
         <button
           type="submit"
           disabled={isSubmitting || selectedDishes.length === 0}
-          className="w-full rounded-xl bg-primary text-primary-foreground py-2.5 text-xs font-bold shadow-md active:scale-[0.99] transition disabled:opacity-40 cursor-pointer"
+          className="w-full rounded-xl bg-[#007F86] text-white py-2.5 text-xs font-bold shadow-md active:scale-[0.99] transition disabled:opacity-40 cursor-pointer hover:opacity-90"
         >
           {isSubmitting ? "Submitting Ratings..." : `Submit Feedback (${selectedDishes.length} selected)`}
         </button>
@@ -853,20 +807,20 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal="true">
       <button aria-label="Close" onClick={onClose} className="absolute inset-0 bg-black/40 backdrop-blur-sm cursor-pointer" />
-      <div className="relative w-full max-w-md rounded-t-3xl bg-card p-6 pb-8 shadow-elevated safe-bottom max-h-[85vh] overflow-y-auto">
-        <div className="mx-auto -mt-2 mb-4 h-1.5 w-10 rounded-full bg-border" />
+      <div className="relative w-full max-w-md rounded-t-3xl bg-[#FFFFFF] p-6 pb-8 shadow-2xl safe-bottom max-h-[85vh] overflow-y-auto border-t-2 border-[#B5DED4]">
+        <div className="mx-auto -mt-2 mb-4 h-1.5 w-10 rounded-full bg-[#B5DED4]" />
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-3xl">{def.icon}</div>
-            <h3 className="mt-1 text-2xl font-bold">{def.name}</h3>
-            <p className="text-sm text-muted-foreground">{formatTime(def.startH, def.startM)} – {formatTime(def.endH, def.endM)}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">{date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}</p>
+            <h3 className="mt-1 text-2xl font-black text-[#193A40]">{def.name}</h3>
+            <p className="text-sm font-medium text-[#193A40]/80">{formatTime(def.startH, def.startM)} – {formatTime(def.endH, def.endM)}</p>
+            <p className="mt-0.5 text-xs text-[#193A40]/60">{date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}</p>
           </div>
-          <button onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full border border-border bg-background text-lg cursor-pointer">×</button>
+          <button onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full border-2 border-[#B5DED4] bg-[#E9F7F4] text-lg font-bold cursor-pointer text-[#193A40]">×</button>
         </div>
 
         <div className="mt-5">
-          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Menu Items & Nutrition</div>
+          <div className="text-xs font-bold uppercase tracking-wider text-[#193A40]/70">Menu Items & Nutrition</div>
           <ul className="mt-2 space-y-3">
             {items.length > 0 ? (
               items.map((item, idx) => {
@@ -877,18 +831,18 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
                 const activeMicronutrients = isObject && item.micronutrients ? Object.entries(item.micronutrients).filter(([_, val]) => typeof val === "number" && val > 0) : [];
 
                 return (
-                  <li key={idx} className="flex flex-col gap-2 rounded-2xl border border-border bg-background p-3.5 text-sm">
+                  <li key={idx} className="flex flex-col gap-2 rounded-2xl border-2 border-[#B5DED4] bg-[#E9F7F4]/30 p-3.5 text-sm text-[#193A40]">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
-                        <span className="text-foreground font-bold">{name}</span>
+                        <span className="h-1.5 w-1.5 rounded-full bg-[#007F86] shrink-0" />
+                        <span className="text-[#193A40] font-bold">{name}</span>
                       </div>
                       
                       {isObject && (
                         <button
                           type="button"
                           onClick={() => toggleDishExpand(idx)}
-                          className="text-[10px] font-bold text-primary flex items-center gap-1 bg-primary/10 px-2.5 py-1 rounded-xl cursor-pointer hover:bg-primary/20 transition"
+                          className="text-[10px] font-bold text-[#007F86] flex items-center gap-1 bg-[#007F86]/10 px-2.5 py-1 rounded-xl cursor-pointer hover:bg-[#007F86]/20 transition border border-[#007F86]/30"
                         >
                           <span>{isExpanded ? "Less" : "Know More"}</span>
                           {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
@@ -897,62 +851,62 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
                     </div>
 
                     {isObject && (() => {
-  const serving = item.servingSize || item.ServingSize;
-  const calories = Number(item.calories ?? item.Energy_kcal);
-  const protein = Number(item.protein ?? item.Protein_g);
-  const carbs = Number(item.carbs ?? item.Carbs_g);
+                      const serving = item.servingSize || item.ServingSize;
+                      const calories = Number(item.calories ?? item.Energy_kcal);
+                      const protein = Number(item.protein ?? item.Protein_g);
+                      const carbs = Number(item.carbs ?? item.Carbs_g);
 
-  const hasAnyBadge = Boolean(serving) || calories > 0 || protein > 0 || carbs > 0;
-  if (!hasAnyBadge) return null;
+                      const hasAnyBadge = Boolean(serving) || calories > 0 || protein > 0 || carbs > 0;
+                      if (!hasAnyBadge) return null;
 
-  return (
-    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-semibold pt-0.5 flex-wrap">
-      {serving && (
-        <span className="bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-md border border-slate-200">
-          🍽️ {serving}
-        </span>
-      )}
-      {calories > 0 && (
-        <span className="bg-orange-50 text-orange-700 px-2.5 py-0.5 rounded-md border border-orange-200">
-          🔥 {calories} kcal
-        </span>
-      )}
-      {protein > 0 && (
-        <span className="bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-md border border-emerald-200">
-          💪 {protein}g Protein
-        </span>
-      )}
-      {carbs > 0 && (
-        <span className="bg-amber-50 text-amber-700 px-2.5 py-0.5 rounded-md border border-amber-200">
-          🌾 {carbs}g Carbs
-        </span>
-      )}
-    </div>
-  );
-})()}
+                      return (
+                        <div className="flex items-center gap-1.5 text-[10px] font-semibold pt-0.5 flex-wrap">
+                          {serving && (
+                            <span className="bg-white text-[#193A40] px-2.5 py-0.5 rounded-md border border-[#B5DED4]">
+                              🍽️ {serving}
+                            </span>
+                          )}
+                          {calories > 0 && (
+                            <span className="bg-teal-50 text-teal-900 px-2.5 py-0.5 rounded-md border border-teal-200">
+                              🔥 {calories} kcal
+                            </span>
+                          )}
+                          {protein > 0 && (
+                            <span className="bg-emerald-50 text-emerald-900 px-2.5 py-0.5 rounded-md border border-emerald-200">
+                              💪 {protein}g Protein
+                            </span>
+                          )}
+                          {carbs > 0 && (
+                            <span className="bg-amber-50 text-amber-900 px-2.5 py-0.5 rounded-md border border-amber-200">
+                              🌾 {carbs}g Carbs
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {isExpanded && isObject && (
-                      <div className="mt-2 pt-3 border-t border-border/80 space-y-3 text-xs animate-fade-in bg-card p-3 rounded-xl border">
+                      <div className="mt-2 pt-3 border-t border-[#B5DED4] space-y-3 text-xs animate-fade-in bg-white p-3 rounded-xl border">
                         {(item.description || item.originStory || item.funFact || item.regionalTag) && (
                           <div className="space-y-1">
-                            <span className="text-[9px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                              <Info className="w-3 h-3 text-primary" /> Cultural &amp; Food Profile
+                            <span className="text-[9px] uppercase font-bold text-[#007F86] flex items-center gap-1">
+                              Cultural &amp; Food Profile
                             </span>
-                            {item.regionalTag && <p className="text-[11px] font-semibold text-purple-700">🌍 {item.regionalTag}</p>}
-                            {item.description && <p className="text-[11px] text-foreground">{item.description}</p>}
-                            {item.originStory && <p className="text-[11px] text-muted-foreground">🏛️ Roots: {item.originStory}</p>}
-                            {item.funFact && <p className="text-[11px] text-muted-foreground italic">💡 Trivia: {item.funFact}</p>}
+                            {item.regionalTag && <p className="text-[11px] font-semibold text-teal-800">🌍 {item.regionalTag}</p>}
+                            {item.description && <p className="text-[11px] text-[#193A40]">{item.description}</p>}
+                            {item.originStory && <p className="text-[11px] text-[#193A40]/70">🏛️ Roots: {item.originStory}</p>}
+                            {item.funFact && <p className="text-[11px] text-[#193A40]/70 italic">💡 Trivia: {item.funFact}</p>}
                           </div>
                         )}
 
                         {activeMicronutrients.length > 0 && (
-                          <div className="space-y-1 pt-2 border-t border-border/60">
-                            <span className="text-[9px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                          <div className="space-y-1 pt-2 border-t border-[#B5DED4]">
+                            <span className="text-[9px] uppercase font-bold text-[#007F86]">
                               ✨ Micronutrients Breakdown
                             </span>
                             <div className="flex flex-wrap gap-1.5 pt-1">
                               {activeMicronutrients.map(([key, val]) => (
-                                <span key={key} className="bg-muted text-foreground px-2 py-0.5 rounded-md text-[10px] font-bold border border-border">
+                                <span key={key} className="bg-[#E9F7F4] text-[#193A40] px-2 py-0.5 rounded-md text-[10px] font-bold border border-[#B5DED4]">
                                   {key.replace(/([A-Z])/g, ' $1').toUpperCase()}: {String(val)}
                                 </span>
                               ))}
@@ -965,7 +919,7 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
                 );
               })
             ) : (
-              <li className="text-sm text-muted-foreground italic py-4 text-center">No items designated for this meal.</li>
+              <li className="text-sm text-[#193A40]/70 italic py-4 text-center">No items designated for this meal.</li>
             )}
           </ul>
         </div>

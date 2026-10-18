@@ -78,18 +78,18 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
   }
 
   return (
-    <div className="min-h-[100svh] w-full bg-[#FFF8F5] text-[#221510] flex flex-col justify-between items-center relative overflow-x-hidden font-sans select-none pb-4">
+    <div className="min-h-[100svh] w-full bg-[#E9F7F4] text-[#193A40] flex flex-col justify-between items-center relative overflow-x-hidden font-sans select-none pb-4">
       
       {/* Background Soft Glow Effect */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-2xl h-[300px] bg-gradient-to-b from-[#FF7A00]/10 via-[#FF9E43]/5 to-transparent blur-3xl pointer-events-none" />
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-2xl h-[300px] bg-gradient-to-b from-[#007F86]/10 via-[#007F86]/5 to-transparent blur-3xl pointer-events-none" />
 
       {/* Main Container Envelope */}
       <div className="w-full max-w-md mx-auto flex-1 flex flex-col justify-between relative z-10">
         
         {/* HEADER & LOGO WRAPPER BLOCK */}
         <div className="relative w-full">
-          {/* Top Rich Orange Banner */}
-          <div className="w-full bg-gradient-to-br from-[#FF6B2C] via-[#F97316] to-[#EA580C] pt-8 pb-14 px-6 rounded-b-[40px] text-center shadow-lg shadow-[#F97316]/15 relative overflow-hidden">
+          {/* Top Rich Teal Banner */}
+          <div className="w-full bg-[#007F86] pt-8 pb-14 px-6 rounded-b-[40px] text-center shadow-lg shadow-[#007F86]/15 relative overflow-hidden border-b border-[#B5DED4]/30">
             
             {/* Ambient Shimmer Overlay */}
             <div className="absolute -top-12 -right-12 w-40 h-40 bg-white/10 rounded-full blur-2xl pointer-events-none" />
@@ -97,31 +97,32 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
             {/* Header Top Badges */}
             <div className="flex items-center justify-between mb-3 w-full">
               <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur-md px-3 py-1 rounded-full border border-white/25 text-white text-xs font-bold uppercase tracking-wider">
-                <span>MessHub</span>
+                <span>VITMESS</span>
               </div>
               <span className="text-xs font-bold text-white bg-black/15 px-3 py-1 rounded-full backdrop-blur-md border border-white/10">
                 VIT Bhopal
               </span>
             </div>
 
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
               Welcome Student
             </h1>
-            <p className="text-xs sm:text-sm text-white/95 mt-0.5 max-w-xs mx-auto font-medium">
-              Your campus dining companion.
+            <p className="text-xs sm:text-sm text-[#E9F7F4] mt-0.5 max-w-xs mx-auto font-medium">
+              Your Mess. Your Menu. Your Voice.
             </p>
           </div>
 
           {/* EXACTLY ANCHORED LOGO BADGE */}
-          <div className="absolute left-1/2 -translate-x-1/2 -bottom-10 z-30 shrink-0">
-            <div className="w-20 h-20 sm:w-22 sm:h-22 rounded-full bg-white p-1 shadow-md shadow-[#F97316]/20 border-4 border-[#FFF8F5] flex items-center justify-center overflow-hidden">
-              <img
-                src="/mess_logo.png"
-                alt="MessHub Logo"
-                className="w-full h-full object-cover rounded-full"
-              />
-            </div>
-          </div>
+          {/* EXACTLY ANCHORED LOGO BADGE */}
+<div className="absolute left-1/2 -translate-x-1/2 -bottom-10 z-30 shrink-0">
+  <div className="w-20 h-20 sm:w-22 sm:h-22 rounded-full bg-white p-1 shadow-md shadow-[#007F86]/20 border-4 border-[#E9F7F4] flex items-center justify-center overflow-hidden">
+    <img
+      src="/mess_logo.png"
+      alt="VITMESS Logo"
+      className="w-full h-full object-contain scale-100" // 👈 Added scale-125 here to safely enlarge it inside the circle
+    />
+  </div>
+</div>
         </div>
 
         {/* FORM CONTENT SECTION */}
@@ -130,10 +131,10 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
           {/* Interactive Mess Selection Grid */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-bold text-[#C2410C] uppercase tracking-wider">
+              <label className="block text-xs font-bold text-[#193A40] uppercase tracking-wider">
                 Select Your Mess
               </label>
-              <span className="text-[10px] text-[#C2410C]/70 font-medium">Required for setup</span>
+              <span className="text-[10px] text-[#193A40]/70 font-medium">Required for setup</span>
             </div>
 
             <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
@@ -146,23 +147,23 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
                     onClick={() => setMessId(m.id)}
                     className={`p-2.5 rounded-2xl text-left transition-all duration-150 relative flex flex-col justify-between border-2 cursor-pointer active:scale-[0.98] ${
                       active
-                        ? "bg-gradient-to-br from-[#FF6B2C] to-[#EA580C] border-[#FF6B2C] text-white shadow-md shadow-[#F97316]/25"
-                        : "bg-white border-[#FFEDD5] text-[#221510] hover:border-[#F97316]/50 hover:bg-[#FFF7ED]"
+                        ? "bg-[#007F86] border-[#007F86] text-white shadow-md shadow-[#007F86]/25"
+                        : "bg-white border-[#B5DED4] text-[#193A40] hover:border-[#007F86]/50 hover:bg-[#E9F7F4]/50"
                     }`}
                   >
                     <div>
                       <div className="flex items-center justify-between gap-1">
-                        <span className={`text-xs font-bold line-clamp-1 ${active ? "text-white" : "text-[#221510]"}`}>
+                        <span className={`text-xs font-bold line-clamp-1 ${active ? "text-white" : "text-[#193A40]"}`}>
                           {m.name}
                         </span>
                         {active && (
-                          <div className="w-4 h-4 rounded-full bg-white text-[#F97316] flex items-center justify-center shrink-0 shadow-sm">
+                          <div className="w-4 h-4 rounded-full bg-white text-[#007F86] flex items-center justify-center shrink-0 shadow-sm">
                             <Check className="w-3 h-3 stroke-[3]" />
                           </div>
                         )}
                       </div>
                       {m.subtitle && (
-                        <p className={`text-[10px] mt-0.5 line-clamp-1 ${active ? "text-white/90" : "text-[#9A3412]/60"}`}>
+                        <p className={`text-[10px] mt-0.5 line-clamp-1 ${active ? "text-white/90" : "text-[#193A40]/70"}`}>
                           {m.subtitle}
                         </p>
                       )}
@@ -186,7 +187,7 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
               type="button"
               disabled={!messId || isSubmitting}
               onClick={handleGoogleSignIn}
-              className="w-full bg-white hover:bg-zinc-50 border-2 border-[#FFEDD5] text-[#221510] font-bold py-3.5 px-4 rounded-2xl shadow-md transition-all text-xs sm:text-sm disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-[0.99] flex items-center justify-center gap-3"
+              className="w-full bg-white hover:bg-zinc-50 border-2 border-[#B5DED4] text-[#193A40] font-bold py-3.5 px-4 rounded-2xl shadow-sm transition-all text-xs sm:text-sm disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-[0.99] flex items-center justify-center gap-3"
             >
               <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
@@ -196,7 +197,7 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
               </svg>
               <span>{isSubmitting ? "Signing in..." : "Sign in with Google (@vitbhopal.ac.in)"}</span>
             </button>
-            <p className="text-[10px] text-center text-[#C2410C]/70 mt-2 font-medium">
+            <p className="text-[10px] text-center text-[#193A40]/70 mt-2 font-medium">
               Only official university accounts are permitted.
             </p>
           </div>
@@ -205,36 +206,17 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
 
       </div>
 
-      {/* 🚀 Professional Designer Footer & Privacy Terms */}
+      {/* Professional Designer Footer & Privacy Terms */}
       <footer className="relative z-10 pt-2 pb-2 text-center w-full max-w-md px-6 space-y-1">
-        <p className="text-[11px] text-[#C2410C]/70 font-medium">
+        <p className="text-[11px] text-[#193A40]/70 font-medium">
           By entering, you agree to our{" "}
           <Link
             to="/privacy"
-            className="font-bold underline text-[#EA580C] hover:text-[#FF6B2C] transition"
+            className="font-bold underline text-[#007F86] hover:opacity-80 transition"
           >
             Privacy Policy & Terms
           </Link>
         </p>
-        {/* <p className="text-[11px] text-[#221510]/80">
-          Designed &amp; Built by{" "}
-          <a
-            href="https://itsmeishaan.vercel.app/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-bold underline text-[#EA580C] hover:text-[#FF6B2C] transition"
-          >
-            Ishaan Mittal
-          </a>{" "}
-          × <a
-            href="https://vitbhopal.ac.in/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-bold text-foreground underline hover:text-primary transition"
-          >
-            VIT Bhopal University
-          </a>
-        </p> */}
       </footer>
     </div>
   );
