@@ -6,13 +6,18 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#E9F7F4", 
+  "background_color": "#E9F7F4",
   "theme_color": "#007F86",
   "icons": [
     {
       "src": "/favicon.ico",
       "sizes": "64x64",
       "type": "image/x-icon"
+    },
+    {
+      "src": "/mess_logo.png",
+      "sizes": "96x96",
+      "type": "image/png"
     },
     {
       "src": "/mess_logo.png",
