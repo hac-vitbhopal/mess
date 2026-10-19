@@ -274,6 +274,8 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
     formData.append("name", profile.name || "VIT Student");
     formData.append("email", profile.email || "N/A");
     formData.append("mess", messLabelStr);
+    formData.append("messId", profile.messId);
+    formData.append("type", "complaint");
     formData.append("rating", "-");
     formData.append("message", `[Complaint - ${category.toUpperCase()}] ${feedbackMessage.trim()}`);
 
