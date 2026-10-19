@@ -28,7 +28,7 @@ import { NavratriSpecialAdminHub } from "@/components/messhub/NavratriSpecial";
 export const Route = createFileRoute("/super-admin")({
   head: () => ({
     meta: [
-      { title: "Master Control SaaS Dashboard — VITMess" },
+      { title: "Master Control SaaS Dashboard — VITMESS" },
       { name: "description", content: "Platform super-admin infrastructure console and analytics." },
     ],
   }),
@@ -104,25 +104,25 @@ function SuperAdminGatekeeper() {
   }
 
   if (!isMounted) {
-    return <div className="min-h-screen bg-[#1c1c1e]" />;
+    return <div className="min-h-screen bg-[#E9F7F4]" />;
   }
 
   if (!session || session.role !== "super-admin") {
     return (
-      <div className="min-h-screen bg-[#1c1c1e] flex flex-col justify-between px-6 py-12 text-white select-none font-sans">
+      <div className="min-h-screen bg-[#E9F7F4] flex flex-col justify-between px-6 py-12 text-[#193A40] select-none font-sans">
         <header className="flex items-center justify-between w-full max-w-sm mx-auto">
-          <Link to="/" className="text-sm font-semibold text-zinc-400 transition active:opacity-60">
+          <Link to="/" className="text-xs font-bold text-[#007F86] transition active:opacity-65">
             &larr; Exit
           </Link>
-          <span className="text-xs font-bold uppercase tracking-widest text-zinc-500">Master Gate</span>
+          <span className="text-xs font-bold uppercase tracking-widest text-[#193A40]/50">Master Gate</span>
         </header>
 
         <main className="w-full max-w-sm mx-auto text-center flex-1 flex flex-col justify-center">
-          <div className="h-12 w-12 rounded-2xl bg-zinc-900 border border-zinc-800 mx-auto flex items-center justify-center">
-            <span className="text-zinc-400 text-xs font-bold">Root</span>
+          <div className="h-14 w-14 rounded-2xl bg-white border-2 border-[#B5DED4] mx-auto flex items-center justify-center text-[#007F86] shadow-sm">
+            <Lock className="w-6 h-6" />
           </div>
-          <h1 className="text-2xl font-black tracking-tight mt-6">Platform Master Key</h1>
-          <p className="mt-1.5 text-xs text-zinc-400 max-w-[240px] mx-auto">
+          <h1 className="text-2xl font-black tracking-tight mt-6 text-[#193A40]">Platform Master Key</h1>
+          <p className="mt-1.5 text-xs text-[#193A40]/70 max-w-[240px] mx-auto font-medium">
             Authorized root authentication protocol layer required.
           </p>
 
@@ -133,19 +133,19 @@ function SuperAdminGatekeeper() {
               value={passcode}
               onChange={(e) => { setAuthError(false); setPasscode(e.target.value); }}
               placeholder="••••••••"
-              className={`w-full tracking-widest text-center rounded-2xl border bg-zinc-900 border-zinc-800 text-white px-4 py-4 text-lg font-bold outline-none transition-all ${
-                authError ? "border-red-500 ring-4 ring-red-500/10" : "focus:border-zinc-400"
+              className={`w-full tracking-widest text-center rounded-2xl border-2 bg-white border-[#B5DED4] text-[#193A40] px-4 py-4 text-lg font-bold outline-none transition-all ${
+                authError ? "border-red-500 ring-4 ring-red-500/10" : "focus:border-[#007F86]"
               }`}
             />
-            {authError && <p className="mt-2.5 text-xs font-semibold text-red-400">Invalid authorization sequence.</p>}
-            <button type="submit" disabled={passcode.length === 0} className="mt-4 w-full rounded-2xl bg-white py-4 text-sm font-bold text-black active:scale-[0.99] transition-all disabled:opacity-40 cursor-pointer">
+            {authError && <p className="mt-2.5 text-xs font-semibold text-red-600">Invalid authorization sequence.</p>}
+            <button type="submit" disabled={passcode.length === 0} className="mt-4 w-full rounded-2xl bg-[#007F86] py-4 text-sm font-bold text-white shadow-sm active:scale-[0.99] transition-all disabled:opacity-40 cursor-pointer hover:opacity-90">
               Verify Root Access
             </button>
           </form>
         </main>
 
-        <footer className="text-center text-[10px] text-zinc-600 font-medium tracking-wide">
-          VITMess SYSTEM INFRASTRUCTURE CONSOLE
+        <footer className="text-center text-[10px] text-[#193A40]/60 font-bold tracking-widest uppercase">
+          VITMESS SYSTEM INFRASTRUCTURE CONSOLE
         </footer>
       </div>
     );
@@ -431,8 +431,8 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
       onClick={() => { setActiveTab(id); setIsMobileMenuOpen(false); }}
       className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-bold transition-all text-xs cursor-pointer ${
         activeTab === id
-          ? "bg-[#221510] text-white shadow-md"
-          : "text-zinc-500 hover:bg-zinc-100 hover:text-black"
+          ? "bg-[#007F86] text-white shadow-sm"
+          : "text-[#193A40]/70 hover:bg-[#E9F7F4] hover:text-[#193A40]"
       }`}
     >
       <div className="flex items-center gap-3">
@@ -447,36 +447,36 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
   );
 
   return (
-    <div className="min-h-screen bg-[#fbf7f2] flex flex-col lg:flex-row font-sans selection:bg-orange-200">
+    <div className="min-h-screen bg-[#E9F7F4] flex flex-col lg:flex-row font-sans selection:bg-[#B5DED4] text-[#193A40]">
       
       {/* 📱 MOBILE TOPBAR */}
-      <div className="lg:hidden flex items-center justify-between bg-white border-b px-5 py-4 sticky top-0 z-50">
-        <div className="flex items-center gap-2 font-black text-lg text-foreground">
-          <ShieldCheck className="w-6 h-6 text-primary" /> Master HQ
+      <div className="lg:hidden flex items-center justify-between bg-white border-b border-[#B5DED4] px-5 py-4 sticky top-0 z-50">
+        <div className="flex items-center gap-2 font-black text-lg text-[#193A40]">
+          <ShieldCheck className="w-6 h-6 text-[#007F86]" /> Master HQ
         </div>
-        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 bg-zinc-100 rounded-xl cursor-pointer">
+        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 bg-[#E9F7F4] rounded-xl cursor-pointer text-[#007F86]">
           {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
         </button>
       </div>
 
       {/* 🖥️ SAAS SIDEBAR */}
       <aside className={`
-        fixed lg:static inset-y-0 left-0 z-40 w-72 bg-white border-r border-border transform transition-transform duration-300 ease-in-out flex flex-col
+        fixed lg:static inset-y-0 left-0 z-40 w-72 bg-white border-r border-[#B5DED4] transform transition-transform duration-300 ease-in-out flex flex-col
         ${isMobileMenuOpen ? "translate-x-0 top-[73px]" : "-translate-x-full lg:translate-x-0"}
       `}>
-        <div className="hidden lg:flex items-center gap-2.5 font-black text-xl text-foreground p-6 border-b border-border">
-          <div className="h-9 w-9 rounded-xl gradient-warm flex items-center justify-center text-white shadow-sm">
+        <div className="hidden lg:flex items-center gap-2.5 font-black text-xl text-[#193A40] p-6 border-b border-[#B5DED4]">
+          <div className="h-9 w-9 rounded-xl bg-[#007F86] flex items-center justify-center text-white shadow-sm">
             <img
-      src="/mess_logo.png"
-      alt="VITMESS Logo"
-      className="w-full h-full object-contain scale-120" // 👈 Added scale-125 here to safely enlarge it inside the circle
-    />
+              src="/mess_logo.png"
+              alt="VITMESS Logo"
+              className="w-full h-full object-contain p-1"
+            />
           </div>
-          <span>VITMess HQ</span>
+          <span>VITMESS HQ</span>
         </div>
         
         <div className="flex-1 p-4 space-y-1.5 overflow-y-auto">
-          <p className="px-4 text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2 mt-2">Infrastructure</p>
+          <p className="px-4 text-[10px] font-bold text-[#193A40]/50 uppercase tracking-widest mb-2 mt-2">Infrastructure</p>
           <NavButton id="overview" icon={Activity} label="HQ Overview" />
           <NavButton id="roles" icon={KeyRound} label="Roles & Permissions" />
           <NavButton id="feedbacks" icon={MessageSquare} label="Campus Feedback" badge={pendingFeedbacksCount} />
@@ -488,7 +488,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           <NavButton id="audit" icon={History} label="System Audit Logs" badge={auditLogs.length} />
         </div>
 
-        <div className="p-4 border-t border-border">
+        <div className="p-4 border-t border-[#B5DED4]">
           <button 
             onClick={() => { 
               logSuperAdminActivity("all", "Root Logout", "Super Admin logged out");
@@ -510,12 +510,12 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           <div className="space-y-6 animate-fade-in pb-12">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h1 className="text-2xl sm:text-3xl font-black text-foreground">Infrastructure Overview</h1>
-                <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Real-time system telemetry and campus metrics.</p>
+                <h1 className="text-2xl sm:text-3xl font-black text-[#193A40]">Infrastructure Overview</h1>
+                <p className="text-xs sm:text-sm text-[#193A40]/70 mt-0.5">Real-time system telemetry and campus metrics.</p>
               </div>
               <Link
                 to="/add-mess"
-                className="gradient-warm text-white px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-card transition active:scale-95 cursor-pointer self-start sm:self-auto"
+                className="bg-[#007F86] text-white px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-sm transition active:scale-95 cursor-pointer self-start sm:self-auto hover:opacity-90"
               >
                 <PlusCircle className="w-4 h-4" /> Add New Mess &amp; Menu
               </Link>
@@ -526,20 +526,20 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                 title="Registered Students" 
                 value={students.length} 
                 icon={Users} 
-                color="bg-blue-50 text-blue-600" 
+                color="bg-[#007F86]/10 text-[#007F86]" 
                 onClick={() => setActiveTab("students")}
               />
               <MetricCard 
                 title="Mess Facilities" 
                 value={allMesses.length} 
                 icon={Utensils} 
-                color="bg-purple-50 text-purple-600" 
+                color="bg-[#007F86]/10 text-[#007F86]" 
               />
               <MetricCard 
                 title="Pending Feedback" 
                 value={pendingFeedbacksCount} 
                 icon={MessageSquare} 
-                color="bg-amber-50 text-amber-600" 
+                color="bg-amber-50 text-amber-700" 
                 alert={pendingFeedbacksCount > 0} 
                 onClick={() => setActiveTab("feedbacks")}
               />
@@ -547,19 +547,19 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                 title="Open Complaints" 
                 value={pendingComplaintsCount} 
                 icon={AlertTriangle} 
-                color="bg-red-50 text-red-600" 
+                color="bg-red-50 text-red-700" 
                 alert={pendingComplaintsCount > 0} 
                 onClick={() => setActiveTab("complaints")}
               />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-white rounded-3xl border border-border p-5 shadow-card flex flex-col h-[460px]">
-                <div className="pb-3 border-b border-border flex items-center justify-between">
-                  <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
-                    <Utensils className="w-4 h-4 text-primary" /> Mess Facilities &amp; Active Management ({allMesses.length})
+              <div className="bg-white rounded-3xl border-2 border-[#B5DED4] p-5 shadow-sm flex flex-col h-[460px]">
+                <div className="pb-3 border-b border-[#B5DED4] flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-[#193A40] flex items-center gap-2">
+                    <Utensils className="w-4 h-4 text-[#007F86]" /> Mess Facilities &amp; Active Management ({allMesses.length})
                   </h2>
-                  <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-md">
+                  <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-md">
                     100% Operational
                   </span>
                 </div>
@@ -570,19 +570,19 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                     const adminRole = authKeyEntry ? "admin" : "Unassigned";
 
                     return (
-                      <div key={mess.id} className="bg-[#fbf7f2] border border-border/70 p-3.5 rounded-2xl flex items-center justify-between gap-3">
+                      <div key={mess.id} className="bg-[#E9F7F4]/40 border-2 border-[#B5DED4] p-3.5 rounded-2xl flex items-center justify-between gap-3">
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-xs text-foreground">{mess.name} {mess.subtitle ? `(${mess.subtitle})` : ""}</span>
-                            <span className="text-[9px] font-bold uppercase bg-zinc-200 text-zinc-700 px-1.5 py-0.5 rounded">ID: {mess.id}</span>
+                            <span className="font-bold text-xs text-[#193A40]">{mess.name} {mess.subtitle ? `(${mess.subtitle})` : ""}</span>
+                            <span className="text-[9px] font-bold uppercase bg-white text-[#193A40] px-1.5 py-0.5 rounded border border-[#B5DED4]">ID: {mess.id}</span>
                           </div>
-                          <p className="text-[11px] text-muted-foreground mt-0.5 font-medium">
-                            Assigned Role: <span className="font-bold text-foreground capitalize">{adminRole}</span>
+                          <p className="text-[11px] text-[#193A40]/70 mt-0.5 font-medium">
+                            Assigned Role: <span className="font-bold text-[#193A40] capitalize">{adminRole}</span>
                           </p>
                         </div>
                         <div className="text-right">
-                          <span className="text-xs font-black text-primary">{userCount}</span>
-                          <p className="text-[9px] text-muted-foreground uppercase font-bold">Students</p>
+                          <span className="text-xs font-black text-[#007F86]">{userCount}</span>
+                          <p className="text-[9px] text-[#193A40]/60 uppercase font-bold">Students</p>
                         </div>
                       </div>
                     );
@@ -590,32 +590,32 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                 </div>
               </div>
 
-              <div className="bg-white rounded-3xl border border-border p-5 shadow-card flex flex-col h-[460px]">
-                <div className="pb-3 border-b border-border flex items-center justify-between">
-                  <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-primary" /> Live Menu Audit Trail
+              <div className="bg-white rounded-3xl border-2 border-[#B5DED4] p-5 shadow-sm flex flex-col h-[460px]">
+                <div className="pb-3 border-b border-[#B5DED4] flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-[#193A40] flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-[#007F86]" /> Live Menu Audit Trail
                   </h2>
-                  <span className="text-[10px] font-bold bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded-md">
+                  <span className="text-[10px] font-bold bg-[#E9F7F4] text-[#007F86] px-2 py-0.5 rounded-md border border-[#B5DED4]">
                     Recent Updates
                   </span>
                 </div>
                 <div className="mt-3 overflow-y-auto flex-1 space-y-2 pr-1">
                   {menuLogs.length === 0 ? (
-                    <p className="py-12 text-center text-xs italic text-muted-foreground">No menu modifications recorded yet.</p>
+                    <p className="py-12 text-center text-xs italic text-[#193A40]/60 font-medium">No menu modifications recorded yet.</p>
                   ) : (
                     menuLogs.map((log) => (
-                      <div key={log.id} className="bg-[#fbf7f2] border border-border/60 p-3 rounded-2xl flex items-start gap-3">
-                        <div className={`p-2 rounded-xl text-xs font-bold ${log.updatedByRole === "nutritionist" ? "bg-emerald-100 text-emerald-700" : "bg-orange-100 text-orange-700"}`}>
+                      <div key={log.id} className="bg-[#E9F7F4]/40 border-2 border-[#B5DED4] p-3 rounded-2xl flex items-start gap-3">
+                        <div className={`p-2 rounded-xl text-xs font-bold ${log.updatedByRole === "nutritionist" ? "bg-emerald-100 text-emerald-800" : "bg-teal-100 text-teal-800"}`}>
                           <Activity className="w-4 h-4" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-bold text-foreground truncate">
+                          <p className="text-xs font-bold text-[#193A40] truncate">
                             {log.updatedByRole === "nutritionist" ? "Nutritionist" : "Mess Admin"} modified schedule
                           </p>
-                          <p className="text-[10px] font-semibold text-muted-foreground uppercase mt-0.5">
+                          <p className="text-[10px] font-semibold text-[#193A40]/70 uppercase mt-0.5">
                             Target Node: {log.id.replace(/_/g, " ").toUpperCase()}
                           </p>
-                          <p className="text-[9px] text-zinc-400 mt-1 font-medium">
+                          <p className="text-[9px] text-[#193A40]/50 mt-1 font-medium">
                             {log.updatedAt?.seconds ? new Date(log.updatedAt.seconds * 1000).toLocaleString() : "Just now"}
                           </p>
                         </div>
@@ -633,27 +633,27 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
         {activeTab === "roles" && (
           <div className="space-y-6 animate-fade-in pb-12 max-w-3xl">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-black text-foreground">Roles &amp; Kitchen Permissions</h1>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Control operational access and menu-editing privileges across campus mess panels.</p>
+              <h1 className="text-2xl sm:text-3xl font-black text-[#193A40]">Roles &amp; Kitchen Permissions</h1>
+              <p className="text-xs sm:text-sm text-[#193A40]/70 mt-0.5">Control operational access and menu-editing privileges across campus mess panels.</p>
             </div>
 
-            <form onSubmit={handleSaveKitchenPermissions} className="bg-white rounded-3xl border border-border p-6 shadow-card space-y-6">
-              <div className="flex items-center gap-3 pb-4 border-b border-border">
-                <div className="h-10 w-10 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center font-bold">
+            <form onSubmit={handleSaveKitchenPermissions} className="bg-white rounded-3xl border-2 border-[#B5DED4] p-6 shadow-sm space-y-6">
+              <div className="flex items-center gap-3 pb-4 border-b border-[#B5DED4]">
+                <div className="h-10 w-10 rounded-2xl bg-[#007F86]/10 text-[#007F86] flex items-center justify-center font-bold">
                   <KeyRound className="w-5 h-5" />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-foreground">Mess Admin Menu Editing Control</h2>
-                  <p className="text-xs text-muted-foreground">Dynamically grant or revoke permission for standard Mess Admins to modify daily food items.</p>
+                  <h2 className="text-base font-bold text-[#193A40]">Mess Admin Menu Editing Control</h2>
+                  <p className="text-xs text-[#193A40]/70">Dynamically grant or revoke permission for standard Mess Admins to modify daily food items.</p>
                 </div>
               </div>
 
-              <div className="bg-[#fbf7f2] border border-border p-4 rounded-2xl flex items-center justify-between gap-4">
+              <div className="bg-[#E9F7F4]/40 border-2 border-[#B5DED4] p-4 rounded-2xl flex items-center justify-between gap-4">
                 <div className="space-y-1">
-                  <span className="text-xs font-bold text-foreground block">
+                  <span className="text-xs font-bold text-[#193A40] block">
                     {isMenuEditingUnlocked ? "🔓 Menu Editing Status: UNLOCKED" : "🔒 Menu Editing Status: LOCKED"}
                   </span>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-[11px] text-[#193A40]/70 font-medium">
                     {isMenuEditingUnlocked 
                       ? "Mess Admins are currently permitted to update and overwrite daily menu items." 
                       : "Mess Admins are restricted. Only Super Admin authorization allows menu modifications."}
@@ -666,7 +666,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                   className={`px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer shadow-xs flex items-center gap-2 shrink-0 ${
                     isMenuEditingUnlocked 
                       ? "bg-emerald-600 text-white" 
-                      : "bg-zinc-900 text-white"
+                      : "bg-[#193A40] text-white"
                   }`}
                 >
                   {isMenuEditingUnlocked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
@@ -685,7 +685,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                 <button
                   type="submit"
                   disabled={isUpdatingLock}
-                  className="gradient-warm text-white px-6 py-3 rounded-2xl text-xs font-bold shadow-card transition active:scale-95 disabled:opacity-40 cursor-pointer flex items-center gap-2"
+                  className="bg-[#007F86] text-white px-6 py-3 rounded-2xl text-xs font-bold shadow-sm transition active:scale-95 disabled:opacity-40 cursor-pointer flex items-center gap-2 hover:opacity-90"
                 >
                   {isUpdatingLock ? "Saving Changes..." : "Save Changes"}
                 </button>
@@ -698,8 +698,8 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
         {activeTab === "feedbacks" && (
           <div className="space-y-6 animate-fade-in pb-12">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-black text-foreground">Campus Feedback Hub</h1>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Track student dish quality ratings, comments, and issue resolution status.</p>
+              <h1 className="text-2xl sm:text-3xl font-black text-[#193A40]">Campus Feedback Hub</h1>
+              <p className="text-xs sm:text-sm text-[#193A40]/70 mt-0.5">Track student dish quality ratings, comments, and issue resolution status.</p>
             </div>
             <SuperAdminFeedbackViewer feedbacks={feedbacks} />
           </div>
@@ -709,8 +709,8 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
         {activeTab === "complaints" && (
           <div className="space-y-6 animate-fade-in pb-12">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-black text-foreground">Student Complaints &amp; Error Reports</h1>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Review portal bug reports, service complaints, and manage resolution statuses.</p>
+              <h1 className="text-2xl sm:text-3xl font-black text-[#193A40]">Student Complaints &amp; Error Reports</h1>
+              <p className="text-xs sm:text-sm text-[#193A40]/70 mt-0.5">Review portal bug reports, service complaints, and manage resolution statuses.</p>
             </div>
             <SuperAdminComplaintsViewer complaints={complaints} />
           </div>
@@ -720,27 +720,27 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
         {activeTab === "broadcasts" && (
           <div className="space-y-6 animate-fade-in pb-12">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-black text-foreground">Broadcast Management Console</h1>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Deploy automated meal templates or custom alerts, and govern active notification feeds.</p>
+              <h1 className="text-2xl sm:text-3xl font-black text-[#193A40]">Broadcast Management Console</h1>
+              <p className="text-xs sm:text-sm text-[#193A40]/70 mt-0.5">Deploy automated meal templates or custom alerts, and govern active notification feeds.</p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="rounded-3xl border border-border bg-white p-5 shadow-card flex flex-col justify-between">
+              <div className="rounded-3xl border-2 border-[#B5DED4] bg-white p-5 shadow-sm flex flex-col justify-between">
                 <div>
-                  <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
+                  <h2 className="text-base font-bold text-[#193A40] tracking-tight flex items-center gap-2">
                     <span>🚀</span> Automated Meal Alert Push
                   </h2>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="text-xs text-[#193A40]/70 mt-1 font-medium">
                     Selects active service window, pulls current menu options, and triggers live system push notifications across campus.
                   </p>
 
                   <div className="mt-4 space-y-3">
                     <div>
-                      <label className="block text-xs font-semibold text-muted-foreground mb-1">Active Service Window:</label>
+                      <label className="block text-xs font-bold text-[#193A40] mb-1">Active Service Window:</label>
                       <select
                         value={selectedMealKey}
                         onChange={(e) => setSelectedMealKey(e.target.value as MealKey)}
-                        className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2.5 text-xs font-bold outline-none focus:border-primary focus:bg-white transition cursor-pointer"
+                        className="w-full rounded-xl border-2 border-[#B5DED4] bg-[#E9F7F4]/40 px-3 py-2.5 text-xs font-bold outline-none focus:border-[#007F86] focus:bg-white transition cursor-pointer text-[#193A40]"
                       >
                         {MEAL_DEFS.map((m) => (
                           <option key={m.key} value={m.key}>
@@ -756,28 +756,28 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                   type="button"
                   onClick={handleTriggerMealNotification}
                   disabled={isFiringMealAlert}
-                  className="mt-6 w-full rounded-2xl gradient-warm py-3.5 text-xs font-bold text-white shadow-card transition active:scale-[0.99] disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer"
+                  className="mt-6 w-full rounded-2xl bg-[#007F86] py-3.5 text-xs font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer hover:opacity-90"
                 >
                   <Send className="w-4 h-4" />
                   {isFiringMealAlert ? "Syncing Menu Assets..." : "Transmit Live Meal Alerts to All Devices"}
                 </button>
               </div>
 
-              <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
-                <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
+              <div className="rounded-3xl border-2 border-[#B5DED4] bg-white p-5 shadow-sm">
+                <h2 className="text-base font-bold text-[#193A40] tracking-tight flex items-center gap-2">
                   <span>📢</span> Custom Channel Broadcast
                 </h2>
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className="text-xs text-[#193A40]/70 mt-1 font-medium">
                   Draft announcements and deliver them dynamically to targeted dining facilities or a global campus blast.
                 </p>
 
                 <form onSubmit={handleDeployCustomBroadcast} className="mt-4 space-y-3">
                   <div>
-                    <label className="block text-xs font-semibold text-muted-foreground mb-1">Target Channel Node:</label>
+                    <label className="block text-xs font-bold text-[#193A40] mb-1">Target Channel Node:</label>
                     <select
                       value={targetMessId}
                       onChange={(e) => setTargetMessId(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2.5 text-xs font-semibold outline-none focus:border-primary focus:bg-white transition cursor-pointer"
+                      className="w-full rounded-xl border-2 border-[#B5DED4] bg-[#E9F7F4]/40 px-3 py-2.5 text-xs font-semibold outline-none focus:border-[#007F86] focus:bg-white transition cursor-pointer text-[#193A40]"
                     >
                       <option value="all">🌍 All Messes (Global Broadcast)</option>
                       {allMesses.map((m) => (
@@ -787,19 +787,19 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-muted-foreground mb-1">Heading Title:</label>
+                    <label className="block text-xs font-bold text-[#193A40] mb-1">Heading Title:</label>
                     <input
                       required
                       type="text"
                       value={broadcastTitle}
                       onChange={(e) => setBroadcastTitle(e.target.value)}
                       placeholder="Enter alert header text..."
-                      className="w-full rounded-xl border border-border bg-[#fbf7f2] px-3 py-2 text-xs font-medium outline-none focus:border-primary focus:bg-white transition"
+                      className="w-full rounded-xl border-2 border-[#B5DED4] bg-[#E9F7F4]/40 px-3 py-2 text-xs font-bold outline-none focus:border-[#007F86] focus:bg-white transition text-[#193A40]"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-muted-foreground mb-1">Message Content:</label>
+                    <label className="block text-xs font-bold text-[#193A40] mb-1">Message Content:</label>
                     <textarea
                       required
                       rows={2}
@@ -807,14 +807,14 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                       value={broadcastBody}
                       onChange={(e) => setBroadcastBody(e.target.value)}
                       placeholder="Type your message details here..."
-                      className="w-full resize-none rounded-xl border border-border bg-[#fbf7f2] px-3 py-2 text-xs font-medium outline-none focus:border-primary focus:bg-white transition"
+                      className="w-full resize-none rounded-xl border-2 border-[#B5DED4] bg-[#E9F7F4]/40 px-3 py-2 text-xs font-medium outline-none focus:border-[#007F86] focus:bg-white transition text-[#193A40]"
                     />
                   </div>
 
                   <button
                     type="submit"
                     disabled={isBroadcastingCustom || !broadcastTitle.trim() || !broadcastBody.trim()}
-                    className="w-full rounded-2xl bg-black py-3 text-xs font-bold text-white shadow-card transition active:scale-[0.99] disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full rounded-2xl bg-[#193A40] py-3 text-xs font-bold text-white shadow-sm transition active:scale-[0.99] disabled:opacity-40 flex items-center justify-center gap-2 cursor-pointer hover:opacity-90"
                   >
                     <Send className="w-4 h-4" />
                     {isBroadcastingCustom ? "Dispersing..." : "Disperse Custom Announcement"}
@@ -823,20 +823,20 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
               </div>
             </div>
 
-            <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
-              <div className="flex items-center justify-between pb-3 border-b border-border">
+            <div className="rounded-3xl border-2 border-[#B5DED4] bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between pb-3 border-b border-[#B5DED4]">
                 <div>
-                  <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
+                  <h2 className="text-base font-bold text-[#193A40] tracking-tight flex items-center gap-2">
                     <span>📋</span> Active Broadcast Control Registry
                   </h2>
-                  <p className="text-xs text-muted-foreground mt-0.5">Select and purge outdated broadcast logs in real time.</p>
+                  <p className="text-xs text-[#193A40]/70 mt-0.5 font-medium">Select and purge outdated broadcast logs in real time.</p>
                 </div>
 
                 <button
                   type="button"
                   onClick={handleDeleteSelectedBroadcasts}
                   disabled={selectedIds.length === 0 || isDeleting}
-                  className="rounded-xl bg-red-500 px-3.5 py-2 text-xs font-bold text-white shadow-card transition active:scale-95 disabled:opacity-40 flex items-center gap-1.5 cursor-pointer"
+                  className="rounded-xl bg-red-500 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition active:scale-95 disabled:opacity-40 flex items-center gap-1.5 cursor-pointer hover:bg-red-600"
                 >
                   <Trash2 className="w-4 h-4" />
                   <span>Delete Selected ({selectedIds.length})</span>
@@ -845,17 +845,17 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
 
               <div className="mt-4 overflow-x-auto max-h-[350px] overflow-y-auto pr-1">
                 {broadcastList.length === 0 ? (
-                  <p className="py-8 text-center text-xs italic text-muted-foreground">No active announcements found in Firestore.</p>
+                  <p className="py-8 text-center text-xs italic text-[#193A40]/60 font-medium">No active announcements found in Firestore.</p>
                 ) : (
                   <table className="w-full text-left text-xs whitespace-nowrap">
-                    <thead className="bg-zinc-50 sticky top-0">
-                      <tr className="border-b border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <thead className="bg-[#E9F7F4] sticky top-0">
+                      <tr className="border-b border-[#B5DED4] text-[10px] uppercase tracking-wider text-[#193A40]/70 font-bold">
                         <th className="py-2.5 px-3 w-8">
                           <input
                             type="checkbox"
                             checked={selectedIds.length === broadcastList.length && broadcastList.length > 0}
                             onChange={toggleSelectAll}
-                            className="h-3.5 w-3.5 rounded border-border text-primary cursor-pointer"
+                            className="h-3.5 w-3.5 rounded border-[#B5DED4] text-[#007F86] cursor-pointer"
                           />
                         </th>
                         <th className="py-2.5 px-3">Target Node</th>
@@ -863,23 +863,23 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                         <th className="py-2.5 px-3 text-right">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-border/40">
+                    <tbody className="divide-y divide-[#B5DED4]/60">
                       {broadcastList.map((b) => {
                         const isChecked = selectedIds.includes(b.id);
                         return (
-                          <tr key={b.id} className={`transition hover:bg-[#fbf7f2] ${isChecked ? "bg-red-50/50" : ""}`}>
+                          <tr key={b.id} className={`transition hover:bg-[#E9F7F4]/40 ${isChecked ? "bg-red-50/50" : ""}`}>
                             <td className="py-3 px-3">
                               <input
                                 type="checkbox"
                                 checked={isChecked}
                                 onChange={() => toggleSelectOne(b.id)}
-                                className="h-3.5 w-3.5 rounded border-border text-primary cursor-pointer"
+                                className="h-3.5 w-3.5 rounded border-[#B5DED4] text-[#007F86] cursor-pointer"
                               />
                             </td>
-                            <td className="py-3 px-3 font-bold uppercase text-[10px] text-red-500">
+                            <td className="py-3 px-3 font-bold uppercase text-[10px] text-[#007F86]">
                               {b.messId}
                             </td>
-                            <td className="py-3 px-3 font-medium text-foreground max-w-[280px] truncate">
+                            <td className="py-3 px-3 font-medium text-[#193A40] max-w-[280px] truncate">
                               {b.title}
                             </td>
                             <td className="py-3 px-3 text-right">
@@ -912,8 +912,8 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           <div className="space-y-6 animate-fade-in pb-12">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h1 className="text-2xl sm:text-3xl font-black text-foreground">Student Onboarding Directory</h1>
-                <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Comprehensive real-time directory of every student authenticated on VITMess.</p>
+                <h1 className="text-2xl sm:text-3xl font-black text-[#193A40]">Student Onboarding Directory</h1>
+                <p className="text-xs sm:text-sm text-[#193A40]/70 mt-0.5 font-medium">Comprehensive real-time directory of every student authenticated on VITMESS.</p>
               </div>
               <button
                 type="button"
@@ -931,45 +931,45 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
                   const ws = XLSX.utils.json_to_sheet(rows);
                   const wb = XLSX.utils.book_new();
                   XLSX.utils.book_append_sheet(wb, ws, "StudentDirectory");
-                  XLSX.writeFile(wb, `MessHub_Students_${new Date().toISOString().split("T")[0]}.xlsx`);
+                  XLSX.writeFile(wb, `VITMESS_Students_${new Date().toISOString().split("T")[0]}.xlsx`);
                   logSuperAdminActivity("all", "Export Students", "Super Admin exported student directory to Excel");
                 }}
-                className="gradient-warm text-white px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-card transition active:scale-95 cursor-pointer self-start sm:self-auto"
+                className="bg-[#007F86] text-white px-4 py-2.5 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-sm transition active:scale-95 cursor-pointer self-start sm:self-auto hover:opacity-90"
               >
                 <Download className="w-4 h-4" /> Export Student Directory to Excel
               </button>
             </div>
 
-            <div className="bg-white rounded-3xl border border-border p-5 shadow-card">
-              <div className="flex items-center justify-between pb-3 border-b border-border">
-                <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
+            <div className="bg-white rounded-3xl border-2 border-[#B5DED4] p-5 shadow-sm">
+              <div className="pb-3 border-b border-[#B5DED4] flex items-center justify-between">
+                <h2 className="text-sm font-bold text-[#193A40] flex items-center gap-2">
                   <span>👥</span> Active Onboarded Profiles
                 </h2>
-                <span className="rounded-full bg-emerald-100 text-emerald-700 font-bold px-3 py-1 text-xs">
+                <span className="rounded-full bg-emerald-100 text-emerald-800 font-bold px-3 py-1 text-xs">
                   Total Students: {students.length}
                 </span>
               </div>
 
               <div className="mt-4 overflow-x-auto max-h-[500px] overflow-y-auto">
                 {students.length === 0 ? (
-                  <p className="py-12 text-center text-xs italic text-muted-foreground">No student onboarding entries recorded yet.</p>
+                  <p className="py-12 text-center text-xs italic text-[#193A40]/60 font-medium">No student onboarding entries recorded yet.</p>
                 ) : (
                   <table className="w-full text-left text-xs whitespace-nowrap">
-                    <thead className="bg-zinc-50 sticky top-0">
-                      <tr className="border-b border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <thead className="bg-[#E9F7F4] sticky top-0">
+                      <tr className="border-b border-[#B5DED4] text-[10px] uppercase tracking-wider text-[#193A40]/70 font-bold">
                         <th className="py-3 px-4">Student Name</th>
                         <th className="py-3 px-4">Email</th>
                         <th className="py-3 px-4">Assigned Mess</th>
                         <th className="py-3 px-4 text-right">Joined / Last Active</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-border/40">
+                    <tbody className="divide-y divide-[#B5DED4]/60">
                       {students.map((student, idx) => (
-                        <tr key={student.id || idx} className="transition hover:bg-[#fbf7f2]">
-                          <td className="py-3.5 px-4 font-bold text-foreground">{student.name || "Anonymous"}</td>
-                          <td className="py-3.5 px-4 text-muted-foreground">{student.email || "N/A"}</td>
-                          <td className="py-3.5 px-4 font-bold uppercase text-[10px] text-red-500">{student.messId || "N/A"}</td>
-                          <td className="py-3.5 px-4 text-right text-muted-foreground text-[10px]">
+                        <tr key={student.id || idx} className="transition hover:bg-[#E9F7F4]/40">
+                          <td className="py-3.5 px-4 font-bold text-[#193A40]">{student.name || "Anonymous"}</td>
+                          <td className="py-3.5 px-4 text-[#193A40]/70">{student.email || "N/A"}</td>
+                          <td className="py-3.5 px-4 font-bold uppercase text-[10px] text-[#007F86]">{student.messId || "N/A"}</td>
+                          <td className="py-3.5 px-4 text-right text-[#193A40]/60 text-[10px] font-medium">
                             {student.lastActiveAt?.toDate ? student.lastActiveAt.toDate().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : "Just now"}
                           </td>
                         </tr>
@@ -996,39 +996,39 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
         {activeTab === "audit" && (
           <div className="space-y-6 animate-fade-in pb-12">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-black text-foreground">Platform Audit Logs</h1>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Immutable record of all super admin and operator actions across campus.</p>
+              <h1 className="text-2xl sm:text-3xl font-black text-[#193A40]">Platform Audit Logs</h1>
+              <p className="text-xs sm:text-sm text-[#193A40]/70 mt-0.5 font-medium">Immutable record of all super admin and operator actions across campus.</p>
             </div>
 
-            <div className="bg-white rounded-3xl border border-border p-5 shadow-card">
-              <div className="flex items-center justify-between pb-3 border-b border-border">
-                <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
-                  <History className="w-4 h-4 text-primary" /> System Events Feed
+            <div className="bg-white rounded-3xl border-2 border-[#B5DED4] p-5 shadow-sm">
+              <div className="pb-3 border-b border-[#B5DED4] flex items-center justify-between">
+                <h2 className="text-sm font-bold text-[#193A40] flex items-center gap-2">
+                  <History className="w-4 h-4 text-[#007F86]" /> System Events Feed
                 </h2>
-                <span className="rounded-full bg-zinc-100 text-zinc-700 font-bold px-3 py-1 text-xs">
+                <span className="rounded-full bg-[#E9F7F4] text-[#007F86] font-bold px-3 py-1 text-xs border border-[#B5DED4]">
                   {auditLogs.length} Operations Logged
                 </span>
               </div>
 
               <div className="mt-4 space-y-2 max-h-[600px] overflow-y-auto pr-1">
                 {auditLogs.length === 0 ? (
-                  <p className="py-12 text-center text-xs italic text-muted-foreground">No audit logs recorded yet.</p>
+                  <p className="py-12 text-center text-xs italic text-[#193A40]/60 font-medium">No audit logs recorded yet.</p>
                 ) : (
                   auditLogs.map((log) => (
-                    <div key={log.id} className="p-3.5 bg-[#fbf7f2] border border-border/80 rounded-2xl flex items-start justify-between gap-3 text-xs">
+                    <div key={log.id} className="p-3.5 bg-[#E9F7F4]/40 border-2 border-[#B5DED4] rounded-2xl flex items-start justify-between gap-3 text-xs">
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-foreground">{log.action}</span>
-                          <span className="text-[9px] font-bold uppercase bg-zinc-200 text-zinc-700 px-1.5 py-0.5 rounded">
+                          <span className="font-bold text-[#193A40]">{log.action}</span>
+                          <span className="text-[9px] font-bold uppercase bg-white text-[#007F86] px-1.5 py-0.2 rounded border border-[#B5DED4]">
                             {log.operatorRole || "admin"}
                           </span>
-                          <span className="text-[9px] font-bold uppercase bg-orange-100 text-orange-800 px-1.5 py-0.5 rounded">
+                          <span className="text-[9px] font-bold uppercase bg-teal-100 text-teal-800 px-1.5 py-0.2 rounded">
                             {log.messId}
                           </span>
                         </div>
-                        <p className="text-muted-foreground text-[11px] font-medium">{log.details}</p>
+                        <p className="text-[#193A40]/75 text-[11px] font-medium">{log.details}</p>
                       </div>
-                      <span className="text-[10px] text-muted-foreground/70 font-semibold shrink-0">
+                      <span className="text-[10px] text-[#193A40]/60 font-semibold shrink-0">
                         {log.timestamp?.toDate ? log.timestamp.toDate().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : "Just now"}
                       </span>
                     </div>
@@ -1316,7 +1316,7 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
     const sanitizedFileNameMess = selectedMessId.replace(/[^a-zA-Z0-9_-]/g, "");
     XLSX.writeFile(
       wb,
-      `MessHub_Detailed_Audit_${sanitizedFileNameMess.toUpperCase()}_${new Date().toISOString().split("T")[0]}.xlsx`
+      `VITMESS_Detailed_Audit_${sanitizedFileNameMess.toUpperCase()}_${new Date().toISOString().split("T")[0]}.xlsx`
     );
 
     logSuperAdminActivity(
@@ -1343,23 +1343,23 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
   }, [dishGroupAnalytics, selectedMeal, searchQuery]);
 
   return (
-    <div className="space-y-6 animate-fade-in pb-12">
+    <div className="space-y-6 animate-fade-in pb-12 text-[#193A40]">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-foreground">Dish Ratings &amp; Telemetry</h1>
-          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-            Full itemized rating distributions across meal counters for <span className="font-bold text-primary">{selectedMessId.toUpperCase()}</span>.
+          <h1 className="text-2xl sm:text-3xl font-black text-[#193A40]">Dish Ratings &amp; Telemetry</h1>
+          <p className="text-xs sm:text-sm text-[#193A40]/70 mt-0.5 font-medium">
+            Full itemized rating distributions across meal counters for <span className="font-bold text-[#007F86]">{selectedMessId.toUpperCase()}</span>.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1 bg-white border border-border p-1 rounded-2xl shadow-card">
+          <div className="flex items-center gap-1 bg-white border-2 border-[#B5DED4] p-1 rounded-2xl shadow-sm">
             {(["day", "week", "month", "all"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTimeRange(t)}
-                className={`px-3 py-1.5 text-[11px] font-bold rounded-xl capitalize transition cursor-pointer ${
-                  timeRange === t ? "bg-foreground text-background shadow-xs" : "text-muted-foreground hover:text-foreground"
+                className={`px-3 py-1.5 text-[11px] font-bold rounded-lg capitalize transition cursor-pointer ${
+                  timeRange === t ? "bg-[#007F86] text-white shadow-xs" : "text-[#193A40]/70 hover:text-[#193A40]"
                 }`}
               >
                 {t === "day" ? "Today" : t === "week" ? "Past 7 Days" : t === "month" ? "This Month" : "All Time"}
@@ -1367,11 +1367,11 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
             ))}
           </div>
 
-          <div className="flex items-center gap-2 bg-white border border-border p-1.5 rounded-2xl shadow-card">
+          <div className="flex items-center gap-2 bg-white border-2 border-[#B5DED4] p-1.5 rounded-2xl shadow-sm">
             <select
               value={selectedMessId}
               onChange={(e) => setSelectedMessId(e.target.value)}
-              className="rounded-xl border border-border bg-[#fbf7f2] px-3 py-1.5 text-xs font-bold outline-none focus:border-primary cursor-pointer"
+              className="rounded-xl border border-[#B5DED4] bg-[#E9F7F4]/40 px-3 py-1.5 text-xs font-bold outline-none focus:border-[#007F86] cursor-pointer text-[#193A40]"
             >
               {allMesses.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -1384,7 +1384,7 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
           <button
             type="button"
             onClick={exportCleanMealReportToExcel}
-            className="gradient-warm text-white px-4 py-2.5 rounded-2xl text-xs font-bold shadow-card transition active:scale-95 flex items-center gap-2 cursor-pointer"
+            className="bg-[#007F86] text-white px-4 py-2.5 rounded-2xl text-xs font-bold shadow-sm transition active:scale-95 flex items-center gap-2 cursor-pointer hover:opacity-90"
           >
             <Download className="w-4 h-4" /> Export Report to Excel
           </button>
@@ -1392,50 +1392,50 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white p-5 rounded-3xl border border-border shadow-card flex items-center justify-between">
+        <div className="bg-white p-5 rounded-3xl border-2 border-[#B5DED4] shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1">Facility Average</p>
-            <p className="text-3xl font-black text-foreground flex items-center gap-1.5">
+            <p className="text-xs font-bold text-[#193A40]/70 uppercase tracking-widest mb-1">Facility Average</p>
+            <p className="text-3xl font-black text-[#193A40] flex items-center gap-1.5">
               {overallFacilityMetrics.avg} <span className="text-amber-500 text-xl">⭐</span>
             </p>
           </div>
-          <div className="p-3.5 rounded-2xl bg-amber-50 text-amber-600">
+          <div className="p-3.5 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200">
             <Star className="w-6 h-6 fill-amber-500" />
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-3xl border border-border shadow-card flex items-center justify-between">
+        <div className="bg-white p-5 rounded-3xl border-2 border-[#B5DED4] shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1">Total Dish Reviews</p>
-            <p className="text-3xl font-black text-foreground">{overallFacilityMetrics.total}</p>
+            <p className="text-xs font-bold text-[#193A40]/70 uppercase tracking-widest mb-1">Total Dish Reviews</p>
+            <p className="text-3xl font-black text-[#193A40]">{overallFacilityMetrics.total}</p>
           </div>
-          <div className="p-3.5 rounded-2xl bg-blue-50 text-blue-600">
+          <div className="p-3.5 rounded-2xl bg-[#007F86]/10 text-[#007F86] border border-[#007F86]/20">
             <MessageSquare className="w-6 h-6" />
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-3xl border border-border shadow-card flex items-center justify-between">
+        <div className="bg-white p-5 rounded-3xl border-2 border-[#B5DED4] shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1">Live Meal Serving</p>
-            <p className="text-2xl font-black text-foreground capitalize flex items-center gap-1.5">
+            <p className="text-xs font-bold text-[#193A40]/70 uppercase tracking-widest mb-1">Live Meal Serving</p>
+            <p className="text-2xl font-black text-[#193A40] capitalize flex items-center gap-1.5">
               {liveMeal ? `${liveMeal.name}` : "Off Hours"}
             </p>
           </div>
-          <div className="p-3.5 rounded-2xl bg-orange-50 text-orange-600">
+          <div className="p-3.5 rounded-2xl bg-[#007F86]/10 text-[#007F86] border border-[#007F86]/20">
             <Utensils className="w-6 h-6" />
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl border border-border p-2.5 shadow-card flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="bg-white rounded-3xl border-2 border-[#B5DED4] p-2.5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
           <button
             type="button"
             onClick={() => setSelectedMeal("all")}
             className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
               selectedMeal === "all"
-                ? "bg-[#221510] text-white shadow-xs"
-                : "text-muted-foreground hover:bg-zinc-100 hover:text-foreground"
+                ? "bg-[#007F86] text-white shadow-xs"
+                : "text-[#193A40]/70 hover:bg-[#E9F7F4] hover:text-[#193A40]"
             }`}
           >
             All Meals
@@ -1452,8 +1452,8 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
                 onClick={() => setSelectedMeal(m.key)}
                 className={`relative px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   isSelected
-                    ? "bg-[#221510] text-white shadow-xs"
-                    : "text-muted-foreground hover:bg-zinc-100 hover:text-foreground"
+                    ? "bg-[#007F86] text-white shadow-xs"
+                    : "text-[#193A40]/70 hover:bg-[#E9F7F4] hover:text-[#193A40]"
                 }`}
               >
                 <span>{m.icon}</span>
@@ -1467,34 +1467,34 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
         </div>
 
         <div className="relative w-full sm:w-64">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-muted-foreground" />
+          <Search className="w-3.5 h-3.5 absolute left-3 top-3 text-[#193A40]/50" />
           <input
             type="text"
             placeholder="Search dish in spread..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-xl border border-border bg-[#fbf7f2] pl-8 pr-3 py-1.5 text-xs font-medium outline-none focus:border-primary"
+            className="w-full rounded-xl border-2 border-[#B5DED4] bg-[#E9F7F4]/40 pl-8 pr-3 py-1.5 text-xs font-medium outline-none focus:border-[#007F86] text-[#193A40]"
           />
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl border border-border p-5 shadow-card">
-        <div className="pb-3 border-b border-border flex items-center justify-between">
-          <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
-            <Utensils className="w-4 h-4 text-primary" /> Active Dish Spread ({activeCategoryList.length} items)
+      <div className="bg-white rounded-3xl border-2 border-[#B5DED4] p-5 shadow-sm">
+        <div className="pb-3 border-b border-[#B5DED4] flex items-center justify-between">
+          <h2 className="text-sm font-bold text-[#193A40] flex items-center gap-2">
+            <Utensils className="w-4 h-4 text-[#007F86]" /> Active Dish Spread ({activeCategoryList.length} items)
           </h2>
-          <span className="text-[10px] font-bold bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded-md uppercase">
+          <span className="text-[10px] font-bold bg-[#E9F7F4] text-[#007F86] px-2 py-0.5 rounded-md uppercase border border-[#B5DED4]">
             {selectedMeal === "all" ? "Combined Spread" : `${selectedMeal} Session`}
           </span>
         </div>
 
         <div className="mt-4 overflow-x-auto max-h-[550px] overflow-y-auto">
           {activeCategoryList.length === 0 ? (
-            <p className="py-12 text-center text-xs italic text-muted-foreground">No dishes found for this meal category or search query.</p>
+            <p className="py-12 text-center text-xs italic text-[#193A40]/60 font-medium">No dishes found for this meal category or search query.</p>
           ) : (
             <table className="w-full text-left text-xs whitespace-nowrap">
-              <thead className="bg-zinc-50 sticky top-0">
-                <tr className="border-b border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
+              <thead className="bg-[#E9F7F4] sticky top-0">
+                <tr className="border-b border-[#B5DED4] text-[10px] uppercase tracking-wider text-[#193A40]/70 font-bold">
                   <th className="py-3 px-4">Dish Name</th>
                   <th className="py-3 px-4">Meal</th>
                   <th className="py-3 px-4">Average Rating</th>
@@ -1502,42 +1502,42 @@ function MessDishRatingsTab({ allMesses, rawFeedbacks }: { allMesses: any[]; raw
                   <th className="py-3 px-4">Star Distribution (5★ to 1★)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border/40">
+              <tbody className="divide-y divide-[#B5DED4]/60">
                 {activeCategoryList.map((dish, idx) => (
-                  <tr key={idx} className="transition hover:bg-[#fbf7f2]">
-                    <td className="py-3.5 px-4 font-bold text-foreground">
+                  <tr key={idx} className="transition hover:bg-[#E9F7F4]/40">
+                    <td className="py-3.5 px-4 font-bold text-[#193A40]">
                       {dish.name}
                     </td>
-                    <td className="py-3.5 px-4 font-bold text-[10px] uppercase text-zinc-500">
+                    <td className="py-3.5 px-4 font-bold text-[10px] uppercase text-[#007F86]">
                       {dish.mealKey}
                     </td>
                     <td className="py-3.5 px-4 font-black text-sm">
                       {dish.avg === "Unrated" ? (
-                        <span className="text-zinc-400 font-semibold text-xs">Unrated</span>
+                        <span className="text-[#193A40]/50 font-semibold text-xs">Unrated</span>
                       ) : (
                         <span className="text-amber-600 flex items-center gap-1">
                           {dish.avg} <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
                         </span>
                       )}
                     </td>
-                    <td className="py-3.5 px-4 font-semibold text-muted-foreground">
+                    <td className="py-3.5 px-4 font-semibold text-[#193A40]/70">
                       {dish.count} reviews
                     </td>
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-1.5 text-[10px] font-bold">
-                        <span className="bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-200">
+                        <span className="bg-emerald-50 text-emerald-800 px-1.5 py-0.5 rounded border border-emerald-200">
                           5★: {dish.stars[5]}
                         </span>
-                        <span className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200">
+                        <span className="bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200">
                           4★: {dish.stars[4]}
                         </span>
-                        <span className="bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded border border-amber-200">
+                        <span className="bg-amber-50 text-amber-800 px-1.5 py-0.5 rounded border border-amber-200">
                           3★: {dish.stars[3]}
                         </span>
-                        <span className="bg-orange-50 text-orange-700 px-1.5 py-0.5 rounded border border-orange-200">
+                        <span className="bg-orange-50 text-orange-800 px-1.5 py-0.5 rounded border border-orange-200">
                           2★: {dish.stars[2]}
                         </span>
-                        <span className="bg-red-50 text-red-700 px-1.5 py-0.5 rounded border border-red-200">
+                        <span className="bg-red-50 text-red-800 px-1.5 py-0.5 rounded border border-red-200">
                           1★: {dish.stars[1]}
                         </span>
                       </div>
@@ -1559,16 +1559,16 @@ function MetricCard({ title, value, icon: Icon, color, alert, onClick }: any) {
   return (
     <div 
       onClick={onClick}
-      className={`bg-white p-5 rounded-3xl border border-border shadow-card flex items-center justify-between relative overflow-hidden transition ${
-        onClick ? "cursor-pointer hover:border-primary hover:shadow-lg active:scale-[0.99]" : ""
+      className={`bg-white p-5 rounded-3xl border-2 border-[#B5DED4] shadow-sm flex items-center justify-between relative overflow-hidden transition ${
+        onClick ? "cursor-pointer hover:border-[#007F86] hover:shadow-md active:scale-[0.99]" : ""
       }`}
     >
       {alert && <span className="absolute top-0 right-0 w-2 h-full bg-red-500 animate-pulse" />}
       <div>
-        <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-1">{title}</p>
-        <p className="text-3xl font-black text-foreground">{value}</p>
+        <p className="text-xs font-bold text-[#193A40]/70 uppercase tracking-widest mb-1">{title}</p>
+        <p className="text-3xl font-black text-[#193A40]">{value}</p>
       </div>
-      <div className={`p-3.5 rounded-2xl ${color}`}>
+      <div className={`p-3.5 rounded-2xl ${color} border border-[#B5DED4]/40`}>
         <Icon className="w-6 h-6" />
       </div>
     </div>
@@ -1619,21 +1619,21 @@ function SuperAdminFeedbackViewer({ feedbacks }: { feedbacks: ItemFeedback[] }) 
     const ws = XLSX.utils.json_to_sheet(exportRows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "CampusFeedback");
-    XLSX.writeFile(wb, `MessHub_Feedback_${timeRange}_${new Date().toISOString().split("T")[0]}.xlsx`);
+    XLSX.writeFile(wb, `VITMESS_Feedback_${timeRange}_${new Date().toISOString().split("T")[0]}.xlsx`);
     logSuperAdminActivity("all", "Export Feedbacks", "Super Admin exported campus feedbacks to Excel");
   }
 
   return (
-    <div className="bg-white border border-border rounded-3xl p-5 shadow-card space-y-4">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-border">
+    <div className="bg-white border-2 border-[#B5DED4] rounded-3xl p-5 shadow-sm space-y-4 text-[#193A40]">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-[#B5DED4]">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl border border-border w-fit">
+          <div className="flex items-center gap-1 bg-[#E9F7F4] p-1 rounded-xl border border-[#B5DED4] w-fit">
             {(["all", "unsolved", "solved"] as const).map((type) => (
               <button
                 key={type}
                 onClick={() => setFilter(type)}
                 className={`px-3 py-1.5 text-[11px] font-bold rounded-lg capitalize transition cursor-pointer ${
-                  filter === type ? "bg-foreground text-background shadow-xs" : "text-muted-foreground hover:text-foreground"
+                  filter === type ? "bg-[#007F86] text-white shadow-xs" : "text-[#193A40]/70 hover:text-[#193A40]"
                 }`}
               >
                 {type}
@@ -1641,13 +1641,13 @@ function SuperAdminFeedbackViewer({ feedbacks }: { feedbacks: ItemFeedback[] }) 
             ))}
           </div>
 
-          <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl border border-border w-fit">
+          <div className="flex items-center gap-1 bg-[#E9F7F4] p-1 rounded-xl border border-[#B5DED4] w-fit">
             {(["day", "week", "month", "all"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTimeRange(t)}
                 className={`px-3 py-1.5 text-[11px] font-bold rounded-lg capitalize transition cursor-pointer ${
-                  timeRange === t ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                  timeRange === t ? "bg-[#007F86] text-white shadow-xs" : "text-[#193A40]/70 hover:text-[#193A40]"
                 }`}
               >
                 {t === "day" ? "Today" : t === "week" ? "Past Week" : t === "month" ? "This Month" : "All Time"}
@@ -1659,7 +1659,7 @@ function SuperAdminFeedbackViewer({ feedbacks }: { feedbacks: ItemFeedback[] }) 
         <button
           type="button"
           onClick={exportFeedbackToExcel}
-          className="text-xs font-bold text-slate-700 bg-background hover:bg-slate-100 border border-border px-3 py-2 rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-2xs self-start lg:self-auto"
+          className="text-xs font-bold text-[#193A40] bg-[#E9F7F4] hover:bg-[#B5DED4]/30 border border-[#B5DED4] px-3 py-2 rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-2xs self-start lg:self-auto"
         >
           <Download className="w-3.5 h-3.5 text-emerald-600" /> Export Filtered Feedbacks
         </button>
@@ -1667,15 +1667,15 @@ function SuperAdminFeedbackViewer({ feedbacks }: { feedbacks: ItemFeedback[] }) 
 
       <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1">
         {filtered.length === 0 ? (
-          <p className="py-12 text-center text-xs italic text-muted-foreground">No feedback entries found matching timeframe &amp; filter.</p>
+          <p className="py-12 text-center text-xs italic text-[#193A40]/60 font-medium">No feedback entries found matching timeframe &amp; filter.</p>
         ) : (
           filtered.map((item) => {
             const isSolved = item.status === "solved";
             return (
               <div 
                 key={item.id} 
-                className={`p-4 rounded-2xl border transition-all flex items-start gap-4 ${
-                  isSolved ? "bg-emerald-50/40 border-emerald-300 opacity-70" : "bg-white border-border shadow-xs"
+                className={`p-4 rounded-2xl border-2 transition-all flex items-start gap-4 ${
+                  isSolved ? "bg-emerald-50/40 border-emerald-300 opacity-70" : "bg-white border-[#B5DED4] shadow-xs"
                 }`}
               >
                 <button
@@ -1689,16 +1689,16 @@ function SuperAdminFeedbackViewer({ feedbacks }: { feedbacks: ItemFeedback[] }) 
                       `Toggled feedback for "${item.itemName}" to ${isSolved ? "Unsolved" : "Solved"}`
                     );
                   }}
-                  className="mt-1 shrink-0 text-primary hover:scale-110 transition cursor-pointer"
+                  className="mt-1 shrink-0 text-[#007F86] hover:scale-110 transition cursor-pointer"
                   title={isSolved ? "Mark Unsolved" : "Mark Solved"}
                 >
-                  {isSolved ? <CheckSquare className="w-5 h-5 text-emerald-600 fill-emerald-100" /> : <Square className="w-5 h-5 text-zinc-400" />}
+                  {isSolved ? <CheckSquare className="w-5 h-5 text-emerald-600 fill-emerald-100" /> : <Square className="w-5 h-5 text-[#193A40]/40" />}
                 </button>
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <span className={`font-bold text-sm truncate ${isSolved ? "line-through text-muted-foreground" : "text-foreground"}`}>
-                      {item.itemName} <span className="uppercase text-[10px] text-muted-foreground ml-1 font-semibold">({item.mealKey})</span>
+                    <span className={`font-bold text-sm truncate ${isSolved ? "line-through text-[#193A40]/60" : "text-[#193A40]"}`}>
+                      {item.itemName} <span className="uppercase text-[10px] text-[#007F86] ml-1 font-bold">({item.mealKey})</span>
                     </span>
                     <div className="flex items-center gap-0.5 shrink-0">
                       {[1, 2, 3, 4, 5].map((star) => (
@@ -1707,28 +1707,28 @@ function SuperAdminFeedbackViewer({ feedbacks }: { feedbacks: ItemFeedback[] }) 
                     </div>
                   </div>
 
-                  <div className="text-[11px] text-muted-foreground font-medium flex items-center gap-2 mt-1">
+                  <div className="text-[11px] text-[#193A40]/70 font-medium flex items-center gap-2 mt-1">
                     <span>👤 {item.studentName} {item.studentEmail ? `(${item.studentEmail})` : ""}</span>
-                    <span className="w-1 h-1 rounded-full bg-zinc-300" />
-                    <span className="bg-zinc-100 text-zinc-700 px-2 py-0.5 rounded uppercase font-bold text-[9px] tracking-wider">{item.messId}</span>
-                    <span className="text-[10px] text-zinc-400 ml-auto">
+                    <span className="w-1 h-1 rounded-full bg-[#B5DED4]" />
+                    <span className="bg-[#E9F7F4] text-[#007F86] px-2 py-0.5 rounded uppercase font-bold text-[9px] tracking-wider border border-[#B5DED4]">{item.messId}</span>
+                    <span className="text-[10px] text-[#193A40]/50 ml-auto font-medium">
                       {item.createdAt?.toDate ? item.createdAt.toDate().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : "Recent"}
                     </span>
                   </div>
 
                   {item.comment && (
-                    <p className={`text-xs italic p-2.5 rounded-xl mt-2 border ${isSolved ? "bg-zinc-50 text-zinc-400 line-through border-zinc-200" : "bg-[#fbf7f2] text-foreground border-border/60"}`}>
+                    <p className={`text-xs italic p-2.5 rounded-xl mt-2 border ${isSolved ? "bg-[#E9F7F4]/40 text-[#193A40]/50 line-through border-[#B5DED4]" : "bg-[#E9F7F4]/30 text-[#193A40] border-[#B5DED4]"}`}>
                       "{item.comment}"
                     </p>
                   )}
 
                   <div className="pt-2 flex justify-end">
                     {isSolved ? (
-                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full">
+                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full">
                         <CheckCircle className="w-3 h-3 text-emerald-600" /> Resolved &amp; Solved
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full">
+                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded-full">
                         <AlertCircle className="w-3 h-3 text-amber-600" /> Action Required (Pending)
                       </span>
                     )}
@@ -1819,21 +1819,21 @@ function SuperAdminComplaintsViewer({ complaints }: { complaints: any[] }) {
     const ws = XLSX.utils.json_to_sheet(exportRows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "CampusComplaints");
-    XLSX.writeFile(wb, `MessHub_Complaints_${timeRange}_${new Date().toISOString().split("T")[0]}.xlsx`);
+    XLSX.writeFile(wb, `VITMESS_Complaints_${timeRange}_${new Date().toISOString().split("T")[0]}.xlsx`);
     logSuperAdminActivity("all", "Export Complaints", "Super Admin exported complaints to Excel");
   }
 
   return (
-    <div className="bg-white border border-border rounded-3xl p-5 shadow-card space-y-4">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-border">
+    <div className="bg-white border-2 border-[#B5DED4] rounded-3xl p-5 shadow-sm space-y-4 text-[#193A40]">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-[#B5DED4]">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl border border-border w-fit">
+          <div className="flex items-center gap-1 bg-[#E9F7F4] p-1 rounded-xl border border-[#B5DED4] w-fit">
             {(["all", "unsolved", "solved"] as const).map((type) => (
               <button
                 key={type}
                 onClick={() => setFilter(type)}
                 className={`px-3 py-1.5 text-[11px] font-bold rounded-lg capitalize transition cursor-pointer ${
-                  filter === type ? "bg-foreground text-background shadow-xs" : "text-muted-foreground hover:text-foreground"
+                  filter === type ? "bg-[#007F86] text-white shadow-xs" : "text-[#193A40]/70 hover:text-[#193A40]"
                 }`}
               >
                 {type}
@@ -1841,13 +1841,13 @@ function SuperAdminComplaintsViewer({ complaints }: { complaints: any[] }) {
             ))}
           </div>
 
-          <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl border border-border w-fit">
+          <div className="flex items-center gap-1 bg-[#E9F7F4] p-1 rounded-xl border border-[#B5DED4] w-fit">
             {(["day", "week", "month", "all"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTimeRange(t)}
                 className={`px-3 py-1.5 text-[11px] font-bold rounded-lg capitalize transition cursor-pointer ${
-                  timeRange === t ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                  timeRange === t ? "bg-[#007F86] text-white shadow-xs" : "text-[#193A40]/70 hover:text-[#193A40]"
                 }`}
               >
                 {t === "day" ? "Today" : t === "week" ? "Past Week" : t === "month" ? "This Month" : "All Time"}
@@ -1859,7 +1859,7 @@ function SuperAdminComplaintsViewer({ complaints }: { complaints: any[] }) {
         <button
           type="button"
           onClick={exportComplaintsToExcel}
-          className="text-xs font-bold text-slate-700 bg-background hover:bg-slate-100 border border-border px-3 py-2 rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-2xs self-start lg:self-auto"
+          className="text-xs font-bold text-[#193A40] bg-[#E9F7F4] hover:bg-[#B5DED4]/30 border border-[#B5DED4] px-3 py-2 rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-2xs self-start lg:self-auto"
         >
           <Download className="w-3.5 h-3.5 text-emerald-600" /> Export Filtered Complaints
         </button>
@@ -1867,51 +1867,51 @@ function SuperAdminComplaintsViewer({ complaints }: { complaints: any[] }) {
 
       <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1">
         {filtered.length === 0 ? (
-          <p className="py-12 text-center text-xs italic text-muted-foreground">No complaint records found matching timeframe &amp; filter.</p>
+          <p className="py-12 text-center text-xs italic text-[#193A40]/60 font-medium">No complaint records found matching timeframe &amp; filter.</p>
         ) : (
           filtered.map((item) => {
             const isSolved = item.status === "solved";
             return (
               <div 
                 key={item.id} 
-                className={`p-4 rounded-2xl border transition-all flex items-start gap-4 ${
-                  isSolved ? "bg-emerald-50/40 border-emerald-300 opacity-70" : "bg-white border-border shadow-xs"
+                className={`p-4 rounded-2xl border-2 transition-all flex items-start gap-4 ${
+                  isSolved ? "bg-emerald-50/40 border-emerald-300 opacity-70" : "bg-white border-[#B5DED4] shadow-xs"
                 }`}
               >
                 <button
                   type="button"
                   onClick={() => handleToggleComplaintStatus(item)}
-                  className="mt-1 shrink-0 text-primary hover:scale-110 transition cursor-pointer"
+                  className="mt-1 shrink-0 text-[#007F86] hover:scale-110 transition cursor-pointer"
                   title={isSolved ? "Mark Unsolved" : "Mark Solved"}
                 >
-                  {isSolved ? <CheckSquare className="w-5 h-5 text-emerald-600 fill-emerald-100" /> : <Square className="w-5 h-5 text-zinc-400" />}
+                  {isSolved ? <CheckSquare className="w-5 h-5 text-emerald-600 fill-emerald-100" /> : <Square className="w-5 h-5 text-[#193A40]/40" />}
                 </button>
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <span className={`font-bold text-sm truncate ${isSolved ? "line-through text-muted-foreground" : "text-foreground"}`}>
-                      {item.category || "Report / Issue"} <span className="uppercase text-[10px] text-muted-foreground ml-1 font-semibold">({item.messId || "General"})</span>
+                    <span className={`font-bold text-sm truncate ${isSolved ? "line-through text-[#193A40]/60" : "text-[#193A40]"}`}>
+                      {item.category || "Report / Issue"} <span className="uppercase text-[10px] text-[#007F86] ml-1 font-bold">({item.messId || "General"})</span>
                     </span>
                     <button
                       type="button"
                       onClick={() => handleDeleteComplaint(item)}
-                      className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                      className="p-1.5 text-[#193A40]/50 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
                       title="Delete complaint report"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
 
-                  <div className="text-[11px] text-muted-foreground font-medium flex items-center gap-2 mt-1">
+                  <div className="text-[11px] text-[#193A40]/70 font-medium flex items-center gap-2 mt-1">
                     <span>👤 {item.studentName || "Anonymous"} {item.email ? `(${item.email})` : ""}</span>
-                    <span className="w-1 h-1 rounded-full bg-zinc-300" />
-                    <span className="text-[10px] text-zinc-400 ml-auto">
+                    <span className="w-1 h-1 rounded-full bg-[#B5DED4]" />
+                    <span className="text-[10px] text-[#193A40]/50 ml-auto font-medium">
                       {item.createdAt?.toDate ? item.createdAt.toDate().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : "Recent"}
                     </span>
                   </div>
 
                   {(item.message || item.issue_or_feedback) && (
-                    <p className={`text-xs italic p-2.5 rounded-xl mt-2 border ${isSolved ? "bg-zinc-50 text-zinc-400 line-through border-zinc-200" : "bg-[#fbf7f2] text-foreground border-border/60"}`}>
+                    <p className={`text-xs italic p-2.5 rounded-xl mt-2 border ${isSolved ? "bg-[#E9F7F4]/40 text-[#193A40]/50 line-through border-[#B5DED4]" : "bg-[#E9F7F4]/30 text-[#193A40] border-[#B5DED4]"}`}>
                       "{item.message || item.issue_or_feedback}"
                     </p>
                   )}

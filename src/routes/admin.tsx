@@ -2,10 +2,8 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState, useEffect, useRef } from "react";
 import * as XLSX from "xlsx";
 import {
-  // DEFAULT_WEEKLY,
   MEAL_DEFS,
   MESSES,
-  dateKey,
   getOverrides,
   saveOverrides,
   getAdminSession,
@@ -13,18 +11,15 @@ import {
   clearAdminSession,
   verifyAdminPasscode,
   sendBroadcast,
-  // HARDCODED_WEEKLY_MENUS,
   toggleFeedbackStatus,
-  saveFirestoreOverride,
   deleteFirestoreOverride,
+  saveFirestoreOverride,
   type DayMenu,
   type MealKey,
   type MessId,
-  type DayMenuWithNutrition,
   type ItemFeedback,
   type SpecialOverride,
   type NutritionDishItem,
-  type Overrides,
 } from "@/lib/messhub";
 import { db } from "@/lib/firebase";
 import {  
@@ -44,11 +39,8 @@ import {
   Plus, 
   Trash2, 
   Save, 
-  CheckCircle2, 
   AlertCircle, 
   Lock, 
-  CheckSquare, 
-  Square, 
   Star, 
   Clock, 
   Sparkles, 
@@ -67,13 +59,16 @@ import {
   Calendar,
   ChefHat,
   FileSpreadsheet,
-  Download
+  Download,
+  CheckCircle2,
+  CheckSquare,
+  Square
 } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
     meta: [
-      { title: "Mess Control Dashboard — MessHub" },
+      { title: "Mess Control Dashboard — VITMESS" },
       { name: "description", content: "Mess console with pending change tracking, Excel import, and audit history." },
     ],
   }),
@@ -175,25 +170,25 @@ function AdminGatekeeper() {
   }
 
   if (!isHydrated) {
-    return <div className="min-h-screen bg-background" />;
+    return <div className="min-h-screen bg-[#E9F7F4]" />;
   }
 
   if (!session || !session.messId) {
     return (
-      <div className="min-h-screen bg-background flex flex-col justify-between px-6 py-12 safe-top safe-bottom select-none font-sans">
+      <div className="min-h-screen bg-[#E9F7F4] flex flex-col justify-between px-6 py-12 safe-top safe-bottom select-none font-sans text-[#193A40]">
         <header className="flex items-center justify-between w-full max-w-sm mx-auto">
-          <Link to="/" className="text-sm font-semibold text-muted-foreground transition active:opacity-60">
-            &larr; Exit to App
+          <Link to="/" className="text-xs font-bold text-[#007F86] transition active:opacity-60">
+            &larr; Exit to VITMESS
           </Link>
-          <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground/40">Gateway</span>
+          <span className="text-xs font-bold uppercase tracking-widest text-[#193A40]/50">Gateway</span>
         </header>
 
         <main className="w-full max-w-sm mx-auto text-center flex-1 flex flex-col justify-center">
-          <div className="h-12 w-12 rounded-2xl bg-card shadow-card mx-auto flex items-center justify-center border border-border/40">
-            <span className="text-muted-foreground font-bold">Secure</span>
+          <div className="h-14 w-14 rounded-2xl bg-white shadow-sm mx-auto flex items-center justify-center border-2 border-[#B5DED4] text-[#007F86]">
+            <Lock className="w-6 h-6" />
           </div>
-          <h1 className="mt-6 text-2xl font-black tracking-tight text-foreground">Enter Mess Access Key</h1>
-          <p className="mt-1.5 text-xs text-muted-foreground max-w-[240px] mx-auto">
+          <h1 className="mt-6 text-2xl font-black tracking-tight text-[#193A40]">Enter Mess Access Key</h1>
+          <p className="mt-1.5 text-xs text-[#193A40]/70 max-w-[240px] mx-auto font-medium">
             Input the security authorization key issued to your specific dining facility.
           </p>
 
@@ -204,29 +199,29 @@ function AdminGatekeeper() {
               value={passcode}
               onChange={(e) => { setAuthError(false); setPasscode(e.target.value); }}
               placeholder="••••••••"
-              className={`w-full tracking-widest text-center rounded-2xl border bg-card px-4 py-4 text-lg font-bold outline-none transition-all ${
+              className={`w-full tracking-widest text-center rounded-2xl border-2 bg-white px-4 py-4 text-lg font-bold outline-none transition-all text-[#193A40] ${
                 authError 
-                  ? "border-destructive ring-4 ring-destructive/10" 
-                  : "border-border focus:border-primary focus:ring-4 focus:ring-primary/10"
+                  ? "border-red-500 ring-4 ring-red-500/10" 
+                  : "border-[#B5DED4] focus:border-[#007F86] focus:ring-4 focus:ring-[#007F86]/10"
               }`}
             />
             {authError && (
-              <p className="mt-2.5 text-xs font-semibold text-destructive animate-fade-in">
+              <p className="mt-2.5 text-xs font-semibold text-red-600 animate-fade-in">
                 Invalid key code sequence. Try again.
               </p>
             )}
             <button
               type="submit"
               disabled={passcode.length === 0}
-              className="mt-4 w-full rounded-2xl gradient-warm py-4 text-sm font-bold text-white shadow-card active:scale-[0.99] transition-all disabled:opacity-40 cursor-pointer"
+              className="mt-4 w-full rounded-2xl bg-[#007F86] py-4 text-sm font-bold text-white shadow-md active:scale-[0.99] transition-all disabled:opacity-40 cursor-pointer hover:opacity-95"
             >
               Unlock Dashboard
             </button>
           </form>
         </main>
 
-        <footer className="text-center text-[10px] text-muted-foreground/50 font-medium tracking-wide">
-          MESSHUB SECURE MANAGEMENT INTERFACE
+        <footer className="text-center text-[10px] text-[#193A40]/60 font-bold tracking-widest uppercase">
+          VITMESS SECURE MANAGEMENT INTERFACE
         </footer>
       </div>
     );
@@ -325,9 +320,9 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
       const list: SpecialOverride[] = [];
       const overrideObj: Record<string, { label: string; menu: DayMenu }> = {};
       
-      snapshot.forEach((doc) => {
-        const data = doc.data() as SpecialOverride;
-        list.push({ id: doc.id, ...data });
+      snapshot.forEach((docItem) => {
+        const data = docItem.data() as SpecialOverride;
+        list.push({ id: docItem.id, ...data });
         overrideObj[data.date] = { label: data.label, menu: data.menu };
       });
 
@@ -714,27 +709,27 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
   ];
 
   return (
-    <div className="min-h-screen bg-background font-sans flex flex-col md:flex-row select-none">
+    <div className="min-h-screen bg-[#E9F7F4] font-sans flex flex-col md:flex-row select-none text-[#193A40]">
       
       {/* 📱 Mobile Top Appbar */}
-      <div className="md:hidden flex items-center justify-between p-4 border-b border-border bg-card sticky top-0 z-40">
+      <div className="md:hidden flex items-center justify-between p-4 border-b border-[#B5DED4] bg-white sticky top-0 z-40">
         <div className="flex items-center gap-2.5">
           <button
             onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
-            className="p-1.5 rounded-xl border border-border bg-background cursor-pointer"
+            className="p-1.5 rounded-xl border border-[#B5DED4] bg-[#E9F7F4] cursor-pointer text-[#007F86]"
             aria-label="Toggle Navigation"
           >
             {isMobileSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
           <div>
-            <h1 className="font-bold text-sm leading-none">{mess.name}</h1>
-            <span className="text-[10px] text-muted-foreground">Admin Console</span>
+            <h1 className="font-bold text-sm leading-none text-[#193A40]">{mess.name}</h1>
+            <span className="text-[10px] text-[#193A40]/70">Admin Console</span>
           </div>
         </div>
 
         <button
           onClick={() => { clearAdminSession(); onSignOut(); }}
-          className="text-xs font-bold text-destructive flex items-center gap-1 border border-border px-2.5 py-1 rounded-xl cursor-pointer"
+          className="text-xs font-bold text-red-600 flex items-center gap-1 border border-red-200 bg-red-50 px-2.5 py-1 rounded-xl cursor-pointer"
         >
           <LogOut className="w-3.5 h-3.5" /> Exit
         </button>
@@ -742,18 +737,18 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
 
       {/* 🧭 Desktop & Mobile Sidebar Drawer */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 w-64 bg-card border-r border-border p-5 flex flex-col justify-between transition-transform duration-200 ease-in-out
+        fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#B5DED4] p-5 flex flex-col justify-between transition-transform duration-200 ease-in-out
         md:translate-x-0 md:static md:w-72 shrink-0
         ${isMobileSidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"}
       `}>
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Authorized Station</p>
-              <h2 className="text-xl font-black text-foreground tracking-tight flex items-center gap-2">
+              <p className="text-[10px] uppercase font-bold text-[#007F86] tracking-wider">Authorized Station</p>
+              <h2 className="text-xl font-black text-[#193A40] tracking-tight flex items-center gap-2">
                 <span>{mess.name}</span>
                 {mess.subtitle && (
-                  <span className="text-[10px] font-bold bg-muted px-2 py-0.5 rounded-md text-muted-foreground">
+                  <span className="text-[10px] font-bold bg-[#E9F7F4] px-2 py-0.5 rounded-md text-[#007F86]">
                     {mess.subtitle}
                   </span>
                 )}
@@ -761,7 +756,7 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
             </div>
             <button
               onClick={() => setIsMobileSidebarOpen(false)}
-              className="md:hidden p-1 rounded-lg border border-border text-muted-foreground cursor-pointer"
+              className="md:hidden p-1 rounded-lg border border-[#B5DED4] text-[#193A40] cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -780,8 +775,8 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                   }}
                   className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition cursor-pointer ${
                     isActive
-                      ? "gradient-warm text-white shadow-card"
-                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      ? "bg-[#007F86] text-white shadow-sm"
+                      : "text-[#193A40]/70 hover:bg-[#E9F7F4] hover:text-[#193A40]"
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
@@ -796,7 +791,7 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                   )}
                   {typeof item.count === "number" && (
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                      isActive ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+                      isActive ? "bg-white/20 text-white" : "bg-[#E9F7F4] text-[#193A40]"
                     }`}>
                       {item.count}
                     </span>
@@ -806,10 +801,10 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
             })}
           </nav>
 
-          <div className="rounded-2xl border border-border bg-background p-4 shadow-xs">
-            <div className="flex items-center justify-between pb-2 border-b border-border/60">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                <AlertCircle className={`w-3.5 h-3.5 ${hasUnsavedChanges ? "text-amber-500" : "text-emerald-500"}`} />
+          <div className="rounded-2xl border-2 border-[#B5DED4] bg-[#E9F7F4]/40 p-4 shadow-xs">
+            <div className="flex items-center justify-between pb-2 border-b border-[#B5DED4]">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#193A40] flex items-center gap-1.5">
+                <AlertCircle className={`w-3.5 h-3.5 ${hasUnsavedChanges ? "text-amber-600" : "text-emerald-600"}`} />
                 Pending Changes
               </span>
               <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
@@ -821,43 +816,43 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
 
             {hasUnsavedChanges ? (
               <div className="mt-2.5 space-y-1.5">
-                <p className="text-[11px] font-bold text-foreground">
+                <p className="text-[11px] font-bold text-[#193A40]">
                   Date: {selectedDate}
                 </p>
                 <div className="max-h-32 overflow-y-auto space-y-1 pr-1">
                   {pendingSummary.map((change, idx) => (
-                    <div key={idx} className="text-[10px] text-muted-foreground bg-muted/40 p-1.5 rounded-lg border border-border/40">
-                      <span className="font-bold uppercase text-foreground">{change.meal}:</span> {change.text}
+                    <div key={idx} className="text-[10px] text-[#193A40]/80 bg-white p-1.5 rounded-lg border border-[#B5DED4]">
+                      <span className="font-bold uppercase text-[#007F86]">{change.meal}:</span> {change.text}
                     </div>
                   ))}
                 </div>
                 <button
                   onClick={handleSaveChanges}
                   disabled={isSaving || !isMenuEditingAllowed}
-                  className="w-full mt-2 gradient-warm text-white py-2 rounded-xl text-[11px] font-bold shadow-xs cursor-pointer active:scale-95 transition disabled:opacity-40"
+                  className="w-full mt-2 bg-[#007F86] text-white py-2 rounded-xl text-[11px] font-bold shadow-xs cursor-pointer active:scale-95 transition disabled:opacity-40 hover:opacity-90"
                 >
                   {isSaving ? "Publishing..." : "Publish All Changes"}
                 </button>
               </div>
             ) : (
-              <p className="text-[11px] italic text-muted-foreground/70 mt-2">
+              <p className="text-[11px] italic text-[#193A40]/60 mt-2 font-medium">
                 All daily menus are synced live with student apps.
               </p>
             )}
           </div>
         </div>
 
-        <div className="pt-4 border-t border-border space-y-2">
+        <div className="pt-4 border-t border-[#B5DED4] space-y-2">
           <Link
             to="/"
-            className="w-full flex items-center justify-between text-xs font-bold text-muted-foreground hover:text-foreground px-3 py-2 rounded-xl hover:bg-muted transition"
+            className="w-full flex items-center justify-between text-xs font-bold text-[#193A40]/70 hover:text-[#193A40] px-3 py-2 rounded-xl hover:bg-[#E9F7F4] transition"
           >
             <span>Live Student Feed</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </Link>
           <button
             onClick={() => { clearAdminSession(); onSignOut(); }}
-            className="w-full flex items-center gap-2 text-xs font-bold text-destructive hover:bg-destructive/10 px-3 py-2 rounded-xl transition cursor-pointer"
+            className="w-full flex items-center gap-2 text-xs font-bold text-red-600 hover:bg-red-50 px-3 py-2 rounded-xl transition cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
             <span>Lock Console</span>
@@ -876,7 +871,7 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
         
         {/* 🔒 Kitchen Lock Banner Warning if locked */}
         {!isMenuEditingAllowed && (
-          <div className="mb-6 bg-amber-50 border border-amber-300 rounded-3xl p-4 shadow-xs flex items-center gap-3">
+          <div className="mb-6 bg-amber-50 border-2 border-amber-300 rounded-3xl p-4 shadow-sm flex items-center gap-3">
             <div className="h-10 w-10 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 font-bold">
               <Lock className="w-5 h-5" />
             </div>
@@ -891,15 +886,15 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
 
         {activeTab === "menu" && (
           <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card p-5 rounded-3xl border border-border shadow-card">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-3xl border-2 border-[#B5DED4] shadow-sm">
               <div>
                 <div className="flex flex-wrap items-center gap-2 mb-1">
-                  <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                  <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-[#007F86]/10 text-[#007F86] border border-[#007F86]/20">
                     {mess.name}
                   </span>
                   
-                  <div className="flex items-center gap-1.5 ml-1 bg-background border border-border px-2.5 py-1 rounded-xl shadow-2xs">
-                    <Calendar className="w-3.5 h-3.5 text-primary" />
+                  <div className="flex items-center gap-1.5 ml-1 bg-[#E9F7F4] border border-[#B5DED4] px-2.5 py-1 rounded-xl shadow-2xs">
+                    <Calendar className="w-3.5 h-3.5 text-[#007F86]" />
                     <input
                       type="date"
                       value={selectedDate}
@@ -907,13 +902,13 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                         if (hasUnsavedChanges && !confirm("Discard unsaved changes?")) return;
                         if (e.target.value) setSelectedDate(e.target.value);
                       }}
-                      className="bg-transparent text-[11px] font-bold text-foreground outline-none cursor-pointer"
+                      className="bg-transparent text-[11px] font-bold text-[#193A40] outline-none cursor-pointer"
                     />
                   </div>
                 </div>
 
-                <h2 className="text-xl font-black text-foreground">Menu & Kitchen Studio</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
+                <h2 className="text-xl font-black text-[#193A40]">Menu & Kitchen Studio</h2>
+                <p className="text-xs text-[#193A40]/70 mt-0.5 font-medium">
                   View and manage menus by exact calendar date. Changes update the live student view for that day.
                 </p>
               </div>
@@ -929,8 +924,8 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                 />
                 <label
                   htmlFor="admin-excel-import"
-                  className={`px-3.5 py-2.5 rounded-2xl text-xs font-bold border border-border bg-background transition flex items-center gap-1.5 shadow-xs ${
-                    isMenuEditingAllowed ? "hover:bg-muted text-foreground cursor-pointer active:scale-95" : "opacity-40 cursor-not-allowed"
+                  className={`px-3.5 py-2.5 rounded-2xl text-xs font-bold border border-[#B5DED4] bg-white transition flex items-center gap-1.5 shadow-xs ${
+                    isMenuEditingAllowed ? "hover:bg-[#E9F7F4] text-[#193A40] cursor-pointer active:scale-95" : "opacity-40 cursor-not-allowed bg-muted"
                   }`}
                 >
                   <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
@@ -940,12 +935,12 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                 <button
                   onClick={handleSaveChanges}
                   disabled={isSaving || !isMenuEditingAllowed}
-                  className={`px-5 py-2.5 rounded-2xl text-xs font-bold shadow-card transition flex items-center justify-center gap-2 ${
+                  className={`px-5 py-2.5 rounded-2xl text-xs font-bold shadow-sm transition flex items-center justify-center gap-2 ${
                     !isMenuEditingAllowed
-                      ? "bg-muted text-muted-foreground border border-border opacity-40 cursor-not-allowed"
+                      ? "bg-muted text-muted-foreground border border-[#B5DED4] opacity-40 cursor-not-allowed"
                       : hasUnsavedChanges
-                        ? "gradient-warm text-white active:scale-95 cursor-pointer"
-                        : "bg-muted text-muted-foreground border border-border cursor-pointer"
+                        ? "bg-[#007F86] text-white active:scale-95 cursor-pointer hover:opacity-90"
+                        : "bg-white border-2 border-[#B5DED4] text-[#193A40] cursor-pointer hover:bg-[#E9F7F4]"
                   }`}
                 >
                   <Save className="w-4 h-4" />
@@ -962,15 +957,15 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                     if (hasUnsavedChanges && !confirm("Switching dates will discard unsaved modifications. Continue?")) return;
                     setSelectedDate(opt.key);
                   }}
-                  className={`shrink-0 rounded-2xl border px-4 py-2.5 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                  className={`shrink-0 rounded-2xl border-2 px-4 py-2.5 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
                     selectedDate === opt.key
-                      ? "border-transparent gradient-warm text-white shadow-card"
-                      : "border-border bg-card text-muted-foreground hover:text-foreground"
+                      ? "border-[#007F86] bg-[#007F86] text-white shadow-sm"
+                      : "border-[#B5DED4] bg-white text-[#193A40]/70 hover:text-[#193A40]"
                   }`}
                 >
                   <span>{opt.label}</span>
                   {opt.isToday && (
-                    <span className={`text-[9px] px-1.5 py-0.2 rounded-full uppercase ${
+                    <span className={`text-[9px] px-1.5 py-0.2 rounded-full uppercase font-bold ${
                       selectedDate === opt.key ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800"
                     }`}>
                       Today
@@ -981,23 +976,23 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
             </div>
 
             {isLoadingMenu ? (
-              <div className="py-16 text-center text-xs font-bold text-muted-foreground bg-card rounded-3xl border border-border">
+              <div className="py-16 text-center text-xs font-bold text-[#193A40]/70 bg-white rounded-3xl border-2 border-[#B5DED4]">
                 Loading menu from database...
               </div>
             ) : (
               <div className="space-y-4">
                 {MEAL_TYPES.map((mealType) => (
-                  <div key={mealType} className="rounded-3xl border border-border bg-card p-5 shadow-card space-y-3">
-                    <div className="flex items-center justify-between pb-3 border-b border-border/60">
-                      <h3 className="text-xs font-black uppercase tracking-wider text-foreground flex items-center gap-2">
+                  <div key={mealType} className="rounded-3xl border-2 border-[#B5DED4] bg-white p-5 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between pb-3 border-b border-[#B5DED4]/60">
+                      <h3 className="text-xs font-black uppercase tracking-wider text-[#193A40] flex items-center gap-2">
                         <span>🍽️</span> {mealType}
                       </h3>
                       <button
                         type="button"
                         disabled={!isMenuEditingAllowed}
                         onClick={() => handleAddItem(mealType)}
-                        className={`text-[11px] font-bold px-3 py-1.5 rounded-xl flex items-center gap-1 transition shadow-xs ${
-                          isMenuEditingAllowed ? "text-primary bg-background border border-border hover:bg-muted/50 cursor-pointer" : "opacity-40 bg-muted text-muted-foreground cursor-not-allowed"
+                        className={`text-[11px] font-bold px-3.5 py-1.5 rounded-xl flex items-center gap-1 transition shadow-xs ${
+                          isMenuEditingAllowed ? "text-[#007F86] bg-[#E9F7F4] border border-[#B5DED4] hover:bg-[#B5DED4]/30 cursor-pointer" : "opacity-40 bg-muted text-muted-foreground cursor-not-allowed"
                         }`}
                       >
                         <Plus className="w-3.5 h-3.5" /> Add Dish
@@ -1005,14 +1000,14 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                     </div>
 
                     {menu[mealType].length === 0 ? (
-                      <p className="text-xs italic text-muted-foreground/60 py-4 text-center">No dishes entered for {mealType} on {selectedDate}.</p>
+                      <p className="text-xs italic text-[#193A40]/60 py-4 text-center font-medium">No dishes entered for {mealType} on {selectedDate}.</p>
                     ) : (
                       <div className="space-y-2">
-                        <div className="hidden sm:flex items-center justify-between px-3 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                        <div className="hidden sm:flex items-center justify-between px-3 text-[10px] font-bold text-[#193A40]/70 uppercase tracking-wider">
                           <span className="flex-1">Dish Name / Menu Item</span>
                           <span className="w-32 text-center">Serving Size</span>
                           <div className="flex items-center gap-2 pr-8">
-                            <span className="w-16 text-center flex items-center justify-center gap-0.5"><Lock className="w-3 h-3 text-muted-foreground/60"/> Calories</span>
+                            <span className="w-16 text-center flex items-center justify-center gap-0.5">Calories</span>
                             <span className="w-14 text-center">Protein</span>
                             <span className="w-14 text-center">Carbs</span>
                           </div>
@@ -1023,7 +1018,7 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                           const isRecipeExpanded = expandedRecipeIndex === recipeKey;
 
                           return (
-                            <div key={idx} className="bg-background border border-border p-3 rounded-2xl flex flex-col gap-2">
+                            <div key={idx} className="bg-[#E9F7F4]/40 border-2 border-[#B5DED4] p-3 rounded-2xl flex flex-col gap-2">
                               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
                                 <div className="w-full sm:flex-1">
                                   <input
@@ -1032,7 +1027,7 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                                     placeholder="Enter dish name..."
                                     value={item.name}
                                     onChange={(e) => handleItemFieldChange(mealType, idx, "name", e.target.value)}
-                                    className="w-full bg-card border border-border px-3 py-2 rounded-xl text-xs font-bold text-foreground focus:outline-none focus:border-primary shadow-xs disabled:opacity-60"
+                                    className="w-full bg-white border border-[#B5DED4] px-3 py-2 rounded-xl text-xs font-bold text-[#193A40] focus:outline-none focus:border-[#007F86] shadow-xs disabled:opacity-60"
                                   />
                                 </div>
 
@@ -1043,18 +1038,18 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                                     placeholder="1 Bowl (150g)"
                                     value={item.servingSize || ""}
                                     onChange={(e) => handleItemFieldChange(mealType, idx, "servingSize", e.target.value)}
-                                    className="w-full bg-card border border-border px-2.5 py-2 rounded-xl text-xs font-semibold text-foreground focus:outline-none focus:border-primary shadow-xs disabled:opacity-60"
+                                    className="w-full bg-white border border-[#B5DED4] px-2.5 py-2 rounded-xl text-xs font-semibold text-[#193A40] focus:outline-none focus:border-[#007F86] shadow-xs disabled:opacity-60"
                                   />
                                 </div>
 
                                 <div className="flex items-center gap-1.5 text-[10px] font-semibold select-none">
-                                  <span className="bg-orange-50 text-orange-800 border border-orange-200 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1">
-                                    <Flame className="w-3 h-3 text-orange-600" /> {item.calories ?? 0} kcal
+                                  <span className="bg-teal-50 text-teal-900 border border-teal-200 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1">
+                                    <Flame className="w-3 h-3 text-teal-600" /> {item.calories ?? 0} kcal
                                   </span>
-                                  <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1">
+                                  <span className="bg-emerald-50 text-emerald-900 border border-emerald-200 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1">
                                     <Dumbbell className="w-3 h-3 text-emerald-600" /> {item.protein ?? 0}g
                                   </span>
-                                  <span className="bg-amber-50 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1">
+                                  <span className="bg-amber-50 text-amber-900 border border-amber-200 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1">
                                     <Wheat className="w-3 h-3 text-amber-600" /> {item.carbs ?? 0}g
                                   </span>
                                 </div>
@@ -1064,7 +1059,7 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                                     type="button"
                                     onClick={() => setExpandedRecipeIndex(isRecipeExpanded ? null : recipeKey)}
                                     className={`p-1.5 rounded-xl border text-[10px] font-bold flex items-center gap-1 transition cursor-pointer ${
-                                      isRecipeExpanded ? "bg-primary text-white border-primary" : "bg-card text-muted-foreground border-border hover:bg-muted"
+                                      isRecipeExpanded ? "bg-[#007F86] text-white border-[#007F86]" : "bg-white text-[#193A40]/70 border-[#B5DED4] hover:bg-[#E9F7F4]"
                                     }`}
                                     title="View Kitchen Recipe"
                                   >
@@ -1085,9 +1080,9 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                               </div>
 
                               {isRecipeExpanded && (
-                                <div className="mt-2 pt-2 border-t border-border/80 grid grid-cols-1 sm:grid-cols-2 gap-3 bg-muted/20 p-3 rounded-xl">
+                                <div className="mt-2 pt-2 border-t border-[#B5DED4] grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white p-3 rounded-xl border">
                                   <div>
-                                    <label className="block text-[9px] uppercase font-bold text-muted-foreground mb-1">
+                                    <label className="block text-[9px] uppercase font-bold text-[#193A40]/70 mb-1">
                                       Chef Standard Ingredients &amp; Ratios
                                     </label>
                                     <textarea
@@ -1099,11 +1094,11 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                                         handleItemFieldChange(mealType, idx, "recipe", r);
                                       }}
                                       placeholder="e.g. 10kg Rice, 2kg Paneer, Spices ratio..."
-                                      className="w-full bg-card border border-border rounded-xl p-2 text-xs text-foreground resize-none focus:outline-none focus:border-primary disabled:opacity-60"
+                                      className="w-full bg-[#E9F7F4]/50 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] disabled:opacity-60"
                                     />
                                   </div>
                                   <div>
-                                    <label className="block text-[9px] uppercase font-bold text-muted-foreground mb-1">
+                                    <label className="block text-[9px] uppercase font-bold text-[#193A40]/70 mb-1">
                                       Cooking Guidelines &amp; Prep Method
                                     </label>
                                     <textarea
@@ -1115,7 +1110,7 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                                         handleItemFieldChange(mealType, idx, "recipe", r);
                                       }}
                                       placeholder="Step-by-step preparation method for kitchen team..."
-                                      className="w-full bg-card border border-border rounded-xl p-2 text-xs text-foreground resize-none focus:outline-none focus:border-primary disabled:opacity-60"
+                                      className="w-full bg-[#E9F7F4]/50 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] disabled:opacity-60"
                                     />
                                   </div>
                                 </div>
@@ -1134,12 +1129,12 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
 
         {activeTab === "overrides" && (
           <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card p-5 rounded-3xl border border-border shadow-card">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-3xl border-2 border-[#B5DED4] shadow-sm">
               <div>
-                <h2 className="text-xl font-black text-foreground flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-amber-500" /> Special Feast Overrides
+                <h2 className="text-xl font-black text-[#193A40] flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-[#007F86]" /> Special Feast Overrides
                 </h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
+                <p className="text-xs text-[#193A40]/70 mt-0.5 font-medium">
                   Set up temporary menus with start and end times that automatically revert back.
                 </p>
               </div>
@@ -1147,8 +1142,8 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
               <button
                 disabled={!isMenuEditingAllowed}
                 onClick={() => setShowOverrideEditor(selectedDate)}
-                className={`px-4 py-2.5 rounded-2xl text-xs font-bold shadow-card transition flex items-center gap-1.5 ${
-                  isMenuEditingAllowed ? "gradient-warm text-white active:scale-95 cursor-pointer" : "bg-muted text-muted-foreground opacity-40 cursor-not-allowed"
+                className={`px-4 py-2.5 rounded-2xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 ${
+                  isMenuEditingAllowed ? "bg-[#007F86] text-white active:scale-95 cursor-pointer hover:opacity-90" : "bg-muted text-muted-foreground opacity-40 cursor-not-allowed"
                 }`}
               >
                 <Plus className="w-4 h-4" /> Add Special Date
@@ -1157,7 +1152,7 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
 
             <div className="space-y-3">
               {overrideKeys.length === 0 ? (
-                <div className="rounded-3xl border border-dashed border-border bg-card p-12 text-center text-xs text-muted-foreground font-medium">
+                <div className="rounded-3xl border-2 border-dashed border-[#B5DED4] bg-white p-12 text-center text-xs text-[#193A40]/70 font-medium">
                   No special overrides scheduled. The standard menu schedule is currently active.
                 </div>
               ) : (
@@ -1168,10 +1163,10 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                   const isExpired = firestoreData?.expiresAt ? new Date(firestoreData.expiresAt) < new Date() : false;
 
                   return (
-                    <div key={k} className="rounded-3xl border border-border bg-card p-5 shadow-card">
+                    <div key={k} className="rounded-3xl border-2 border-[#B5DED4] bg-white p-5 shadow-sm">
                       <div className="flex items-start sm:items-center justify-between flex-col sm:flex-row gap-3">
                         <div>
-                          <div className="font-bold text-foreground flex items-center gap-2 flex-wrap">
+                          <div className="font-bold text-[#193A40] flex items-center gap-2 flex-wrap">
                             <span>{date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}</span>
                             {firestoreData && (
                               isExpired ? (
@@ -1185,15 +1180,15 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                               )
                             )}
                           </div>
-                          <div className="text-xs text-primary font-bold mt-1">Special: {o.label}</div>
+                          <div className="text-xs text-[#007F86] font-bold mt-1">Special: {o.label}</div>
                         </div>
 
                         <div className="flex gap-2 self-end sm:self-center">
                           <button
                             disabled={!isMenuEditingAllowed}
                             onClick={() => setShowOverrideEditor(k)}
-                            className={`rounded-xl border border-border px-3 py-1.5 text-xs font-bold transition flex items-center gap-1 ${
-                              isMenuEditingAllowed ? "bg-background hover:bg-muted text-foreground cursor-pointer" : "bg-muted opacity-40 cursor-not-allowed"
+                            className={`rounded-xl border border-[#B5DED4] px-3 py-1.5 text-xs font-bold transition flex items-center gap-1 ${
+                              isMenuEditingAllowed ? "bg-white hover:bg-[#E9F7F4] text-[#193A40] cursor-pointer" : "bg-muted opacity-40 cursor-not-allowed"
                             }`}
                           >
                             <Edit3 className="w-3 h-3" /> Edit
@@ -1210,7 +1205,7 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                               saveOverrides(messId, next);
                             }}
                             className={`rounded-xl border px-3 py-1.5 text-xs font-bold transition flex items-center gap-1 ${
-                              isMenuEditingAllowed ? "border-destructive/40 bg-background text-destructive hover:bg-destructive/10 cursor-pointer" : "border-border bg-muted text-muted-foreground opacity-40 cursor-not-allowed"
+                              isMenuEditingAllowed ? "border-red-300 bg-white text-red-600 hover:bg-red-50 cursor-pointer" : "border-[#B5DED4] bg-muted text-muted-foreground opacity-40 cursor-not-allowed"
                             }`}
                           >
                             <Trash2 className="w-3 h-3" /> Delete
@@ -1227,19 +1222,19 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
 
         {activeTab === "broadcasts" && (
           <div className="max-w-xl mx-auto space-y-4">
-            <div className="rounded-3xl border border-border bg-card p-6 shadow-card space-y-4">
+            <div className="rounded-3xl border-2 border-[#B5DED4] bg-white p-6 shadow-sm space-y-4">
               <div>
-                <h2 className="text-xl font-black text-foreground flex items-center gap-2">
-                  <Megaphone className="w-5 h-5 text-primary" /> Broadcast Mess Notice
+                <h2 className="text-xl font-black text-[#193A40] flex items-center gap-2">
+                  <Megaphone className="w-5 h-5 text-[#007F86]" /> Broadcast Mess Notice
                 </h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
+                <p className="text-xs text-[#193A40]/70 mt-0.5 font-medium">
                   Sends instant notifications and banner popups to all registered students.
                 </p>
               </div>
 
               <div className="space-y-3">
                 <div>
-                  <label className="block text-[10px] uppercase font-bold text-muted-foreground mb-1">
+                  <label className="block text-[10px] uppercase font-bold text-[#193A40]/70 mb-1">
                     Announcement Headline
                   </label>
                   <input
@@ -1247,12 +1242,12 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                     value={broadcastTitle}
                     onChange={(e) => setBroadcastTitle(e.target.value)}
                     placeholder="e.g. Lunch timings extended by 30 minutes"
-                    className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs font-bold text-foreground focus:outline-none focus:border-primary"
+                    className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl px-3 py-2 text-xs font-bold text-[#193A40] focus:outline-none focus:border-[#007F86]"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[10px] uppercase font-bold text-muted-foreground mb-1">
+                  <label className="block text-[10px] uppercase font-bold text-[#193A40]/70 mb-1">
                     Message Details &amp; Links
                   </label>
                   <textarea
@@ -1261,14 +1256,14 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
                     value={broadcastBody}
                     onChange={(e) => setBroadcastBody(e.target.value)}
                     placeholder="Add operational notes or instructions..."
-                    className="w-full bg-background border border-border rounded-xl px-3 py-2 text-xs font-medium text-foreground focus:outline-none focus:border-primary resize-none"
+                    className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl px-3 py-2 text-xs font-medium text-[#193A40] focus:outline-none focus:border-[#007F86] resize-none"
                   />
                 </div>
 
                 <button 
                   onClick={handleSendBroadcast}
                   disabled={isBroadcasting || !broadcastTitle.trim() || !broadcastBody.trim()}
-                  className="w-full gradient-warm text-white py-3 rounded-xl text-xs font-bold uppercase tracking-wider shadow-card active:scale-95 transition disabled:opacity-40 cursor-pointer"
+                  className="w-full bg-[#007F86] text-white py-3 rounded-xl text-xs font-bold uppercase tracking-wider shadow-sm active:scale-95 transition disabled:opacity-40 cursor-pointer hover:opacity-90"
                 >
                   {isBroadcasting ? "Broadcasting Notice..." : "Broadcast Live Notice"}
                 </button>
@@ -1285,37 +1280,37 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
 
         {activeTab === "audit" && (
           <div className="max-w-2xl mx-auto space-y-4">
-            <div className="rounded-3xl border border-border bg-card p-6 shadow-card">
-              <div className="flex items-center justify-between pb-3 border-b border-border/60">
+            <div className="rounded-3xl border-2 border-[#B5DED4] bg-white p-6 shadow-sm">
+              <div className="flex items-center justify-between pb-3 border-b border-[#B5DED4]/60">
                 <div>
-                  <h2 className="text-xl font-black text-foreground flex items-center gap-2">
-                    <History className="w-5 h-5 text-primary" /> Operations Activity Feed
+                  <h2 className="text-xl font-black text-[#193A40] flex items-center gap-2">
+                    <History className="w-5 h-5 text-[#007F86]" /> Operations Activity Feed
                   </h2>
-                  <p className="text-xs text-muted-foreground mt-0.5">
+                  <p className="text-xs text-[#193A40]/70 mt-0.5 font-medium">
                     Live record of all menu edits, overrides, and broadcast transmissions.
                   </p>
                 </div>
-                <span className="text-xs font-bold bg-muted px-2.5 py-1 rounded-full text-muted-foreground">
+                <span className="text-xs font-bold bg-[#E9F7F4] px-2.5 py-1 rounded-full text-[#007F86]">
                   {auditLogs.length} Events
                 </span>
               </div>
 
               <div className="mt-4 space-y-2 max-h-[500px] overflow-y-auto pr-1">
                 {auditLogs.length === 0 ? (
-                  <p className="text-xs italic text-muted-foreground/60 py-8 text-center">No recent operator logs recorded.</p>
+                  <p className="text-xs italic text-[#193A40]/60 py-8 text-center font-medium">No recent operator logs recorded.</p>
                 ) : (
                   auditLogs.map((log) => (
-                    <div key={log.id} className="p-3 bg-background border border-border/80 rounded-2xl flex items-start justify-between gap-3 text-xs">
+                    <div key={log.id} className="p-3 bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-2xl flex items-start justify-between gap-3 text-xs">
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-foreground">{log.action}</span>
-                          <span className="text-[9px] font-bold uppercase bg-muted text-muted-foreground px-1.5 py-0.2 rounded">
+                          <span className="font-bold text-[#193A40]">{log.action}</span>
+                          <span className="text-[9px] font-bold uppercase bg-white text-[#007F86] px-1.5 py-0.2 rounded border border-[#B5DED4]">
                             {log.operatorRole || "admin"}
                           </span>
                         </div>
-                        <p className="text-muted-foreground text-[11px] font-medium">{log.details}</p>
+                        <p className="text-[#193A40]/75 text-[11px] font-medium">{log.details}</p>
                       </div>
-                      <span className="text-[10px] text-muted-foreground/70 font-semibold shrink-0">
+                      <span className="text-[10px] text-[#193A40]/60 font-semibold shrink-0">
                         {log.timestamp?.toDate ? log.timestamp.toDate().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Recent"}
                       </span>
                     </div>
@@ -1431,17 +1426,17 @@ function AdminDishFeedbackViewer({ messId }: { messId: MessId }) {
     const ws = XLSX.utils.json_to_sheet(exportRows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "FeedbackReports");
-    XLSX.writeFile(wb, `MessHub_Feedback_${messId}_${new Date().toISOString().split("T")[0]}.xlsx`);
+    XLSX.writeFile(wb, `VITMESS_Feedback_${messId}_${new Date().toISOString().split("T")[0]}.xlsx`);
   }
 
   return (
-    <div className="bg-card border border-border rounded-3xl p-5 shadow-card space-y-4 font-sans select-none">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/60">
+    <div className="bg-white border-2 border-[#B5DED4] rounded-3xl p-5 shadow-sm space-y-4 font-sans select-none text-[#193A40]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#B5DED4]/60">
         <div>
-          <h2 className="text-base font-black text-foreground flex items-center gap-2">
+          <h2 className="text-base font-black text-[#193A40] flex items-center gap-2">
             <span>🍲</span> Student Dish Reports ({feedbacks.length})
           </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          <p className="text-xs text-[#193A40]/70 mt-0.5 font-medium">
             Student ratings and food quality logs submitted for this facility.
           </p>
         </div>
@@ -1450,20 +1445,20 @@ function AdminDishFeedbackViewer({ messId }: { messId: MessId }) {
           <button
             type="button"
             onClick={exportFeedbackToExcel}
-            className="text-xs font-bold text-slate-700 bg-background hover:bg-muted border border-border px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+            className="text-xs font-bold text-[#193A40] bg-[#E9F7F4] hover:bg-[#B5DED4]/30 border border-[#B5DED4] px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
           >
             <Download className="w-3.5 h-3.5 text-emerald-600" /> Export to Excel
           </button>
 
-          <div className="flex items-center gap-1 bg-muted p-1 rounded-xl border border-border">
+          <div className="flex items-center gap-1 bg-[#E9F7F4] p-1 rounded-xl border border-[#B5DED4]">
             {(["all", "unsolved", "solved"] as const).map((type) => (
               <button
                 key={type}
                 onClick={() => setFilter(type)}
                 className={`px-3 py-1 text-[10px] font-bold rounded-lg capitalize transition cursor-pointer ${
                   filter === type
-                    ? "bg-background text-foreground shadow-xs"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "bg-white text-[#193A40] shadow-xs"
+                    : "text-[#193A40]/70 hover:text-[#193A40]"
                 }`}
               >
                 {type}
@@ -1474,7 +1469,7 @@ function AdminDishFeedbackViewer({ messId }: { messId: MessId }) {
       </div>
 
       {filteredFeedbacks.length === 0 ? (
-        <p className="text-xs italic text-muted-foreground/60 text-center py-8">
+        <p className="text-xs italic text-[#193A40]/60 text-center py-8 font-medium">
           No {filter !== "all" ? filter : ""} feedback records found.
         </p>
       ) : (
@@ -1485,10 +1480,10 @@ function AdminDishFeedbackViewer({ messId }: { messId: MessId }) {
             return (
               <div
                 key={item.id}
-                className={`p-3.5 rounded-2xl border transition flex items-start gap-3 ${
+                className={`p-3.5 rounded-2xl border-2 transition flex items-start gap-3 ${
                   isSolved
-                    ? "bg-muted/40 border-border opacity-60 grayscale-[30%]"
-                    : "bg-background border-border shadow-xs"
+                    ? "bg-[#E9F7F4]/30 border-[#B5DED4] opacity-60 grayscale-[30%]"
+                    : "bg-white border-[#B5DED4] shadow-xs"
                 }`}
               >
                 <button
@@ -1502,21 +1497,21 @@ function AdminDishFeedbackViewer({ messId }: { messId: MessId }) {
                       `Toggled feedback for '${item.itemName}' to ${isSolved ? 'Unsolved' : 'Solved'}`
                     );
                   }}
-                  className="mt-0.5 text-primary hover:scale-110 transition cursor-pointer shrink-0"
+                  className="mt-0.5 text-[#007F86] hover:scale-110 transition cursor-pointer shrink-0"
                   title={isSolved ? "Mark as Unsolved" : "Mark as Solved"}
                 >
                   {isSolved ? (
                     <CheckSquare className="w-5 h-5 text-emerald-600 fill-emerald-100" />
                   ) : (
-                    <Square className="w-5 h-5 text-muted-foreground" />
+                    <Square className="w-5 h-5 text-[#193A40]/40" />
                   )}
                 </button>
 
                 <div className="flex-1 min-w-0 space-y-1">
                   <div className="flex items-center justify-between gap-2">
-                    <span className={`font-bold text-xs truncate ${isSolved ? "line-through text-muted-foreground" : "text-foreground"}`}>
+                    <span className={`font-bold text-xs truncate ${isSolved ? "line-through text-[#193A40]/60" : "text-[#193A40]"}`}>
                       {item.itemName}{" "}
-                      <span className="uppercase text-[9px] text-muted-foreground font-semibold no-underline inline-block">
+                      <span className="uppercase text-[9px] text-[#007F86] font-bold no-underline inline-block">
                         ({item.mealKey})
                       </span>
                     </span>
@@ -1535,12 +1530,12 @@ function AdminDishFeedbackViewer({ messId }: { messId: MessId }) {
                     </div>
                   </div>
 
-                  <div className="text-[10px] text-muted-foreground font-medium">
+                  <div className="text-[10px] text-[#193A40]/70 font-medium">
                     👤 {item.studentName} {item.studentEmail ? `(${item.studentEmail})` : ""}
                   </div>
 
                   {item.comment && (
-                    <p className={`text-xs italic p-2 rounded-xl border mt-1 ${isSolved ? "line-through text-muted-foreground bg-muted border-border" : "text-foreground bg-card border-border/80"}`}>
+                    <p className={`text-xs italic p-2 rounded-xl border mt-1 ${isSolved ? "line-through text-[#193A40]/60 bg-[#E9F7F4]/50 border-[#B5DED4]" : "text-[#193A40] bg-[#E9F7F4]/30 border-[#B5DED4]"}`}>
                       "{item.comment}"
                     </p>
                   )}
@@ -1592,59 +1587,59 @@ function OverrideEditor({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center font-sans" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center font-sans text-[#193A40]" role="dialog" aria-modal="true">
       <button aria-label="Close" onClick={onCancel} className="absolute inset-0 bg-black/40 backdrop-blur-xs cursor-pointer" />
-      <div className="relative w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-card p-6 shadow-elevated sm:max-h-[85vh] sm:rounded-3xl border border-border">
+      <div className="relative w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-6 shadow-2xl sm:max-h-[85vh] sm:rounded-3xl border-2 border-[#B5DED4]">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold text-foreground">{existing ? "Edit override" : "Add special date"}</h3>
-          <button onClick={onCancel} className="grid h-9 w-9 place-items-center rounded-full border border-border bg-background text-lg cursor-pointer">×</button>
+          <h3 className="text-lg font-black text-[#193A40]">{existing ? "Edit override" : "Add special date"}</h3>
+          <button onClick={onCancel} className="grid h-9 w-9 place-items-center rounded-full border-2 border-[#B5DED4] bg-[#E9F7F4] text-lg font-bold cursor-pointer text-[#193A40]">×</button>
         </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-muted-foreground">Date</span>
+            <span className="mb-1.5 block text-xs font-bold uppercase text-[#193A40]">Date</span>
             <input
               type="date"
               value={dateStr}
               onChange={(e) => setDateStr(e.target.value)}
-              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-xs font-semibold outline-none focus:border-primary"
+              className="w-full rounded-xl border-2 border-[#B5DED4] bg-[#E9F7F4]/30 px-3 py-2.5 text-xs font-semibold outline-none focus:border-[#007F86] text-[#193A40]"
             />
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-muted-foreground">Label (e.g. Festival Name)</span>
+            <span className="mb-1.5 block text-xs font-bold uppercase text-[#193A40]">Label (e.g. Festival Name)</span>
             <input
               value={label}
               onChange={(e) => setLabel(e.target.value.slice(0, 60))}
-              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-xs font-semibold outline-none focus:border-primary"
+              className="w-full rounded-xl border-2 border-[#B5DED4] bg-[#E9F7F4]/30 px-3 py-2.5 text-xs font-semibold outline-none focus:border-[#007F86] text-[#193A40]"
             />
           </label>
         </div>
 
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 bg-muted/40 p-3 rounded-2xl border border-border/60">
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 bg-[#E9F7F4] p-3 rounded-2xl border-2 border-[#B5DED4]">
           <label className="block">
-            <span className="mb-1 block text-[10px] font-bold uppercase text-primary tracking-wider">Start Time</span>
+            <span className="mb-1 block text-[10px] font-bold uppercase text-[#007F86] tracking-wider">Start Time</span>
             <input
               type="time"
               value={startTime}
               onChange={(e) => setStartTime(e.target.value)}
-              className="w-full rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold outline-none focus:border-primary"
+              className="w-full rounded-xl border border-[#B5DED4] bg-white px-3 py-2 text-xs font-bold outline-none focus:border-[#007F86] text-[#193A40]"
             />
           </label>
           <label className="block">
-            <span className="mb-1 block text-[10px] font-bold uppercase text-primary tracking-wider">End Time (Reverts automatically)</span>
+            <span className="mb-1 block text-[10px] font-bold uppercase text-[#007F86] tracking-wider">End Time (Reverts automatically)</span>
             <input
               type="time"
               value={endTime}
               onChange={(e) => setEndTime(e.target.value)}
-              className="w-full rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold outline-none focus:border-primary"
+              className="w-full rounded-xl border border-[#B5DED4] bg-white px-3 py-2 text-xs font-bold outline-none focus:border-[#007F86] text-[#193A40]"
             />
           </label>
         </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {MEAL_DEFS.map((m) => (
-            <div key={m.key} className="rounded-2xl border border-border bg-background p-3">
-              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <div key={m.key} className="rounded-2xl border-2 border-[#B5DED4] bg-[#E9F7F4]/30 p-3">
+              <div className="flex items-center gap-2 text-sm font-bold text-[#193A40]">
                 <span>{m.icon}</span>
                 <span>{m.name}</span>
               </div>
@@ -1653,14 +1648,14 @@ function OverrideEditor({
                 value={(menu[m.key] || []).join("\n")}
                 onChange={(e) => setItems(m.key, e.target.value)}
                 placeholder="One item per line"
-                className="mt-2 w-full resize-y rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-primary font-medium"
+                className="mt-2 w-full resize-y rounded-xl border border-[#B5DED4] bg-white px-3 py-2 text-sm outline-none focus:border-[#007F86] font-medium text-[#193A40]"
               />
             </div>
           ))}
         </div>
 
         <div className="mt-5 flex justify-end gap-2">
-          <button onClick={onCancel} className="rounded-xl border border-border bg-background px-4 py-2 text-xs font-bold text-muted-foreground cursor-pointer">
+          <button onClick={onCancel} className="rounded-xl border border-[#B5DED4] bg-white px-4 py-2 text-xs font-bold text-[#193A40]/70 cursor-pointer hover:bg-[#E9F7F4]">
             Cancel 
           </button>
           <button
@@ -1668,7 +1663,7 @@ function OverrideEditor({
               if (!dateStr || !label.trim()) return;
               onSave(dateStr, { label: label.trim(), menu, startTime, endTime });
             }}
-            className="rounded-xl gradient-warm px-4 py-2 text-xs font-bold text-white shadow-card cursor-pointer"
+            className="rounded-xl bg-[#007F86] px-4 py-2 text-xs font-bold text-white shadow-sm cursor-pointer hover:opacity-90"
           >
             Save override
           </button>
