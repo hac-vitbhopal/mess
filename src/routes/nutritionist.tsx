@@ -39,7 +39,7 @@ import {
 export const Route = createFileRoute("/nutritionist")({
   head: () => ({
     meta: [
-      { title: "Nutritionist Studio — MessHub VIT Bhopal" },
+      { title: "Nutritionist Studio — VITMESS" },
       { name: "description", content: "Master nutritional studio for macros, micronutrients, and regional food profiles." }
     ],
   }),
@@ -463,14 +463,14 @@ function NutritionistPortalPage() {
   /* ---------------- 🔒 LOGIN SCREEN ---------------- */
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-[#fbf7f2] flex items-center justify-center px-4 font-sans select-none">
-        <div className="w-full max-w-sm bg-white border border-border rounded-3xl p-6 shadow-xl text-center">
-          <div className="w-14 h-14 bg-gradient-to-tr from-emerald-600 to-teal-500 rounded-2xl flex items-center justify-center mx-auto text-white shadow-md shadow-emerald-500/20 mb-4">
+      <div className="min-h-screen bg-[#E9F7F4] flex items-center justify-center px-4 font-sans select-none text-[#193A40]">
+        <div className="w-full max-w-sm bg-white border-2 border-[#B5DED4] rounded-3xl p-6 shadow-xl text-center">
+          <div className="w-14 h-14 bg-[#007F86] rounded-2xl flex items-center justify-center mx-auto text-white shadow-md shadow-[#007F86]/20 mb-4">
             <HeartPulse className="w-7 h-7" />
           </div>
 
-          <h1 className="text-2xl font-black text-foreground">Nutritionist Studio</h1>
-          <p className="text-xs text-muted-foreground mt-1 font-medium">Campus Food Profile &amp; Macro Console</p>
+          <h1 className="text-2xl font-black text-[#193A40]">Nutritionist Studio</h1>
+          <p className="text-xs text-[#193A40]/70 mt-1 font-medium">Campus Food Profile &amp; Macro Console</p>
 
           <form onSubmit={handleLogin} className="mt-6 space-y-3.5">
             <div>
@@ -479,7 +479,7 @@ function NutritionistPortalPage() {
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
                 placeholder="Enter Passkey"
-                className="w-full bg-[#fbf7f2] border border-border rounded-xl px-4 py-3 text-xs font-bold text-foreground placeholder-muted-foreground focus:outline-none focus:border-emerald-600 focus:bg-white transition"
+                className="w-full bg-[#E9F7F4]/40 border-2 border-[#B5DED4] rounded-xl px-4 py-3 text-xs font-bold text-[#193A40] placeholder-[#193A40]/40 focus:outline-none focus:border-[#007F86] focus:bg-white transition"
               />
             </div>
 
@@ -491,14 +491,14 @@ function NutritionistPortalPage() {
 
             <button
               type="submit"
-              className="w-full bg-slate-900 text-white font-bold py-3.5 rounded-xl shadow-md hover:bg-black active:scale-[0.99] transition text-xs cursor-pointer"
+              className="w-full bg-[#007F86] text-white font-bold py-3.5 rounded-xl shadow-md hover:opacity-90 active:scale-[0.99] transition text-xs cursor-pointer"
             >
               Authenticate Studio Session
             </button>
           </form>
 
-          <p className="mt-6 text-[10px] text-muted-foreground font-semibold">
-            <Link to="/" className="underline hover:text-foreground">
+          <p className="mt-6 text-[10px] text-[#193A40]/70 font-semibold">
+            <Link to="/" className="underline hover:text-[#193A40]">
               &larr; Exit to Student Portal
             </Link>
           </p>
@@ -509,29 +509,29 @@ function NutritionistPortalPage() {
 
   /* ---------------- 🥗 SAAS DASHBOARD INTERFACE ---------------- */
   return (
-    <div className="min-h-screen bg-[#fbf7f2] text-foreground font-sans flex flex-col md:flex-row select-none">
+    <div className="min-h-screen bg-[#E9F7F4] text-[#193A40] font-sans flex flex-col md:flex-row select-none">
       
       {/* 📱 Mobile Header Bar */}
-      <div className="md:hidden flex items-center justify-between p-4 bg-white border-b border-border sticky top-0 z-40">
+      <div className="md:hidden flex items-center justify-between p-4 bg-white border-b border-[#B5DED4] sticky top-0 z-40">
         <div className="flex items-center gap-2.5">
           <button
             onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
-            className="p-2 rounded-xl border border-border bg-slate-50 text-slate-700"
+            className="p-2 rounded-xl border border-[#B5DED4] bg-[#E9F7F4] text-[#007F86]"
             aria-label="Toggle Menu"
           >
             {isMobileSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
           <div>
-            <h1 className="font-bold text-sm leading-none flex items-center gap-1.5">
-              <HeartPulse className="w-4 h-4 text-emerald-600" /> Nutrition Studio
+            <h1 className="font-bold text-sm leading-none flex items-center gap-1.5 text-[#193A40]">
+              <HeartPulse className="w-4 h-4 text-[#007F86]" /> Nutrition Studio
             </h1>
-            <span className="text-[10px] text-muted-foreground">VIT Bhopal Campus</span>
+            <span className="text-[10px] text-[#193A40]/70">VIT Bhopal Campus</span>
           </div>
         </div>
 
         <button
           onClick={handleLogout}
-          className="text-xs font-bold text-red-600 flex items-center gap-1 border border-border px-2.5 py-1 rounded-xl bg-red-50/50 cursor-pointer"
+          className="text-xs font-bold text-red-600 flex items-center gap-1 border border-red-200 px-2.5 py-1 rounded-xl bg-red-50 cursor-pointer"
         >
           <LogOut className="w-3.5 h-3.5" /> Exit
         </button>
@@ -539,7 +539,7 @@ function NutritionistPortalPage() {
 
       {/* 🧭 SaaS Left Navigation Sidebar */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-border p-5 flex flex-col justify-between transition-transform duration-200 ease-in-out
+        fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#B5DED4] p-5 flex flex-col justify-between transition-transform duration-200 ease-in-out
         md:translate-x-0 md:static md:w-72 shrink-0
         ${isMobileSidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"}
       `}>
@@ -548,17 +548,17 @@ function NutritionistPortalPage() {
           {/* Brand Header */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center text-white shadow-sm">
+              <div className="w-9 h-9 rounded-xl bg-[#007F86] flex items-center justify-center text-white shadow-sm">
                 <HeartPulse className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-base font-black text-foreground">NutriStudio</h2>
-                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Campus Nutrition</p>
+                <h2 className="text-base font-black text-[#193A40]">NutriStudio</h2>
+                <p className="text-[10px] font-bold text-[#193A40]/70 uppercase tracking-wider">Campus Nutrition</p>
               </div>
             </div>
             <button
               onClick={() => setIsMobileSidebarOpen(false)}
-              className="md:hidden p-1 rounded-lg border border-border text-muted-foreground"
+              className="md:hidden p-1 rounded-lg border border-[#B5DED4] text-[#193A40]"
             >
               <X className="w-4 h-4" />
             </button>
@@ -566,7 +566,7 @@ function NutritionistPortalPage() {
 
           {/* Facility Picker */}
           <div className="space-y-2">
-            <label className="block text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+            <label className="block text-[10px] font-black uppercase tracking-wider text-[#193A40]/70">
               Select Mess Facility
             </label>
             <div className="space-y-1">
@@ -582,12 +582,12 @@ function NutritionistPortalPage() {
                     }}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
                       isSelected
-                        ? "bg-slate-900 text-white shadow-xs"
-                        : "text-muted-foreground hover:bg-slate-50 hover:text-foreground"
+                        ? "bg-[#007F86] text-white shadow-xs"
+                        : "text-[#193A40]/70 hover:bg-[#E9F7F4] hover:text-[#193A40]"
                     }`}
                   >
                     <span>{m.name} {m.subtitle ? `(${m.subtitle})` : ""}</span>
-                    {isSelected && <ChevronRight className="w-3.5 h-3.5 text-emerald-400" />}
+                    {isSelected && <ChevronRight className="w-3.5 h-3.5 text-white" />}
                   </button>
                 );
               })}
@@ -597,10 +597,10 @@ function NutritionistPortalPage() {
         </div>
 
         {/* Sidebar Footer Controls */}
-        <div className="pt-4 border-t border-border space-y-2">
+        <div className="pt-4 border-t border-[#B5DED4] space-y-2">
           <Link
             to="/admin"
-            className="w-full flex items-center justify-between text-xs font-bold text-muted-foreground hover:text-foreground px-3 py-2 rounded-xl hover:bg-slate-50 transition"
+            className="w-full flex items-center justify-between text-xs font-bold text-[#193A40]/70 hover:text-[#193A40] px-3 py-2 rounded-xl hover:bg-[#E9F7F4] transition"
           >
             <span>Mess Operator Console</span>
             <ChevronRight className="w-3.5 h-3.5" />
@@ -627,15 +627,15 @@ function NutritionistPortalPage() {
       <main className="flex-1 p-4 md:p-8 max-w-6xl overflow-y-auto">
         
         {/* Workspace Top Header Card */}
-        <div className="bg-white rounded-3xl p-5 border border-border shadow-card flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div className="bg-white rounded-3xl p-5 border-2 border-[#B5DED4] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+              <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-[#007F86]/10 text-[#007F86] border border-[#007F86]/20">
                 {MESSES.find(m => m.id === selectedMess)?.name}
               </span>
               
-              <div className="flex items-center gap-1.5 ml-1 bg-[#fbf7f2] border border-border/80 px-2.5 py-1 rounded-xl">
-                <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+              <div className="flex items-center gap-1.5 ml-1 bg-[#E9F7F4] border border-[#B5DED4] px-2.5 py-1 rounded-xl">
+                <Calendar className="w-3.5 h-3.5 text-[#007F86]" />
                 <input
                   type="date"
                   value={selectedDate}
@@ -644,12 +644,12 @@ function NutritionistPortalPage() {
                     const val = e.target.value;
                     if (val) setSelectedDate(val);
                   }}
-                  className="bg-transparent text-[11px] font-bold text-foreground outline-none cursor-pointer"
+                  className="bg-transparent text-[11px] font-bold text-[#193A40] outline-none cursor-pointer"
                 />
               </div>
             </div>
-            <h2 className="text-xl font-black text-foreground mt-1.5">Nutritional Menu Studio</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            <h2 className="text-xl font-black text-[#193A40] mt-1.5">Nutritional Menu Studio</h2>
+            <p className="text-xs text-[#193A40]/70 mt-0.5 font-medium">
               Live-edit daily menus pushed from Google Sheets or manage master nutrition breakdowns.
             </p>
           </div>
@@ -658,10 +658,10 @@ function NutritionistPortalPage() {
             <button
               onClick={handleSave}
               disabled={isSaving}
-              className={`px-5 py-2.5 rounded-2xl text-xs font-bold shadow-card active:scale-95 transition flex items-center gap-2 cursor-pointer ${
+              className={`px-5 py-2.5 rounded-2xl text-xs font-bold shadow-sm active:scale-95 transition flex items-center gap-2 cursor-pointer ${
                 hasUnsavedChanges
-                  ? "gradient-warm text-white"
-                  : "bg-slate-100 text-slate-400 border border-border"
+                  ? "bg-[#007F86] text-white hover:opacity-90"
+                  : "bg-white text-[#193A40]/40 border-2 border-[#B5DED4]"
               }`}
             >
               <Save className="w-4 h-4" />
@@ -679,10 +679,10 @@ function NutritionistPortalPage() {
                 if (hasUnsavedChanges && !confirm("Switching dates will discard unsaved modifications. Continue?")) return;
                 setSelectedDate(opt.key);
               }}
-              className={`shrink-0 rounded-2xl border px-4 py-2.5 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+              className={`shrink-0 rounded-2xl border-2 px-4 py-2.5 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
                 selectedDate === opt.key
-                  ? "border-transparent bg-slate-900 text-white shadow-card"
-                  : "border-border bg-white text-muted-foreground hover:text-foreground"
+                  ? "border-[#007F86] bg-[#007F86] text-white shadow-sm"
+                  : "border-[#B5DED4] bg-white text-[#193A40]/70 hover:text-[#193A40]"
               }`}
             >
               <span>{opt.label}</span>
@@ -698,10 +698,10 @@ function NutritionistPortalPage() {
         </div>
 
         {/* Change Indicator Status Banner & Diff Inspector */}
-        <div className="bg-white border border-border rounded-2xl p-4 mb-6 shadow-2xs space-y-2">
+        <div className="bg-white border-2 border-[#B5DED4] rounded-2xl p-4 mb-6 shadow-2xs space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-muted-foreground">
-              Configuring Date: <span className="text-foreground underline">{selectedDate}</span> ({totalDishesCount} Registered Dishes)
+            <span className="text-xs font-bold text-[#193A40]/70">
+              Configuring Date: <span className="text-[#193A40] underline font-black">{selectedDate}</span> ({totalDishesCount} Registered Dishes)
             </span>
 
             {hasUnsavedChanges ? (
@@ -717,13 +717,13 @@ function NutritionistPortalPage() {
 
           {/* Detailed Changes Inspector Box */}
           {hasUnsavedChanges && detailedChangesSummary.length > 0 && (
-            <div className="mt-2 bg-[#fbf7f2] border border-amber-200/80 p-3 rounded-xl space-y-1">
+            <div className="mt-2 bg-[#E9F7F4]/40 border border-amber-200/80 p-3 rounded-xl space-y-1">
               <span className="text-[10px] font-black uppercase text-amber-900 tracking-wider block mb-1">
                 🔍 Live Diff Inspector (Pending Changes):
               </span>
               <ul className="space-y-0.5 max-h-28 overflow-y-auto">
-                {detailedChangesSummary.map((diffLine, i) => (
-                  <li key={i} className="text-[11px] font-medium text-slate-700 font-mono">
+                {detailedChangesSummary.map((diffLine: string, i: number) => (
+                  <li key={i} className="text-[11px] font-medium text-[#193A40]/80 font-mono">
                     {diffLine}
                   </li>
                 ))}
@@ -734,21 +734,21 @@ function NutritionistPortalPage() {
 
         {/* Meals Cards Container */}
         {isLoading ? (
-          <div className="py-20 text-center text-xs font-bold text-muted-foreground bg-white rounded-3xl border border-border">
+          <div className="py-20 text-center text-xs font-bold text-[#193A40]/70 bg-white rounded-3xl border-2 border-[#B5DED4]">
             Loading nutritional models from database...
           </div>
         ) : (
           <div className="space-y-6">
             {MEAL_TYPES.map((mealType) => (
-              <div key={mealType} className="bg-white rounded-3xl border border-border p-5 shadow-card space-y-4">
+              <div key={mealType} className="bg-white rounded-3xl border-2 border-[#B5DED4] p-5 shadow-sm space-y-4">
                 
                 {/* Meal Header */}
-                <div className="flex items-center justify-between pb-3 border-b border-border/70">
+                <div className="flex items-center justify-between pb-3 border-b border-[#B5DED4]/70">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-black uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                    <span className="text-sm font-black uppercase tracking-wider text-[#193A40] flex items-center gap-1.5">
                       <span>🍽️</span> {mealType}
                     </span>
-                    <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] font-bold bg-[#E9F7F4] text-[#007F86] px-2 py-0.5 rounded-full border border-[#B5DED4]">
                       {menu[mealType].length} Items
                     </span>
                   </div>
@@ -756,14 +756,14 @@ function NutritionistPortalPage() {
                   <button
                     type="button"
                     onClick={() => handleAddItem(mealType)}
-                    className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl flex items-center gap-1 hover:bg-emerald-100 transition cursor-pointer shadow-2xs"
+                    className="text-[11px] font-bold text-[#007F86] bg-[#E9F7F4] border border-[#B5DED4] px-3.5 py-1.5 rounded-xl flex items-center gap-1 hover:bg-[#B5DED4]/30 transition cursor-pointer shadow-2xs"
                   >
                     <Plus className="w-3.5 h-3.5" /> Add Dish Profile
                   </button>
                 </div>
 
                 {menu[mealType].length === 0 ? (
-                  <p className="text-xs italic text-muted-foreground/60 py-6 text-center">
+                  <p className="text-xs italic text-[#193A40]/60 py-6 text-center font-medium">
                     No dish entries configured for {mealType} on {selectedDate}. Click "+ Add Dish Profile" to build this meal's breakdown.
                   </p>
                 ) : (
@@ -773,14 +773,14 @@ function NutritionistPortalPage() {
                       const isExpanded = !!expandedCards[itemKey];
 
                       return (
-                        <div key={idx} className="bg-[#fbf7f2] border border-border/80 rounded-2xl p-4 space-y-3.5">
+                        <div key={idx} className="bg-[#E9F7F4]/40 border-2 border-[#B5DED4] rounded-2xl p-4 space-y-3.5">
                           
                           {/* Row 1: Dish Identity, Regional Tag, Serving Size & Expand Controls */}
                           <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
                             
                             {/* Dish Name */}
                             <div className="sm:col-span-5">
-                              <label className="block text-[9px] uppercase font-black text-muted-foreground mb-1">
+                              <label className="block text-[9px] uppercase font-black text-[#193A40]/70 mb-1">
                                 Dish Title
                               </label>
                               <input
@@ -788,13 +788,13 @@ function NutritionistPortalPage() {
                                 value={dish.name}
                                 onChange={(e) => handleItemFieldChange(mealType, idx, "name", e.target.value)}
                                 placeholder="e.g. Sambar, Rajma Masala, Aloo Posto"
-                                className="w-full bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-foreground focus:outline-none focus:border-emerald-600"
+                                className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-2 text-xs font-bold text-[#193A40] focus:outline-none focus:border-[#007F86]"
                               />
                             </div>
 
                             {/* Serving Size */}
                             <div className="sm:col-span-2">
-                              <label className="block text-[9px] uppercase font-black text-muted-foreground mb-1">
+                              <label className="block text-[9px] uppercase font-black text-[#193A40]/70 mb-1">
                                 Serving Qty
                               </label>
                               <input
@@ -802,14 +802,14 @@ function NutritionistPortalPage() {
                                 value={dish.servingSize || ""}
                                 onChange={(e) => handleItemFieldChange(mealType, idx, "servingSize", e.target.value)}
                                 placeholder="1 Bowl (150g)"
-                                className="w-full bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-foreground focus:outline-none focus:border-emerald-600"
+                                className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-2 text-xs font-bold text-[#193A40] focus:outline-none focus:border-[#007F86]"
                               />
                             </div>
 
                             {/* Regional / State Tag */}
                             <div className="sm:col-span-3">
-                              <label className="block text-[9px] uppercase font-black text-muted-foreground mb-1 flex items-center gap-1">
-                                <Globe className="w-3 h-3 text-emerald-600" /> Regional Tag
+                              <label className="block text-[9px] uppercase font-black text-[#193A40]/70 mb-1 flex items-center gap-1">
+                                <Globe className="w-3 h-3 text-[#007F86]" /> Regional Tag
                               </label>
                               <input
                                 type="text"
@@ -817,7 +817,7 @@ function NutritionistPortalPage() {
                                 value={dish.regionalTag || ""}
                                 onChange={(e) => handleItemFieldChange(mealType, idx, "regionalTag", e.target.value)}
                                 placeholder="Optional (e.g. Tamil Nadu Style)"
-                                className="w-full bg-white border border-border rounded-xl px-3 py-2 text-xs font-bold text-emerald-800 focus:outline-none focus:border-emerald-600"
+                                className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-2 text-xs font-bold text-[#007F86] focus:outline-none focus:border-[#007F86]"
                               />
                               <datalist id={`regional_tags_${itemKey}`}>
                                 {POPULAR_REGIONS.map((r) => (
@@ -832,7 +832,7 @@ function NutritionistPortalPage() {
                                 type="button"
                                 onClick={() => toggleDetails(itemKey)}
                                 className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs ${
-                                  isExpanded ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-700 border-border hover:bg-slate-50"
+                                  isExpanded ? "bg-[#007F86] text-white border-[#007F86]" : "bg-white text-[#193A40] border-[#B5DED4] hover:bg-[#E9F7F4]"
                                 }`}
                                 title="Expand Food Profile & Micronutrients"
                               >
@@ -855,92 +855,92 @@ function NutritionistPortalPage() {
                           {/* Row 2: 7 Primary Macro Values */}
                           <div>
                             <div className="flex items-center justify-between mb-1.5">
-                              <span className="text-[9px] uppercase font-black tracking-wider text-muted-foreground flex items-center gap-1">
+                              <span className="text-[9px] uppercase font-black tracking-wider text-[#193A40]/70 flex items-center gap-1">
                                 <Flame className="w-3 h-3 text-orange-500" /> Primary Nutritional Values (Main Menu Display)
                               </span>
                             </div>
 
                             <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
                               {/* Energy */}
-                              <div className="bg-white p-2 rounded-xl border border-border/80">
+                              <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
                                 <span className="text-[9px] font-bold text-orange-700 block">Energy (kcal)</span>
                                 <input
                                   type="number"
                                   value={dish.calories || ""}
                                   onChange={(e) => handleItemFieldChange(mealType, idx, "calories", Number(e.target.value))}
-                                  className="w-full font-black text-xs text-foreground bg-transparent outline-none mt-0.5"
+                                  className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
                                 />
                               </div>
 
                               {/* Protein */}
-                              <div className="bg-white p-2 rounded-xl border border-border/80">
+                              <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
                                 <span className="text-[9px] font-bold text-emerald-700 block">Protein (g)</span>
                                 <input
                                   type="number"
                                   step="0.1"
                                   value={dish.protein || ""}
                                   onChange={(e) => handleItemFieldChange(mealType, idx, "protein", Number(e.target.value))}
-                                  className="w-full font-black text-xs text-foreground bg-transparent outline-none mt-0.5"
+                                  className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
                                 />
                               </div>
 
                               {/* Carbohydrate */}
-                              <div className="bg-white p-2 rounded-xl border border-border/80">
+                              <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
                                 <span className="text-[9px] font-bold text-amber-700 block">Carbs (g)</span>
                                 <input
                                   type="number"
                                   step="0.1"
                                   value={dish.carbs || ""}
                                   onChange={(e) => handleItemFieldChange(mealType, idx, "carbs", Number(e.target.value))}
-                                  className="w-full font-black text-xs text-foreground bg-transparent outline-none mt-0.5"
+                                  className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
                                 />
                               </div>
 
                               {/* Total Fat */}
-                              <div className="bg-white p-2 rounded-xl border border-border/80">
+                              <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
                                 <span className="text-[9px] font-bold text-blue-700 block">Total Fat (g)</span>
                                 <input
                                   type="number"
                                   step="0.1"
                                   value={dish.fat || ""}
                                   onChange={(e) => handleItemFieldChange(mealType, idx, "fat", Number(e.target.value))}
-                                  className="w-full font-black text-xs text-foreground bg-transparent outline-none mt-0.5"
+                                  className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
                                 />
                               </div>
 
                               {/* Saturated Fat */}
-                              <div className="bg-white p-2 rounded-xl border border-border/80">
+                              <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
                                 <span className="text-[9px] font-bold text-indigo-700 block">Sat. Fat (g)</span>
                                 <input
                                   type="number"
                                   step="0.1"
                                   value={dish.saturatedFat ?? 0}
                                   onChange={(e) => handleItemFieldChange(mealType, idx, "saturatedFat", Number(e.target.value))}
-                                  className="w-full font-black text-xs text-foreground bg-transparent outline-none mt-0.5"
+                                  className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
                                 />
                               </div>
 
                               {/* Fibre */}
-                              <div className="bg-white p-2 rounded-xl border border-border/80">
+                              <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
                                 <span className="text-[9px] font-bold text-teal-700 block">Fibre (g)</span>
                                 <input
                                   type="number"
                                   step="0.1"
                                   value={dish.fiber ?? 0}
                                   onChange={(e) => handleItemFieldChange(mealType, idx, "fiber", Number(e.target.value))}
-                                  className="w-full font-black text-xs text-foreground bg-transparent outline-none mt-0.5"
+                                  className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
                                 />
                               </div>
 
                               {/* Added Sugar */}
-                              <div className="bg-white p-2 rounded-xl border border-border/80">
+                              <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
                                 <span className="text-[9px] font-bold text-pink-700 block">Sugar (g)</span>
                                 <input
                                   type="number"
                                   step="0.1"
                                   value={dish.addedSugar ?? 0}
                                   onChange={(e) => handleItemFieldChange(mealType, idx, "addedSugar", Number(e.target.value))}
-                                  className="w-full font-black text-xs text-foreground bg-transparent outline-none mt-0.5"
+                                  className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
                                 />
                               </div>
                             </div>
@@ -948,13 +948,13 @@ function NutritionistPortalPage() {
 
                           {/* Row 3: Expandable Cultural Profile, Chef Recipe & Micronutrients */}
                           {isExpanded && (
-                            <div className="pt-4 border-t border-border/80 space-y-4 animate-fade-in bg-white p-4 rounded-2xl border border-border/80 shadow-xs">
+                            <div className="pt-4 border-t border-[#B5DED4] space-y-4 animate-fade-in bg-white p-4 rounded-2xl border-2 border-[#B5DED4] shadow-xs">
                               
                               {/* Cultural Profile: Description, Origin, Trivia & Special Tag */}
                               <div>
                                 <div className="flex items-center justify-between mb-2.5">
-                                  <h4 className="text-[11px] font-black uppercase tracking-wider text-foreground flex items-center gap-1.5">
-                                    <Info className="w-3.5 h-3.5 text-emerald-600" /> Cultural Food Profile &amp; Knowledge Card
+                                  <h4 className="text-[11px] font-black uppercase tracking-wider text-[#193A40] flex items-center gap-1.5">
+                                    <Info className="w-3.5 h-3.5 text-[#007F86]" /> Cultural Food Profile &amp; Knowledge Card
                                   </h4>
 
                                   <div className="w-48">
@@ -963,14 +963,14 @@ function NutritionistPortalPage() {
                                       value={dish.specialTag || ""}
                                       onChange={(e) => handleItemFieldChange(mealType, idx, "specialTag", e.target.value)}
                                       placeholder="Special Tag (e.g. State Special)"
-                                      className="w-full bg-[#fbf7f2] border border-border rounded-lg px-2.5 py-1 text-[10px] font-bold text-purple-700 focus:outline-none focus:border-purple-500"
+                                      className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-lg px-2.5 py-1 text-[10px] font-bold text-purple-800 focus:outline-none focus:border-[#007F86]"
                                     />
                                   </div>
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                   <div>
-                                    <label className="block text-[9px] font-bold text-muted-foreground uppercase mb-1">
+                                    <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">
                                       Description &amp; Key Nutritional Perk
                                     </label>
                                     <textarea
@@ -978,12 +978,12 @@ function NutritionistPortalPage() {
                                       value={dish.description || ""}
                                       onChange={(e) => handleItemFieldChange(mealType, idx, "description", e.target.value)}
                                       placeholder="Brief overview of preparation, flavor profile, and health perks..."
-                                      className="w-full bg-[#fbf7f2] border border-border rounded-xl p-2 text-xs text-foreground resize-none focus:outline-none focus:border-emerald-600 focus:bg-white"
+                                      className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
                                     />
                                   </div>
 
                                   <div>
-                                    <label className="block text-[9px] font-bold text-muted-foreground uppercase mb-1">
+                                    <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">
                                       Origin &amp; Cultural Roots
                                     </label>
                                     <textarea
@@ -991,12 +991,12 @@ function NutritionistPortalPage() {
                                       value={dish.originStory || ""}
                                       onChange={(e) => handleItemFieldChange(mealType, idx, "originStory", e.target.value)}
                                       placeholder="Geographic roots, community history, or traditional culinary folklore..."
-                                      className="w-full bg-[#fbf7f2] border border-border rounded-xl p-2 text-xs text-foreground resize-none focus:outline-none focus:border-emerald-600 focus:bg-white"
+                                      className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
                                     />
                                   </div>
 
                                   <div>
-                                    <label className="block text-[9px] font-bold text-muted-foreground uppercase mb-1">
+                                    <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">
                                       Popular or Fun Trivia Fact
                                     </label>
                                     <textarea
@@ -1004,20 +1004,20 @@ function NutritionistPortalPage() {
                                       value={dish.funFact || ""}
                                       onChange={(e) => handleItemFieldChange(mealType, idx, "funFact", e.target.value)}
                                       placeholder="Fun facts, historical anecdotes, or traditional serving customs..."
-                                      className="w-full bg-[#fbf7f2] border border-border rounded-xl p-2 text-xs text-foreground resize-none focus:outline-none focus:border-emerald-600 focus:bg-white"
+                                      className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
                                     />
                                   </div>
                                 </div>
                               </div>
 
                               {/* Kitchen Team Standard Recipe (Chef View) */}
-                              <div className="pt-2 border-t border-border/80">
-                                <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5 mb-2.5">
+                              <div className="pt-2 border-t border-[#B5DED4]">
+                                <h4 className="text-[11px] font-black uppercase tracking-wider text-[#193A40] flex items-center gap-1.5 mb-2.5">
                                   <ChefHat className="w-3.5 h-3.5 text-amber-600" /> Kitchen Team Standard Recipe (Kitchen View)
                                 </h4>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                   <div>
-                                    <label className="block text-[9px] font-bold text-muted-foreground uppercase mb-1">
+                                    <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">
                                       Standard Ingredients &amp; Quantities
                                     </label>
                                     <textarea
@@ -1025,11 +1025,11 @@ function NutritionistPortalPage() {
                                       value={dish.recipe?.ingredients || ""}
                                       onChange={(e) => handleRecipeChange(mealType, idx, "ingredients", e.target.value)}
                                       placeholder="Ingredients ratio per 100 students (e.g. 10kg Basmati Rice, 2kg Paneer)..."
-                                      className="w-full bg-[#fbf7f2] border border-border rounded-xl p-2 text-xs text-foreground resize-none focus:outline-none focus:border-amber-600 focus:bg-white"
+                                      className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
                                     />
                                   </div>
                                   <div>
-                                    <label className="block text-[9px] font-bold text-muted-foreground uppercase mb-1">
+                                    <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">
                                       Preparation Guidelines &amp; Method
                                     </label>
                                     <textarea
@@ -1037,15 +1037,15 @@ function NutritionistPortalPage() {
                                       value={dish.recipe?.method || ""}
                                       onChange={(e) => handleRecipeChange(mealType, idx, "method", e.target.value)}
                                       placeholder="Step-by-step cooking method to maintain consistency across shifts..."
-                                      className="w-full bg-[#fbf7f2] border border-border rounded-xl p-2 text-xs text-foreground resize-none focus:outline-none focus:border-amber-600 focus:bg-white"
+                                      className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
                                     />
                                   </div>
                                 </div>
                               </div>
 
                               {/* 12 Essential Micronutrients Breakdown */}
-                              <div className="pt-2 border-t border-border/80">
-                                <h4 className="text-[11px] font-black uppercase tracking-wider text-foreground flex items-center gap-1.5 mb-2.5">
+                              <div className="pt-2 border-t border-[#B5DED4]">
+                                <h4 className="text-[11px] font-black uppercase tracking-wider text-[#193A40] flex items-center gap-1.5 mb-2.5">
                                   <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Micronutrients Breakdown ("Know More" Window)
                                 </h4>
 
@@ -1066,8 +1066,8 @@ function NutritionistPortalPage() {
                                   ].map((micro) => {
                                     const val = dish.micronutrients?.[micro.key as keyof MicronutrientProfile] ?? 0;
                                     return (
-                                      <div key={micro.key} className="bg-[#fbf7f2] p-2 rounded-xl border border-border/80">
-                                        <span className="text-[9px] font-bold text-muted-foreground uppercase block">
+                                      <div key={micro.key} className="bg-[#E9F7F4]/40 p-2 rounded-xl border border-[#B5DED4]">
+                                        <span className="text-[9px] font-bold text-[#193A40]/70 uppercase block">
                                           {micro.label} ({micro.unit})
                                         </span>
                                         <input
@@ -1082,7 +1082,7 @@ function NutritionistPortalPage() {
                                               Number(e.target.value)
                                             )
                                           }
-                                          className="w-full font-bold text-xs text-foreground bg-transparent outline-none mt-0.5"
+                                          className="w-full font-bold text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
                                         />
                                       </div>
                                     );
