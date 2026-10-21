@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { db } from "@/lib/firebase";
-import { DishFeedbackSchema, checkRateLimit } from "@/lib/security";
+import { DishFeedbackSchema, checkRateLimit, countFeedbackCommentWords, MIN_FEEDBACK_COMMENT_WORDS } from "@/lib/security";
 import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore";
 import { z } from "zod";
 import {
@@ -135,7 +135,11 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
           if (weeklySnap.exists()) {
             setDailyMenu(weeklySnap.data());
           } else {
-            setDailyMenu(null);
+            // Older nutritionist-published weekly menus use this document ID.
+            // Keep it as a fallback while the app migrates to the standard `{messId}_{day}` format.
+            const alternateWeeklyDocRef = doc(firestoreDb, "mess_menus", `${profile.messId}_day_${activeWeekday}`);
+            const alternateWeeklySnap = await getDoc(alternateWeeklyDocRef);
+            setDailyMenu(alternateWeeklySnap.exists() ? alternateWeeklySnap.data() : null);
           }
         }
       } catch (err) {
@@ -602,6 +606,7 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
   const [rating, setRating] = useState<number>(5);
   const [comment, setComment] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const commentWordCount = countFeedbackCommentWords(comment);
 
   const rawItems = currentMenu[selectedMeal] || [];
   const availableItems = useMemo(() => {
@@ -626,6 +631,11 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
       return;
     }
 
+    if (commentWordCount < MIN_FEEDBACK_COMMENT_WORDS) {
+      alert(`⚠️ Please write at least ${MIN_FEEDBACK_COMMENT_WORDS} words explaining your rating.`);
+      return;
+    }
+
     if (!checkRateLimit("item_dish_rating", 5, 60000)) {
       alert("⚠️ Please wait a moment before submitting another rating.");
       return;
@@ -641,7 +651,7 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
           mealKey: selectedMeal,
           itemName: dish,
           rating,
-          comment: comment ? `[${selectedMeal.toUpperCase()}] ${comment}` : `[${selectedMeal.toUpperCase()}] Rated ${rating}/5`,
+          comment: comment.trim(),
           status: "unsolved",
         });
 
@@ -765,20 +775,23 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
 
         <div>
           <label className="block text-[10px] font-bold text-[#193A40]/70 uppercase tracking-wider mb-1">
-            Specific Comments
+            Why did you give this rating? (minimum 5 words)
           </label>
           <textarea
             rows={2}
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            placeholder="e.g. These items were undercooked / too spicy..."
+            placeholder="e.g. The roti was fresh but the dal was too salty."
             className="w-full resize-none rounded-xl border-2 border-[#B5DED4] bg-[#E9F7F4]/30 px-3 py-2 text-xs font-medium outline-none focus:border-[#007F86] transition text-[#193A40]"
           />
+          <p className={`mt-1 text-right text-[10px] font-medium ${commentWordCount >= MIN_FEEDBACK_COMMENT_WORDS ? "text-emerald-700" : "text-[#193A40]/60"}`}>
+            {commentWordCount} / {MIN_FEEDBACK_COMMENT_WORDS} words minimum
+          </p>
         </div>
 
         <button
           type="submit"
-          disabled={isSubmitting || selectedDishes.length === 0}
+          disabled={isSubmitting || selectedDishes.length === 0 || commentWordCount < MIN_FEEDBACK_COMMENT_WORDS}
           className="w-full rounded-xl bg-[#007F86] text-white py-2.5 text-xs font-bold shadow-md active:scale-[0.99] transition disabled:opacity-40 cursor-pointer hover:opacity-90"
         >
           {isSubmitting ? "Submitting Ratings..." : `Submit Feedback (${selectedDishes.length} selected)`}

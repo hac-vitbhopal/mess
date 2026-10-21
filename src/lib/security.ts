@@ -17,6 +17,13 @@ export function sanitizePlainText(rawInput: unknown): string {
     .trim();
 }
 
+export const MIN_FEEDBACK_COMMENT_WORDS = 5;
+
+/** Counts written words after stripping markup, so a rating needs a useful explanation. */
+export function countFeedbackCommentWords(value: unknown): number {
+  return (sanitizePlainText(value).match(/[\p{L}\p{N}]+/gu) || []).length;
+}
+
 export const MessIdSchema = z.enum([
   "jmb",
   "mayuri_boys",
@@ -57,7 +64,13 @@ export const DishFeedbackSchema = z.object({
   mealKey: z.enum(["breakfast", "lunch", "snacks", "dinner"]),
   itemName: z.string().min(1).max(100).transform(sanitizePlainText),
   rating: z.number().int().min(1).max(5),
-  comment: z.string().max(3000).transform(sanitizePlainText).optional().default(""),
+  comment: z.string()
+    .max(3000)
+    .transform(sanitizePlainText)
+    .refine(
+      (comment) => countFeedbackCommentWords(comment) >= MIN_FEEDBACK_COMMENT_WORDS,
+      `Please write at least ${MIN_FEEDBACK_COMMENT_WORDS} words explaining your rating.`
+    ),
   status: z.enum(["solved", "unsolved"]).default("unsolved"),
 });
 

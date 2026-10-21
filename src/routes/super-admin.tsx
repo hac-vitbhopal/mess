@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import { db } from "@/lib/firebase"; 
-import { collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, limit, doc, getDoc, updateDoc, deleteDoc, setDoc } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, limit, doc, getDoc, updateDoc, deleteDoc, setDoc, writeBatch } from "firebase/firestore";
 import { 
   getAdminSession, 
   saveAdminSession, 
@@ -21,7 +21,7 @@ import {
   ShieldCheck, Users, Activity, MessageSquare, Megaphone, 
   LogOut, Menu, X, Clock, CheckSquare, Square, Star, 
   CheckCircle2, AlertCircle, Trash2, TrendingUp, Send, CheckCircle,
-  PlusCircle, History, Utensils, Download, AlertTriangle, Lock, Unlock, KeyRound, Search, Sparkles
+  PlusCircle, History, Utensils, Download, AlertTriangle, Lock, Unlock, KeyRound, Search, Sparkles, Save
 } from "lucide-react";
 import { NavratriSpecialAdminHub } from "@/components/messhub/NavratriSpecial";
 
@@ -156,7 +156,7 @@ function SuperAdminGatekeeper() {
 
 /* ---------------- 👑 PLATFORM MASTER SAAS DASHBOARD ---------------- */
 function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
-  const [activeTab, setActiveTab] = useState<"overview" | "roles" | "feedbacks" | "complaints" | "broadcasts" | "students" | "analytics" | "navratri" | "audit">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "roles" | "menus" | "feedbacks" | "complaints" | "broadcasts" | "students" | "analytics" | "navratri" | "audit">("overview");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Global Realtime Datasets
@@ -479,6 +479,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           <p className="px-4 text-[10px] font-bold text-[#193A40]/50 uppercase tracking-widest mb-2 mt-2">Infrastructure</p>
           <NavButton id="overview" icon={Activity} label="HQ Overview" />
           <NavButton id="roles" icon={KeyRound} label="Roles & Permissions" />
+          <NavButton id="menus" icon={Utensils} label="Multi-mess Menu Editor" />
           <NavButton id="feedbacks" icon={MessageSquare} label="Campus Feedback" badge={pendingFeedbacksCount} />
           <NavButton id="complaints" icon={AlertTriangle} label="Campus Complaints" badge={pendingComplaintsCount} />
           <NavButton id="broadcasts" icon={Megaphone} label="Broadcast Management" />
@@ -692,6 +693,11 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
               </div>
             </form>
           </div>
+        )}
+
+        {/* ================= MULTI-MESS MENU EDITOR ================= */}
+        {activeTab === "menus" && (
+          <MultiMessMenuEditor allMesses={allMesses} />
         )}
 
         {/* ================= TAB 2: CAMPUS FEEDBACK ================= */}
@@ -1040,6 +1046,250 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
         )}
 
       </main>
+    </div>
+  );
+}
+
+/* ---------------- 👑 MULTI-MESS MENU EDITOR ---------------- */
+function MultiMessMenuEditor({ allMesses }: { allMesses: any[] }) {
+  const today = new Date();
+  const [selectedMessIds, setSelectedMessIds] = useState<string[]>([]);
+  const [selectedDate, setSelectedDate] = useState(
+    `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`
+  );
+  const [selectedMeal, setSelectedMeal] = useState<MealKey>("dinner");
+  const [saveMode, setSaveMode] = useState<"daily" | "permanent">("daily");
+  const [menusByMess, setMenusByMess] = useState<Record<string, string[]>>({});
+  const [sharedDishes, setSharedDishes] = useState<string[]>([]);
+  const [newDish, setNewDish] = useState("");
+  const [isLoadingMenu, setIsLoadingMenu] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const normalizedDish = (dish: string) => dish.trim().toLocaleLowerCase();
+  const weekday = new Date(`${selectedDate}T00:00:00`).getDay();
+  const sourceLabel = saveMode === "permanent" ? `every ${new Date(`${selectedDate}T00:00:00`).toLocaleDateString("en-IN", { weekday: "long" })}` : selectedDate;
+  const originalSharedDishes = useMemo(() => {
+    if (selectedMessIds.length === 0) return [];
+    const firstMenu = menusByMess[selectedMessIds[0]] || [];
+    return firstMenu.filter((dish) => selectedMessIds.every((messId) =>
+      (menusByMess[messId] || []).some((item) => normalizedDish(item) === normalizedDish(dish))
+    ));
+  }, [menusByMess, selectedMessIds]);
+
+  useEffect(() => {
+    const firestore = db;
+    let cancelled = false;
+    if (!firestore || selectedMessIds.length === 0) {
+      setMenusByMess({});
+      setSharedDishes([]);
+      return;
+    }
+    const activeFirestore = firestore;
+
+    async function loadSelectedMenus() {
+      setIsLoadingMenu(true);
+      try {
+        const loaded = await Promise.all(selectedMessIds.map(async (messId) => {
+          const menuDocId = saveMode === "permanent" ? `${messId}_${weekday}` : `${messId}_${selectedDate}`;
+          const menuCollection = saveMode === "permanent" ? "mess_menus" : "daily_menus";
+          let snapshot = await getDoc(doc(activeFirestore, menuCollection, menuDocId));
+          if (saveMode === "permanent" && !snapshot.exists()) {
+            snapshot = await getDoc(doc(activeFirestore, "mess_menus", `${messId}_day_${weekday}`));
+          }
+          // A mess may have a live, date-specific menu but no weekly template yet.
+          // Use that current menu as the starting point when creating a permanent schedule.
+          if (saveMode === "permanent" && !snapshot.exists()) {
+            snapshot = await getDoc(doc(activeFirestore, "daily_menus", `${messId}_${selectedDate}`));
+          }
+          const menuValue = snapshot.exists() ? snapshot.data()?.[selectedMeal] : [];
+          const rawItems: unknown[] = Array.isArray(menuValue) ? menuValue : [];
+          const dishes = rawItems
+            .map((item: unknown) => typeof item === "string" ? item : typeof item === "object" && item !== null && "name" in item ? (item as { name?: unknown }).name : undefined)
+            .filter((item: unknown): item is string => typeof item === "string" && item.trim().length > 0);
+          return [messId, dishes] as const;
+        }));
+        if (cancelled) return;
+        const nextMenus = Object.fromEntries(loaded);
+        setMenusByMess(nextMenus);
+        const firstMenu = nextMenus[selectedMessIds[0]] || [];
+        setSharedDishes(firstMenu.filter((dish) => selectedMessIds.every((messId) =>
+          (nextMenus[messId] || []).some((item) => normalizedDish(item) === normalizedDish(dish))
+        )));
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Could not load selected menus:", error);
+          setMenusByMess({});
+          setSharedDishes([]);
+        }
+      } finally {
+        if (!cancelled) setIsLoadingMenu(false);
+      }
+    }
+
+    loadSelectedMenus();
+    return () => { cancelled = true; };
+  }, [selectedMessIds.join("|"), selectedDate, selectedMeal, saveMode, weekday]);
+
+  const toggleMess = (messId: string) => {
+    setSelectedMessIds((current) => current.includes(messId)
+      ? current.filter((id) => id !== messId)
+      : [...current, messId]);
+  };
+
+  const selectAllMesses = () => {
+    setSelectedMessIds((current) => current.length === allMesses.length ? [] : allMesses.map((mess) => mess.id));
+  };
+
+  const addDishToSelectedMesses = () => {
+    const dish = newDish.trim().slice(0, 100);
+    if (!dish || sharedDishes.some((item) => normalizedDish(item) === normalizedDish(dish))) return;
+    setSharedDishes((current) => [...current, dish]);
+    setNewDish("");
+  };
+
+  const updateSharedDish = (index: number, value: string) => {
+    setSharedDishes((current) => current.map((dish, dishIndex) => dishIndex === index ? value.slice(0, 100) : dish));
+  };
+
+  const handlePublish = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const firestore = db;
+    const dishes = [...new Set(sharedDishes.map((dish) => dish.trim()).filter(Boolean))];
+
+    if (!firestore || selectedMessIds.length === 0) {
+      alert("Select at least one mess before publishing.");
+      return;
+    }
+
+    if (!window.confirm(`Apply the shared ${selectedMeal} edits to ${selectedMessIds.length} selected mess(es) for ${sourceLabel}?`)) return;
+
+    setIsSaving(true);
+    try {
+      const batch = writeBatch(firestore);
+      selectedMessIds.forEach((messId) => {
+        const commonNames = new Set(originalSharedDishes.map(normalizedDish));
+        const messOnlyDishes = (menusByMess[messId] || []).filter((dish) => !commonNames.has(normalizedDish(dish)));
+        const finalDishes = [...messOnlyDishes, ...dishes];
+        const menuDocId = saveMode === "permanent" ? `${messId}_${weekday}` : `${messId}_${selectedDate}`;
+        const menuCollection = saveMode === "permanent" ? "mess_menus" : "daily_menus";
+        batch.set(doc(firestore, menuCollection, menuDocId), {
+          [selectedMeal]: finalDishes,
+          messId,
+          ...(saveMode === "permanent" ? { dayIndex: weekday } : { date: selectedDate }),
+          updatedAt: serverTimestamp(),
+          updatedByRole: "super-admin",
+        }, { merge: true });
+        // Nutritionist tooling historically reads `{messId}_day_{day}`.
+        // Mirror permanent edits so every existing dashboard sees the same weekly menu.
+        if (saveMode === "permanent") {
+          batch.set(doc(firestore, "mess_menus", `${messId}_day_${weekday}`), {
+            [selectedMeal]: finalDishes,
+            messId,
+            dayIndex: weekday,
+            updatedAt: serverTimestamp(),
+            updatedByRole: "super-admin",
+          }, { merge: true });
+        }
+        batch.set(doc(collection(firestore, "admin_audit_logs")), {
+          messId,
+          action: saveMode === "permanent" ? "Permanent Multi-mess Menu Published" : "Multi-mess Menu Published",
+          details: `Super Admin updated shared ${selectedMeal} for ${sourceLabel}: ${dishes.join(", ") || "no shared dishes"}`.slice(0, 500),
+          operatorRole: "super-admin",
+          timestamp: serverTimestamp(),
+        });
+      });
+      await batch.commit();
+      setMenusByMess((current) => Object.fromEntries(selectedMessIds.map((messId) => {
+        const unique = (current[messId] || []).filter((dish) => !new Set(originalSharedDishes.map(normalizedDish)).has(normalizedDish(dish)));
+        return [messId, [...unique, ...dishes]];
+      })));
+      alert(`✅ ${selectedMeal[0].toUpperCase() + selectedMeal.slice(1)} updated for ${selectedMessIds.length} mess(es).`);
+    } catch (error) {
+      console.error("Multi-mess menu update failed:", error);
+      alert("Could not update the selected mess menus. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6 animate-fade-in pb-12 max-w-5xl">
+      <div>
+        <h1 className="text-2xl sm:text-3xl font-black text-[#193A40]">Multi-mess Menu Editor</h1>
+        <p className="text-xs sm:text-sm text-[#193A40]/70 mt-0.5">Select JMB, Mayuri, or any combination of messes, then publish the same meal items to all of them at once.</p>
+      </div>
+
+      <form onSubmit={handlePublish} className="bg-white rounded-3xl border-2 border-[#B5DED4] p-5 sm:p-6 shadow-sm space-y-6">
+        <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#B5DED4]">
+          <div>
+            <h2 className="text-sm font-bold text-[#193A40] flex items-center gap-2"><Utensils className="w-4 h-4 text-[#007F86]" /> Choose messes</h2>
+            <p className="mt-0.5 text-[11px] text-[#193A40]/65">{selectedMessIds.length} selected</p>
+          </div>
+          <button type="button" onClick={selectAllMesses} className="text-xs font-bold text-[#007F86] hover:underline cursor-pointer">
+            {selectedMessIds.length === allMesses.length ? "Clear all" : "Select all"}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {allMesses.map((mess) => {
+            const isSelected = selectedMessIds.includes(mess.id);
+            return (
+              <button key={mess.id} type="button" onClick={() => toggleMess(mess.id)} className={`p-3 rounded-2xl border-2 text-left flex items-center gap-3 transition cursor-pointer ${isSelected ? "bg-[#007F86] border-[#007F86] text-white" : "bg-[#E9F7F4]/35 border-[#B5DED4] text-[#193A40] hover:border-[#007F86]"}`}>
+                {isSelected ? <CheckSquare className="w-4 h-4 shrink-0" /> : <Square className="w-4 h-4 shrink-0 text-[#193A40]/45" />}
+                <span className="text-xs font-bold truncate">{mess.name}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="grid sm:grid-cols-3 gap-4">
+          <label className="text-xs font-bold text-[#193A40]">Date
+            <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} required className="mt-1.5 w-full rounded-xl border-2 border-[#B5DED4] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#007F86]" />
+          </label>
+          <div>
+            <span className="text-xs font-bold text-[#193A40]">Meal</span>
+            <div className="mt-1.5 grid grid-cols-4 gap-1 bg-[#E9F7F4] p-1 rounded-xl border border-[#B5DED4]">
+              {MEAL_DEFS.map((meal) => <button key={meal.key} type="button" onClick={() => setSelectedMeal(meal.key)} className={`py-2 text-[10px] font-bold rounded-lg capitalize cursor-pointer ${selectedMeal === meal.key ? "bg-[#007F86] text-white" : "text-[#193A40]/70"}`}>{meal.key}</button>)}
+            </div>
+          </div>
+          <div>
+            <span className="text-xs font-bold text-[#193A40]">Change type</span>
+            <div className="mt-1.5 grid grid-cols-2 gap-1 bg-[#E9F7F4] p-1 rounded-xl border border-[#B5DED4]">
+              <button type="button" onClick={() => setSaveMode("daily")} className={`py-2 text-[10px] font-bold rounded-lg cursor-pointer ${saveMode === "daily" ? "bg-[#007F86] text-white" : "text-[#193A40]/70"}`}>One day</button>
+              <button type="button" onClick={() => setSaveMode("permanent")} className={`py-2 text-[10px] font-bold rounded-lg cursor-pointer ${saveMode === "permanent" ? "bg-[#007F86] text-white" : "text-[#193A40]/70"}`}>Permanent</button>
+            </div>
+            <p className="mt-1 text-[10px] text-[#193A40]/65">{saveMode === "permanent" ? `Updates every ${new Date(`${selectedDate}T00:00:00`).toLocaleDateString("en-IN", { weekday: "long" })}; a date-specific menu still takes priority.` : "Updates only this date."}</p>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border-2 border-[#B5DED4] bg-[#E9F7F4]/25 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h3 className="text-xs font-bold text-[#193A40]">Shared {selectedMeal} dishes</h3>
+              <p className="mt-0.5 text-[10px] text-[#193A40]/65">Only dishes present in every selected mess appear here. Edit or remove them to update all selected messes.</p>
+            </div>
+            <span className="rounded-full bg-white border border-[#B5DED4] px-2 py-1 text-[10px] font-bold text-[#007F86]">{sourceLabel}</span>
+          </div>
+          {isLoadingMenu ? <p className="py-6 text-center text-xs text-[#193A40]/60">Loading selected menus…</p> : sharedDishes.length === 0 ? <p className="py-5 text-center text-xs italic text-[#193A40]/60">No common dishes found. Add a dish below to publish it to all selected messes.</p> : (
+            <div className="mt-3 space-y-2">
+              {sharedDishes.map((dish, index) => <div key={`${dish}-${index}`} className="flex gap-2">
+                <input value={dish} onChange={(event) => updateSharedDish(index, event.target.value)} aria-label={`Edit ${dish}`} className="min-w-0 flex-1 rounded-xl border border-[#B5DED4] bg-white px-3 py-2 text-xs font-semibold outline-none focus:border-[#007F86]" />
+                <button type="button" onClick={() => setSharedDishes((current) => current.filter((_, dishIndex) => dishIndex !== index))} className="rounded-xl border border-red-200 bg-red-50 px-3 text-red-600 hover:bg-red-100 cursor-pointer" title={`Remove ${dish}`}><Trash2 className="w-4 h-4" /></button>
+              </div>)}
+            </div>
+          )}
+          <div className="mt-4 flex gap-2 border-t border-[#B5DED4] pt-4">
+            <input value={newDish} onChange={(event) => setNewDish(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addDishToSelectedMesses(); } }} placeholder="Add dish to every selected mess" className="min-w-0 flex-1 rounded-xl border-2 border-[#B5DED4] bg-white px-3 py-2 text-xs font-medium outline-none focus:border-[#007F86]" />
+            <button type="button" onClick={addDishToSelectedMesses} disabled={!newDish.trim()} className="rounded-xl bg-[#007F86] px-4 py-2 text-xs font-bold text-white disabled:opacity-40 cursor-pointer">Add dish</button>
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-1">
+          <button type="submit" disabled={isSaving || isLoadingMenu || selectedMessIds.length === 0} className="bg-[#007F86] text-white px-5 py-3 rounded-2xl text-xs font-bold shadow-sm transition active:scale-95 disabled:opacity-40 cursor-pointer flex items-center gap-2 hover:opacity-90">
+            <Save className="w-4 h-4" /> {isSaving ? "Publishing..." : `Publish to ${selectedMessIds.length || "selected"} mess(es)`}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
