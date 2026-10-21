@@ -1090,16 +1090,13 @@ function MultiMessMenuEditor({ allMesses }: { allMesses: any[] }) {
       setIsLoadingMenu(true);
       try {
         const loaded = await Promise.all(selectedMessIds.map(async (messId) => {
-          const menuDocId = saveMode === "permanent" ? `${messId}_${weekday}` : `${messId}_${selectedDate}`;
-          const menuCollection = saveMode === "permanent" ? "mess_menus" : "daily_menus";
-          let snapshot = await getDoc(doc(activeFirestore, menuCollection, menuDocId));
+          // Match the student app exactly: a live date menu always overrides the weekly template.
+          let snapshot = await getDoc(doc(activeFirestore, "daily_menus", `${messId}_${selectedDate}`));
+          if (saveMode === "permanent" && !snapshot.exists()) {
+            snapshot = await getDoc(doc(activeFirestore, "mess_menus", `${messId}_${weekday}`));
+          }
           if (saveMode === "permanent" && !snapshot.exists()) {
             snapshot = await getDoc(doc(activeFirestore, "mess_menus", `${messId}_day_${weekday}`));
-          }
-          // A mess may have a live, date-specific menu but no weekly template yet.
-          // Use that current menu as the starting point when creating a permanent schedule.
-          if (saveMode === "permanent" && !snapshot.exists()) {
-            snapshot = await getDoc(doc(activeFirestore, "daily_menus", `${messId}_${selectedDate}`));
           }
           const menuValue = snapshot.exists() ? snapshot.data()?.[selectedMeal] : [];
           const rawItems: unknown[] = Array.isArray(menuValue) ? menuValue : [];
