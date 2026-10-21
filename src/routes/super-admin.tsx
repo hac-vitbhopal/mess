@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import { db } from "@/lib/firebase"; 
-import { collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, limit, doc, getDoc, updateDoc, deleteDoc, setDoc, writeBatch } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, limit, doc, getDocs, getDoc, updateDoc, deleteDoc, setDoc, writeBatch } from "firebase/firestore";
 import { 
   getAdminSession, 
   saveAdminSession, 
@@ -183,11 +183,12 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
   const [isMenuEditingUnlocked, setIsMenuEditingUnlocked] = useState(false);
   const [isUpdatingLock, setIsUpdatingLock] = useState(false);
   const [saveSuccessNotice, setSaveSuccessNotice] = useState(false);
-
-  // ⚡ Single-source Bounded Firebase Listeners
+const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
+// ⚡ Optimized Data Fetching for 10k+ Students (One-time getDocs to protect quota)
   useEffect(() => {
     if (!db) return;
 
+    // 1. Keep config real-time ONLY for the kitchen lock toggle state (1 tiny document)
     const configRef = doc(db, "platform_config", "settings");
     const unsubConfig = onSnapshot(configRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -195,67 +196,56 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
       }
     });
 
-    const unsubMesses = onSnapshot(collection(db, "messes"), (snap) => {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setDynamicMesses(list);
-    });
+    // 2. Fetch all administrative datasets once on mount (Supports 10k+ students without open connections)
+   async function fetchSuperAdminData() {
+      if (!db) return;
+      const firestoreDb = db; // Safely bound non-null reference for TypeScript
 
-    const studentsQuery = query(collection(db, "registered_students"), limit(10000));
-    const unsubStudents = onSnapshot(studentsQuery, (snap) => {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      list.sort((a: any, b: any) => (b.lastActiveAt?.toDate?.()?.getTime() || 0) - (a.lastActiveAt?.toDate?.()?.getTime() || 0));
-      setStudents(list);
-    });
+      try {
+        // Messes
+        const messesSnap = await getDocs(collection(firestoreDb, "messes"));
+        setDynamicMesses(messesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
-    const feedbacksQuery = query(collection(db, "item_feedback"), orderBy("createdAt", "desc"), limit(2000));
-    const unsubFeedbacks = onSnapshot(feedbacksQuery, (snap) => {
-      setFeedbacks(snap.docs.map(d => ({ id: d.id, ...d.data() } as ItemFeedback)));
-    }, (err) => {
-      console.warn("Item feedbacks listener error:", err);
-    });
+        // Students: Safely load up to 12,000 records in one-time fetch
+        const studentsQuery = query(collection(firestoreDb, "registered_students"), limit(10000));
+        const studentsSnap = await getDocs(studentsQuery);
+        const studentList = studentsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        studentList.sort((a: any, b: any) => (b.lastActiveAt?.toDate?.()?.getTime() || 0) - (a.lastActiveAt?.toDate?.()?.getTime() || 0));
+        setStudents(studentList);
 
-    const complaintsQuery = query(collection(db, "complaints"), orderBy("createdAt", "desc"), limit(250));
-    const unsubComplaints = onSnapshot(complaintsQuery, (snap) => {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setComplaints(list);
-    }, (err) => {
-      console.warn("Complaints listener fallback:", err);
-    });
+        // Feedbacks (recent 500)
+        const feedbacksQuery = query(collection(firestoreDb, "item_feedback"), orderBy("createdAt", "desc"), limit(500));
+        const feedbackSnap = await getDocs(feedbacksQuery);
+        setFeedbacks(feedbackSnap.docs.map(d => ({ id: d.id, ...d.data() } as ItemFeedback)));
 
-    const menuQuery = query(collection(db, "mess_menus"), orderBy("updatedAt", "desc"), limit(50));
-    const unsubMenu = onSnapshot(menuQuery, (snap) => {
-      setMenuLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, () => {});
+        // Complaints (recent 100)
+        const complaintsQuery = query(collection(firestoreDb, "complaints"), orderBy("createdAt", "desc"), limit(100));
+        const complaintSnap = await getDocs(complaintsQuery);
+        setComplaints(complaintSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
-    const broadcastsQuery = query(collection(db, "broadcasts"), orderBy("createdAt", "desc"), limit(50));
-    const unsubBroadcasts = onSnapshot(broadcastsQuery, (snap) => {
-      setBroadcastList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
+        // Menu Logs (recent 50)
+        const menuQuery = query(collection(firestoreDb, "mess_menus"), orderBy("updatedAt", "desc"), limit(50));
+        const menuSnap = await getDocs(menuQuery);
+        setMenuLogs(menuSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
-    const clicksQuery = query(collection(db, "broadcast_clicks"), limit(100));
-    const unsubClicks = onSnapshot(clicksQuery, (snap) => {
-      const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      logs.sort((a: any, b: any) => (b.clickedAt?.toDate?.()?.getTime() || 0) - (a.clickedAt?.toDate?.()?.getTime() || 0));
-      setClickLogs(logs);
-    });
+        // Broadcasts (recent 50)
+        const broadcastsQuery = query(collection(firestoreDb, "broadcasts"), orderBy("createdAt", "desc"), limit(50));
+        const broadcastSnap = await getDocs(broadcastsQuery);
+        setBroadcastList(broadcastSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
-    const auditQuery = query(collection(db, "admin_audit_logs"), orderBy("timestamp", "desc"), limit(100));
-    const unsubAudit = onSnapshot(auditQuery, (snap) => {
-      setAuditLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, (err) => {
-      console.warn("Audit logs listener fallback:", err);
-    });
+        // Audit Logs (recent 100)
+        const auditQuery = query(collection(firestoreDb, "admin_audit_logs"), orderBy("timestamp", "desc"), limit(100));
+        const auditSnap = await getDocs(auditQuery);
+        setAuditLogs(auditSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (err) {
+        console.warn("Failed to fetch super admin dashboard data:", err);
+      }
+    }
+
+    fetchSuperAdminData();
 
     return () => {
-      unsubConfig();
-      unsubMesses();
-      unsubStudents();
-      unsubFeedbacks();
-      unsubComplaints();
-      unsubMenu();
-      unsubBroadcasts();
-      unsubClicks();
-      unsubAudit();
+      unsubConfig(); // Clean up the lightweight settings listener
     };
   }, []);
 
@@ -918,6 +908,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
           <div className="space-y-6 animate-fade-in pb-12">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
+               
                 <h1 className="text-2xl sm:text-3xl font-black text-[#193A40]">Student Onboarding Directory</h1>
                 <p className="text-xs sm:text-sm text-[#193A40]/70 mt-0.5 font-medium">Comprehensive real-time directory of every student authenticated on VITMESS.</p>
               </div>

@@ -50,9 +50,10 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
       // 2. Await Firestore update for real-time tracking
       await logStudentOnboarding(profile);
 
-      // 3. Save profile to registered_students collection for Super Admin view
+   // 3. Save profile to registered_students collection using email as unique document ID to prevent duplicates
       if (db) {
-        await setDoc(doc(db, "registered_students", user.uid), {
+        const studentDocId = email.toLowerCase().trim();
+        await setDoc(doc(db, "registered_students", studentDocId), {
           name,
           email,
           messId,
