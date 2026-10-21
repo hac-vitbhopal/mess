@@ -200,7 +200,7 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
       setDynamicMesses(list);
     });
 
-    const studentsQuery = query(collection(db, "registered_students"), limit(15000));
+    const studentsQuery = query(collection(db, "registered_students"), limit(10000));
     const unsubStudents = onSnapshot(studentsQuery, (snap) => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       list.sort((a: any, b: any) => (b.lastActiveAt?.toDate?.()?.getTime() || 0) - (a.lastActiveAt?.toDate?.()?.getTime() || 0));
