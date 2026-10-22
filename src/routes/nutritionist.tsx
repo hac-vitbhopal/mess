@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, setDoc, serverTimestamp, addDoc, collection } from "firebase/firestore";
+import { doc, getDoc, setDoc, serverTimestamp, addDoc, collection, writeBatch } from "firebase/firestore";
 import { 
   MESSES, 
   saveDynamicMessMenu, 
@@ -12,7 +12,8 @@ import {
   type MessId, 
   type DayMenuWithNutrition, 
   type NutritionDishItem,
-  type MicronutrientProfile
+  type MicronutrientProfile,
+  type MealKey
 } from "@/lib/messhub";
 import { 
   HeartPulse, 
@@ -33,14 +34,19 @@ import {
   ChevronRight,
   Info,
   Calendar,
-  ChefHat
+  ChefHat,
+  Table,
+  LayoutList,
+  Layers,
+  CheckSquare,
+  Square
 } from "lucide-react";
 
 export const Route = createFileRoute("/nutritionist")({
   head: () => ({
     meta: [
-      { title: "Nutritionist Studio — VITMESS" },
-      { name: "description", content: "Master nutritional studio for macros, micronutrients, and regional food profiles." }
+      { title: "Nutritionist Studio Matrix — VITMESS" },
+      { name: "description", content: "Master Excel-style nutritional studio matrix with safe multi-mess sync." }
     ],
   }),
   component: NutritionistPortalPage,
@@ -81,7 +87,6 @@ export type StudioDayMenu = {
   dinner: StudioDishItem[];
 };
 
-// Helper to recursively remove undefined values so Firestore never throws unsupported field errors
 function cleanFirestoreData(data: any): any {
   if (data === undefined) return null;
   if (data === null || typeof data !== "object") return data;
@@ -105,9 +110,12 @@ function NutritionistPortalPage() {
   const [passwordInput, setPasswordInput] = useState("");
   const [authError, setAuthError] = useState("");
 
+  // 🔀 Multi-mess toggle state & selected mess array
+  const [isMultiMessActive, setIsMultiMessActive] = useState(false);
   const [selectedMess, setSelectedMess] = useState<MessId>("jmb");
+  const [selectedMessIds, setSelectedMessIds] = useState<string[]>(["jmb"]);
   
-  // Specific Calendar Date (Matches Excel / Google Sheets push date YYYY-MM-DD)
+  // Specific Calendar Date (YYYY-MM-DD)
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -117,6 +125,7 @@ function NutritionistPortalPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
+  const [viewMode, setViewMode] = useState<"cards" | "matrix">("cards");
 
   // Menu States
   const [menu, setMenu] = useState<StudioDayMenu>({
@@ -138,7 +147,10 @@ function NutritionistPortalPage() {
     }
   }, []);
 
-  // Fetch dynamic menu directly from Firestore daily_menus/{messId}_{YYYY-MM-DD} with race cancellation
+  // Sync target primary mess when multi-mess is off
+  const activePrimaryMess = isMultiMessActive ? (selectedMessIds[0] || "jmb") : selectedMess;
+
+  // Fetch dynamic menu from Firestore with local caching support
   useEffect(() => {
     if (!isAuthenticated || !db || !selectedDate) return;
     const firestoreDb = db;
@@ -146,19 +158,31 @@ function NutritionistPortalPage() {
 
     async function load() {
       setIsLoading(true);
-      let firestoreData: any = null;
+      const cacheKey = `nutri_menu_${activePrimaryMess}_${selectedDate}`;
+      
+      const cachedData = localStorage.getItem(cacheKey);
+      if (cachedData) {
+        try {
+          const parsed = JSON.parse(cachedData);
+          if (isMounted) {
+            setMenu(parsed);
+            setInitialLoadedMenu(JSON.parse(JSON.stringify(parsed)));
+            setIsLoading(false);
+            return;
+          }
+        } catch (e) {
+          // Fallback to fetch if parse fails
+        }
+      }
 
       try {
-        const dailyDocRef = doc(firestoreDb, "daily_menus", `${selectedMess}_${selectedDate}`);
+        const dailyDocRef = doc(firestoreDb, "daily_menus", `${activePrimaryMess}_${selectedDate}`);
         const dailySnap = await getDoc(dailyDocRef);
         
-        if (!isMounted) return; // Prevent async race overwrite
+        if (!isMounted) return;
 
         if (dailySnap.exists()) {
-          firestoreData = dailySnap.data();
-        }
-
-        if (firestoreData) {
+          const firestoreData = dailySnap.data();
           const sanitizedMenu: StudioDayMenu = {
             breakfast: (firestoreData.breakfast || []).map(sanitizeDishItem),
             lunch: (firestoreData.lunch || []).map(sanitizeDishItem),
@@ -167,6 +191,7 @@ function NutritionistPortalPage() {
           };
           setMenu(sanitizedMenu);
           setInitialLoadedMenu(JSON.parse(JSON.stringify(sanitizedMenu)));
+          localStorage.setItem(cacheKey, JSON.stringify(sanitizedMenu));
         } else {
           const emptyMenu: StudioDayMenu = { breakfast: [], lunch: [], snacks: [], dinner: [] };
           setMenu(emptyMenu);
@@ -181,9 +206,9 @@ function NutritionistPortalPage() {
     load();
 
     return () => {
-      isMounted = false; // Cancel pending async response if inputs change
+      isMounted = false;
     };
-  }, [selectedMess, selectedDate, isAuthenticated]);
+  }, [activePrimaryMess, selectedDate, isAuthenticated]);
 
   function sanitizeDishItem(item: any): StudioDishItem {
     if (typeof item === "string") {
@@ -272,9 +297,6 @@ function NutritionistPortalPage() {
           }
           if (prevItem.calories !== item.calories || prevItem.protein !== item.protein || prevItem.carbs !== item.carbs) {
             diffs.push(`  ~ Calibrated macros for "${item.name || 'Dish'}": Energy ${prevItem.calories}→${item.calories} kcal, Protein ${prevItem.protein}→${item.protein}g`);
-          }
-          if (prevItem.regionalTag !== item.regionalTag && item.regionalTag) {
-            diffs.push(`  ~ Updated regional tag for "${item.name}": ${item.regionalTag}`);
           }
         }
       });
@@ -416,11 +438,13 @@ function NutritionistPortalPage() {
 
     if (!db || !selectedDate) return;
 
-    const diffMessage = detailedChangesSummary.length > 0 
-      ? `\n\nDetected Modifications:\n` + detailedChangesSummary.slice(0, 8).join("\n") + (detailedChangesSummary.length > 8 ? "\n  ...and more updates" : "")
-      : "";
+    const targetMessList = isMultiMessActive ? selectedMessIds : [selectedMess];
+    if (targetMessList.length === 0) {
+      alert("⚠️ Please select at least one mess facility to publish.");
+      return;
+    }
 
-    if (!confirm(`🚀 Publish changes for ${selectedMess.toUpperCase()} on ${selectedDate}?${diffMessage}`)) {
+    if (!confirm(`🚀 Publish nutritional changes for ${targetMessList.length} mess(es) on ${selectedDate}?`)) {
       return;
     }
 
@@ -428,30 +452,29 @@ function NutritionistPortalPage() {
     setIsSaving(true);
 
     try {
-      const docRef = doc(firestoreDb, "daily_menus", `${selectedMess}_${selectedDate}`);
-      const payload = cleanFirestoreData({
-        ...menu,
-        messId: selectedMess,
-        date: selectedDate,
-        updatedAt: serverTimestamp(),
-        updatedByRole: "nutritionist",
+      const batch = writeBatch(firestoreDb);
+
+      targetMessList.forEach((messId) => {
+        const docRef = doc(firestoreDb, "daily_menus", `${messId}_${selectedDate}`);
+        const payload = cleanFirestoreData({
+          ...menu,
+          messId,
+          date: selectedDate,
+          updatedAt: serverTimestamp(),
+          updatedByRole: "nutritionist",
+        });
+
+        batch.set(docRef, payload, { merge: true });
       });
 
-      await setDoc(docRef, payload, { merge: true });
+      await batch.commit();
 
-      const dayIndex = new Date(selectedDate + "T00:00:00").getDay();
-      await saveDynamicMessMenu(selectedMess, dayIndex, menu as DayMenuWithNutrition);
-
-      await addDoc(collection(firestoreDb, "admin_audit_logs"), {
-        messId: selectedMess,
-        action: "Nutrition Studio Menu Updated",
-        details: `Updated nutrition profile for date ${selectedDate}. Changes: ${detailedChangesSummary.length} adjustments made.`,
-        operatorRole: "nutritionist",
-        timestamp: serverTimestamp(),
+      targetMessList.forEach((messId) => {
+        localStorage.setItem(`nutri_menu_${messId}_${selectedDate}`, JSON.stringify(menu));
       });
 
       setInitialLoadedMenu(JSON.parse(JSON.stringify(menu)));
-      alert(`✅ Nutrition Studio Published!\n\nAll primary macros, recipes, and nutritional profiles for date ${selectedDate} are live in Firebase.`);
+      alert(`✅ Nutrition Studio Published Successfully!\n\nAll primary macros, recipes, and profiles for ${selectedDate} are live across ${targetMessList.length} mess(es).`);
     } catch (err) {
       console.error(err);
       alert("❌ Failed to update Firestore. Please check your network connection.");
@@ -564,34 +587,110 @@ function NutritionistPortalPage() {
             </button>
           </div>
 
-          {/* Facility Picker */}
-          <div className="space-y-2">
+          {/* 🔀 View Mode Toggle (Cards vs Matrix) */}
+          <div className="space-y-2 pt-2 border-t border-[#B5DED4]">
             <label className="block text-[10px] font-black uppercase tracking-wider text-[#193A40]/70">
-              Select Mess Facility
+              Editing View Layout
             </label>
-            <div className="space-y-1">
-              {MESSES.map((m) => {
-                const isSelected = selectedMess === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    onClick={() => {
-                      if (hasUnsavedChanges && !confirm("Discard unsaved draft changes and switch mess facility?")) return;
-                      setSelectedMess(m.id as MessId);
-                      setIsMobileSidebarOpen(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-                      isSelected
-                        ? "bg-[#007F86] text-white shadow-xs"
-                        : "text-[#193A40]/70 hover:bg-[#E9F7F4] hover:text-[#193A40]"
-                    }`}
-                  >
-                    <span>{m.name} {m.subtitle ? `(${m.subtitle})` : ""}</span>
-                    {isSelected && <ChevronRight className="w-3.5 h-3.5 text-white" />}
-                  </button>
-                );
-              })}
+            <div className="grid grid-cols-2 gap-1.5 bg-[#E9F7F4] p-1 rounded-xl border border-[#B5DED4]">
+              <button
+                type="button"
+                onClick={() => setViewMode("cards")}
+                className={`py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition ${
+                  viewMode === "cards" ? "bg-[#007F86] text-white shadow-xs" : "text-[#193A40]/70 hover:text-[#193A40]"
+                }`}
+              >
+                <LayoutList className="w-3.5 h-3.5" /> Cards
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("matrix")}
+                className={`py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition ${
+                  viewMode === "matrix" ? "bg-[#007F86] text-white shadow-xs" : "text-[#193A40]/70 hover:text-[#193A40]"
+                }`}
+              >
+                <Table className="w-3.5 h-3.5" /> Matrix
+              </button>
             </div>
+          </div>
+
+          {/* 🔀 Multi-Mess Toggle & Selector */}
+          <div className="space-y-3 pt-2 border-t border-[#B5DED4]">
+            <div className="flex items-center justify-between">
+              <label className="block text-[10px] font-black uppercase tracking-wider text-[#193A40]/70">
+                Multi-Mess Selection
+              </label>
+              <button
+                type="button"
+                onClick={() => setIsMultiMessActive(!isMultiMessActive)}
+                className={`text-[10px] font-extrabold px-2.5 py-1 rounded-lg transition cursor-pointer border ${
+                  isMultiMessActive 
+                    ? "bg-[#007F86] text-white border-[#007F86]" 
+                    : "bg-[#E9F7F4] text-[#193A40]/70 border-[#B5DED4]"
+                }`}
+              >
+                {isMultiMessActive ? "Enabled" : "Disabled"}
+              </button>
+            </div>
+
+            {isMultiMessActive ? (
+              <div className="space-y-1.5 bg-[#E9F7F4]/40 p-2.5 rounded-2xl border border-[#B5DED4]">
+                <div className="flex items-center justify-between pb-1.5 border-b border-[#B5DED4]">
+                  <span className="text-[10px] font-bold text-[#193A40]">Select Target Messes</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Select All excluding JMB (JMB has a different menu structure)
+                      const nonJmbIds = MESSES.filter(m => m.id !== "jmb").map(m => m.id);
+                      setSelectedMessIds(selectedMessIds.length === nonJmbIds.length ? [] : nonJmbIds);
+                    }}
+                    className="text-[10px] font-bold text-[#007F86] hover:underline cursor-pointer"
+                  >
+                    {selectedMessIds.length === MESSES.filter(m => m.id !== "jmb").length ? "Clear" : "Select All (Excl. JMB)"}
+                  </button>
+                </div>
+
+                {MESSES.map((m) => {
+                  const isChecked = selectedMessIds.includes(m.id);
+                  const isJmb = m.id === "jmb";
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedMessIds(prev => 
+                          prev.includes(m.id) ? prev.filter(id => id !== m.id) : [...prev, m.id]
+                        );
+                      }}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        isChecked ? "bg-[#007F86] text-white" : "bg-white text-[#193A40] border border-[#B5DED4]"
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        {isChecked ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5 text-[#193A40]/40" />}
+                        {m.name}
+                      </span>
+                      {isJmb && <span className="text-[9px] bg-amber-100 text-amber-800 px-1 rounded">Diff Menu</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div>
+                <label className="block text-[9px] font-bold text-[#193A40]/60 uppercase mb-1">Active Facility</label>
+                <select
+                  value={selectedMess}
+                  onChange={(e) => setSelectedMess(e.target.value as MessId)}
+                  className="w-full bg-[#E9F7F4]/40 border-2 border-[#B5DED4] rounded-xl px-3 py-2 text-xs font-bold text-[#193A40] focus:outline-none focus:border-[#007F86]"
+                >
+                  {MESSES.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} {m.subtitle ? `(${m.subtitle})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
         </div>
@@ -624,14 +723,15 @@ function NutritionistPortalPage() {
       )}
 
       {/* 💻 Main Workspace Central Studio */}
-      <main className="flex-1 p-4 md:p-8 max-w-6xl overflow-y-auto">
+      <main className="flex-1 p-4 md:p-8 max-w-[1600px] overflow-y-auto">
         
         {/* Workspace Top Header Card */}
         <div className="bg-white rounded-3xl p-5 border-2 border-[#B5DED4] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-[#007F86]/10 text-[#007F86] border border-[#007F86]/20">
-                {MESSES.find(m => m.id === selectedMess)?.name}
+              <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-[#007F86]/10 text-[#007F86] border border-[#007F86]/20 flex items-center gap-1">
+                {viewMode === "matrix" ? <Table className="w-3 h-3" /> : <LayoutList className="w-3 h-3" />} 
+                {viewMode === "matrix" ? "Excel Spreadsheet Matrix" : "Standard Card View"}
               </span>
               
               <div className="flex items-center gap-1.5 ml-1 bg-[#E9F7F4] border border-[#B5DED4] px-2.5 py-1 rounded-xl">
@@ -650,7 +750,10 @@ function NutritionistPortalPage() {
             </div>
             <h2 className="text-xl font-black text-[#193A40] mt-1.5">Nutritional Menu Studio</h2>
             <p className="text-xs text-[#193A40]/70 mt-0.5 font-medium">
-              Live-edit daily menus pushed from Google Sheets or manage master nutrition breakdowns.
+              {isMultiMessActive 
+                ? `Publishing across ${selectedMessIds.length} selected mess(es)` 
+                : `Editing single facility: ${MESSES.find(m => m.id === selectedMess)?.name}`} 
+              {" "}for date <span className="font-bold underline">{selectedDate}</span>.
             </p>
           </div>
 
@@ -732,376 +835,598 @@ function NutritionistPortalPage() {
           )}
         </div>
 
-        {/* Meals Cards Container */}
-        {isLoading ? (
-          <div className="py-20 text-center text-xs font-bold text-[#193A40]/70 bg-white rounded-3xl border-2 border-[#B5DED4]">
-            Loading nutritional models from database...
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {MEAL_TYPES.map((mealType) => (
-              <div key={mealType} className="bg-white rounded-3xl border-2 border-[#B5DED4] p-5 shadow-sm space-y-4">
-                
-                {/* Meal Header */}
-                <div className="flex items-center justify-between pb-3 border-b border-[#B5DED4]/70">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-black uppercase tracking-wider text-[#193A40] flex items-center gap-1.5">
-                      <span>🍽️</span> {mealType}
-                    </span>
-                    <span className="text-[10px] font-bold bg-[#E9F7F4] text-[#007F86] px-2 py-0.5 rounded-full border border-[#B5DED4]">
-                      {menu[mealType].length} Items
-                    </span>
+        {/* ================= VIEW MODE 1: STANDARD CARDS ================= */}
+        {viewMode === "cards" && (
+          isLoading ? (
+            <div className="py-20 text-center text-xs font-bold text-[#193A40]/70 bg-white rounded-3xl border-2 border-[#B5DED4]">
+              Loading nutritional models from database...
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {MEAL_TYPES.map((mealType) => (
+                <div key={mealType} className="bg-white rounded-3xl border-2 border-[#B5DED4] p-5 shadow-sm space-y-4">
+                  
+                  {/* Meal Header */}
+                  <div className="flex items-center justify-between pb-3 border-b border-[#B5DED4]/70">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-black uppercase tracking-wider text-[#193A40] flex items-center gap-1.5">
+                        <span>🍽️</span> {mealType}
+                      </span>
+                      <span className="text-[10px] font-bold bg-[#E9F7F4] text-[#007F86] px-2 py-0.5 rounded-full border border-[#B5DED4]">
+                        {menu[mealType].length} Items
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleAddItem(mealType)}
+                      className="text-[11px] font-bold text-[#007F86] bg-[#E9F7F4] border border-[#B5DED4] px-3.5 py-1.5 rounded-xl flex items-center gap-1 hover:bg-[#B5DED4]/30 transition cursor-pointer shadow-2xs"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add Dish Profile
+                    </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => handleAddItem(mealType)}
-                    className="text-[11px] font-bold text-[#007F86] bg-[#E9F7F4] border border-[#B5DED4] px-3.5 py-1.5 rounded-xl flex items-center gap-1 hover:bg-[#B5DED4]/30 transition cursor-pointer shadow-2xs"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Add Dish Profile
-                  </button>
-                </div>
+                  {menu[mealType].length === 0 ? (
+                    <p className="text-xs italic text-[#193A40]/60 py-6 text-center font-medium">
+                      No dish entries configured for {mealType} on {selectedDate}. Click "+ Add Dish Profile" to build this meal's breakdown.
+                    </p>
+                  ) : (
+                    <div className="space-y-4">
+                      {menu[mealType].map((dish, idx) => {
+                        const itemKey = `${mealType}_${idx}`;
+                        const isExpanded = !!expandedCards[itemKey];
 
-                {menu[mealType].length === 0 ? (
-                  <p className="text-xs italic text-[#193A40]/60 py-6 text-center font-medium">
-                    No dish entries configured for {mealType} on {selectedDate}. Click "+ Add Dish Profile" to build this meal's breakdown.
-                  </p>
-                ) : (
-                  <div className="space-y-4">
-                    {menu[mealType].map((dish, idx) => {
-                      const itemKey = `${mealType}_${idx}`;
-                      const isExpanded = !!expandedCards[itemKey];
-
-                      return (
-                        <div key={idx} className="bg-[#E9F7F4]/40 border-2 border-[#B5DED4] rounded-2xl p-4 space-y-3.5">
-                          
-                          {/* Row 1: Dish Identity, Regional Tag, Serving Size & Expand Controls */}
-                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                        return (
+                          <div key={idx} className="bg-[#E9F7F4]/40 border-2 border-[#B5DED4] rounded-2xl p-4 space-y-3.5">
                             
-                            {/* Dish Name */}
-                            <div className="sm:col-span-5">
-                              <label className="block text-[9px] uppercase font-black text-[#193A40]/70 mb-1">
-                                Dish Title
-                              </label>
-                              <input
-                                type="text"
-                                value={dish.name}
-                                onChange={(e) => handleItemFieldChange(mealType, idx, "name", e.target.value)}
-                                placeholder="e.g. Sambar, Rajma Masala, Aloo Posto"
-                                className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-2 text-xs font-bold text-[#193A40] focus:outline-none focus:border-[#007F86]"
-                              />
-                            </div>
-
-                            {/* Serving Size */}
-                            <div className="sm:col-span-2">
-                              <label className="block text-[9px] uppercase font-black text-[#193A40]/70 mb-1">
-                                Serving Qty
-                              </label>
-                              <input
-                                type="text"
-                                value={dish.servingSize || ""}
-                                onChange={(e) => handleItemFieldChange(mealType, idx, "servingSize", e.target.value)}
-                                placeholder="1 Bowl (150g)"
-                                className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-2 text-xs font-bold text-[#193A40] focus:outline-none focus:border-[#007F86]"
-                              />
-                            </div>
-
-                            {/* Regional / State Tag */}
-                            <div className="sm:col-span-3">
-                              <label className="block text-[9px] uppercase font-black text-[#193A40]/70 mb-1 flex items-center gap-1">
-                                <Globe className="w-3 h-3 text-[#007F86]" /> Regional Tag
-                              </label>
-                              <input
-                                type="text"
-                                list={`regional_tags_${itemKey}`}
-                                value={dish.regionalTag || ""}
-                                onChange={(e) => handleItemFieldChange(mealType, idx, "regionalTag", e.target.value)}
-                                placeholder="Optional (e.g. Tamil Nadu Style)"
-                                className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-2 text-xs font-bold text-[#007F86] focus:outline-none focus:border-[#007F86]"
-                              />
-                              <datalist id={`regional_tags_${itemKey}`}>
-                                {POPULAR_REGIONS.map((r) => (
-                                  <option key={r} value={r} />
-                                ))}
-                              </datalist>
-                            </div>
-
-                            {/* Controls */}
-                            <div className="sm:col-span-2 flex items-center justify-end gap-1.5 pt-2 sm:pt-4">
-                              <button
-                                type="button"
-                                onClick={() => toggleDetails(itemKey)}
-                                className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs ${
-                                  isExpanded ? "bg-[#007F86] text-white border-[#007F86]" : "bg-white text-[#193A40] border-[#B5DED4] hover:bg-[#E9F7F4]"
-                                }`}
-                                title="Expand Food Profile & Micronutrients"
-                              >
-                                <BookOpen className="w-3.5 h-3.5" />
-                                <span>{isExpanded ? "Hide" : "Details"}</span>
-                                {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveItem(mealType, idx)}
-                                className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50 transition cursor-pointer"
-                                title="Remove Dish"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Row 2: 7 Primary Macro Values */}
-                          <div>
-                            <div className="flex items-center justify-between mb-1.5">
-                              <span className="text-[9px] uppercase font-black tracking-wider text-[#193A40]/70 flex items-center gap-1">
-                                <Flame className="w-3 h-3 text-orange-500" /> Primary Nutritional Values (Main Menu Display)
-                              </span>
-                            </div>
-
-                            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
-                              {/* Energy */}
-                              <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
-                                <span className="text-[9px] font-bold text-orange-700 block">Energy (kcal)</span>
-                                <input
-                                  type="number"
-                                  value={dish.calories || ""}
-                                  onChange={(e) => handleItemFieldChange(mealType, idx, "calories", Number(e.target.value))}
-                                  className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
-                                />
-                              </div>
-
-                              {/* Protein */}
-                              <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
-                                <span className="text-[9px] font-bold text-emerald-700 block">Protein (g)</span>
-                                <input
-                                  type="number"
-                                  step="0.1"
-                                  value={dish.protein || ""}
-                                  onChange={(e) => handleItemFieldChange(mealType, idx, "protein", Number(e.target.value))}
-                                  className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
-                                />
-                              </div>
-
-                              {/* Carbohydrate */}
-                              <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
-                                <span className="text-[9px] font-bold text-amber-700 block">Carbs (g)</span>
-                                <input
-                                  type="number"
-                                  step="0.1"
-                                  value={dish.carbs || ""}
-                                  onChange={(e) => handleItemFieldChange(mealType, idx, "carbs", Number(e.target.value))}
-                                  className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
-                                />
-                              </div>
-
-                              {/* Total Fat */}
-                              <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
-                                <span className="text-[9px] font-bold text-blue-700 block">Total Fat (g)</span>
-                                <input
-                                  type="number"
-                                  step="0.1"
-                                  value={dish.fat || ""}
-                                  onChange={(e) => handleItemFieldChange(mealType, idx, "fat", Number(e.target.value))}
-                                  className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
-                                />
-                              </div>
-
-                              {/* Saturated Fat */}
-                              <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
-                                <span className="text-[9px] font-bold text-indigo-700 block">Sat. Fat (g)</span>
-                                <input
-                                  type="number"
-                                  step="0.1"
-                                  value={dish.saturatedFat ?? 0}
-                                  onChange={(e) => handleItemFieldChange(mealType, idx, "saturatedFat", Number(e.target.value))}
-                                  className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
-                                />
-                              </div>
-
-                              {/* Fibre */}
-                              <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
-                                <span className="text-[9px] font-bold text-teal-700 block">Fibre (g)</span>
-                                <input
-                                  type="number"
-                                  step="0.1"
-                                  value={dish.fiber ?? 0}
-                                  onChange={(e) => handleItemFieldChange(mealType, idx, "fiber", Number(e.target.value))}
-                                  className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
-                                />
-                              </div>
-
-                              {/* Added Sugar */}
-                              <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
-                                <span className="text-[9px] font-bold text-pink-700 block">Sugar (g)</span>
-                                <input
-                                  type="number"
-                                  step="0.1"
-                                  value={dish.addedSugar ?? 0}
-                                  onChange={(e) => handleItemFieldChange(mealType, idx, "addedSugar", Number(e.target.value))}
-                                  className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
-                                />
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Row 3: Expandable Cultural Profile, Chef Recipe & Micronutrients */}
-                          {isExpanded && (
-                            <div className="pt-4 border-t border-[#B5DED4] space-y-4 animate-fade-in bg-white p-4 rounded-2xl border-2 border-[#B5DED4] shadow-xs">
+                            {/* Row 1: Dish Identity, Regional Tag, Serving Size & Expand Controls */}
+                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
                               
-                              {/* Cultural Profile: Description, Origin, Trivia & Special Tag */}
-                              <div>
-                                <div className="flex items-center justify-between mb-2.5">
-                                  <h4 className="text-[11px] font-black uppercase tracking-wider text-[#193A40] flex items-center gap-1.5">
-                                    <Info className="w-3.5 h-3.5 text-[#007F86]" /> Cultural Food Profile &amp; Knowledge Card
-                                  </h4>
+                              {/* Dish Name */}
+                              <div className="sm:col-span-5">
+                                <label className="block text-[9px] uppercase font-black text-[#193A40]/70 mb-1">
+                                  Dish Title
+                                </label>
+                                <input
+                                  type="text"
+                                  value={dish.name}
+                                  onChange={(e) => handleItemFieldChange(mealType, idx, "name", e.target.value)}
+                                  placeholder="e.g. Sambar, Rajma Masala, Aloo Posto"
+                                  className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-2 text-xs font-bold text-[#193A40] focus:outline-none focus:border-[#007F86]"
+                                />
+                              </div>
 
-                                  <div className="w-48">
+                              {/* Serving Size */}
+                              <div className="sm:col-span-2">
+                                <label className="block text-[9px] uppercase font-black text-[#193A40]/70 mb-1">
+                                  Serving Qty
+                                </label>
+                                <input
+                                  type="text"
+                                  value={dish.servingSize || ""}
+                                  onChange={(e) => handleItemFieldChange(mealType, idx, "servingSize", e.target.value)}
+                                  placeholder="1 Bowl (150g)"
+                                  className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-2 text-xs font-bold text-[#193A40] focus:outline-none focus:border-[#007F86]"
+                                />
+                              </div>
+
+                              {/* Regional / State Tag */}
+                              <div className="sm:col-span-3">
+                                <label className="block text-[9px] uppercase font-black text-[#193A40]/70 mb-1 flex items-center gap-1">
+                                  <Globe className="w-3 h-3 text-[#007F86]" /> Regional Tag
+                                </label>
+                                <input
+                                  type="text"
+                                  list={`regional_tags_${itemKey}`}
+                                  value={dish.regionalTag || ""}
+                                  onChange={(e) => handleItemFieldChange(mealType, idx, "regionalTag", e.target.value)}
+                                  placeholder="Optional (e.g. Tamil Nadu Style)"
+                                  className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-2 text-xs font-bold text-[#007F86] focus:outline-none focus:border-[#007F86]"
+                                />
+                                <datalist id={`regional_tags_${itemKey}`}>
+                                  {POPULAR_REGIONS.map((r) => (
+                                    <option key={r} value={r} />
+                                  ))}
+                                </datalist>
+                              </div>
+
+                              {/* Controls */}
+                              <div className="sm:col-span-2 flex items-center justify-end gap-1.5 pt-2 sm:pt-4">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleDetails(itemKey)}
+                                  className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs ${
+                                    isExpanded ? "bg-[#007F86] text-white border-[#007F86]" : "bg-white text-[#193A40] border-[#B5DED4] hover:bg-[#E9F7F4]"
+                                  }`}
+                                  title="Expand Food Profile & Micronutrients"
+                                >
+                                  <BookOpen className="w-3.5 h-3.5" />
+                                  <span>{isExpanded ? "Hide" : "Details"}</span>
+                                  {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveItem(mealType, idx)}
+                                  className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50 transition cursor-pointer"
+                                  title="Remove Dish"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Row 2: 7 Primary Macro Values */}
+                            <div>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="text-[9px] uppercase font-black tracking-wider text-[#193A40]/70 flex items-center gap-1">
+                                  <Flame className="w-3 h-3 text-orange-500" /> Primary Nutritional Values (Main Menu Display)
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+                                <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
+                                  <span className="text-[9px] font-bold text-orange-700 block">Energy (kcal)</span>
+                                  <input
+                                    type="number"
+                                    value={dish.calories || ""}
+                                    onChange={(e) => handleItemFieldChange(mealType, idx, "calories", Number(e.target.value))}
+                                    className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
+                                  />
+                                </div>
+                                <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
+                                  <span className="text-[9px] font-bold text-emerald-700 block">Protein (g)</span>
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    value={dish.protein || ""}
+                                    onChange={(e) => handleItemFieldChange(mealType, idx, "protein", Number(e.target.value))}
+                                    className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
+                                  />
+                                </div>
+                                <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
+                                  <span className="text-[9px] font-bold text-amber-700 block">Carbs (g)</span>
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    value={dish.carbs || ""}
+                                    onChange={(e) => handleItemFieldChange(mealType, idx, "carbs", Number(e.target.value))}
+                                    className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
+                                  />
+                                </div>
+                                <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
+                                  <span className="text-[9px] font-bold text-blue-700 block">Total Fat (g)</span>
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    value={dish.fat || ""}
+                                    onChange={(e) => handleItemFieldChange(mealType, idx, "fat", Number(e.target.value))}
+                                    className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
+                                  />
+                                </div>
+                                <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
+                                  <span className="text-[9px] font-bold text-indigo-700 block">Sat. Fat (g)</span>
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    value={dish.saturatedFat ?? 0}
+                                    onChange={(e) => handleItemFieldChange(mealType, idx, "saturatedFat", Number(e.target.value))}
+                                    className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
+                                  />
+                                </div>
+                                <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
+                                  <span className="text-[9px] font-bold text-teal-700 block">Fibre (g)</span>
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    value={dish.fiber ?? 0}
+                                    onChange={(e) => handleItemFieldChange(mealType, idx, "fiber", Number(e.target.value))}
+                                    className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
+                                  />
+                                </div>
+                                <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
+                                  <span className="text-[9px] font-bold text-pink-700 block">Sugar (g)</span>
+                                  <input
+                                    type="number"
+                                    step="0.1"
+                                    value={dish.addedSugar ?? 0}
+                                    onChange={(e) => handleItemFieldChange(mealType, idx, "addedSugar", Number(e.target.value))}
+                                    className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Row 3: Expandable Cultural Profile, Chef Recipe & Micronutrients */}
+                            {isExpanded && (
+                              <div className="pt-4 border-t border-[#B5DED4] space-y-4 animate-fade-in bg-white p-4 rounded-2xl border-2 border-[#B5DED4] shadow-xs">
+                                <div>
+                                  <div className="flex items-center justify-between mb-2.5">
+                                    <h4 className="text-[11px] font-black uppercase tracking-wider text-[#193A40] flex items-center gap-1.5">
+                                      <Info className="w-3.5 h-3.5 text-[#007F86]" /> Cultural Food Profile &amp; Knowledge Card
+                                    </h4>
+                                    <div className="w-48">
+                                      <input
+                                        type="text"
+                                        value={dish.specialTag || ""}
+                                        onChange={(e) => handleItemFieldChange(mealType, idx, "specialTag", e.target.value)}
+                                        placeholder="Special Tag (e.g. State Special)"
+                                        className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-lg px-2.5 py-1 text-[10px] font-bold text-purple-800 focus:outline-none focus:border-[#007F86]"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <div>
+                                      <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">Description &amp; Key Nutritional Perk</label>
+                                      <textarea
+                                        rows={3}
+                                        value={dish.description || ""}
+                                        onChange={(e) => handleItemFieldChange(mealType, idx, "description", e.target.value)}
+                                        placeholder="Brief overview..."
+                                        className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">Origin &amp; Cultural Roots</label>
+                                      <textarea
+                                        rows={3}
+                                        value={dish.originStory || ""}
+                                        onChange={(e) => handleItemFieldChange(mealType, idx, "originStory", e.target.value)}
+                                        placeholder="Geographic roots..."
+                                        className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">Popular or Fun Trivia Fact</label>
+                                      <textarea
+                                        rows={3}
+                                        value={dish.funFact || ""}
+                                        onChange={(e) => handleItemFieldChange(mealType, idx, "funFact", e.target.value)}
+                                        placeholder="Fun facts..."
+                                        className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="pt-2 border-t border-[#B5DED4]">
+                                  <h4 className="text-[11px] font-black uppercase tracking-wider text-[#193A40] flex items-center gap-1.5 mb-2.5">
+                                    <ChefHat className="w-3.5 h-3.5 text-amber-600" /> Kitchen Team Standard Recipe (Kitchen View)
+                                  </h4>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <div>
+                                      <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">Standard Ingredients &amp; Quantities</label>
+                                      <textarea
+                                        rows={3}
+                                        value={dish.recipe?.ingredients || ""}
+                                        onChange={(e) => handleRecipeChange(mealType, idx, "ingredients", e.target.value)}
+                                        placeholder="Ingredients ratio..."
+                                        className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">Preparation Guidelines &amp; Method</label>
+                                      <textarea
+                                        rows={3}
+                                        value={dish.recipe?.method || ""}
+                                        onChange={(e) => handleRecipeChange(mealType, idx, "method", e.target.value)}
+                                        placeholder="Step-by-step cooking method..."
+                                        className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="pt-2 border-t border-[#B5DED4]">
+                                  <h4 className="text-[11px] font-black uppercase tracking-wider text-[#193A40] flex items-center gap-1.5 mb-2.5">
+                                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Micronutrients Breakdown ("Know More" Window)
+                                  </h4>
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                                    {[
+                                      { key: "iron", label: "Iron", unit: "mg" },
+                                      { key: "calcium", label: "Calcium", unit: "mg" },
+                                      { key: "magnesium", label: "Magnesium", unit: "mg" },
+                                      { key: "potassium", label: "Potassium", unit: "mg" },
+                                      { key: "sodium", label: "Sodium", unit: "mg" },
+                                      { key: "zinc", label: "Zinc", unit: "mg" },
+                                      { key: "vitaminA", label: "Vitamin A", unit: "mcg" },
+                                      { key: "vitaminC", label: "Vitamin C", unit: "mg" },
+                                      { key: "vitaminB12", label: "Vitamin B12", unit: "mcg" },
+                                      { key: "folate", label: "Folate", unit: "mcg" },
+                                      { key: "vitaminD", label: "Vitamin D", unit: "mcg" },
+                                      { key: "vitaminB6", label: "Vitamin B6", unit: "mg" },
+                                    ].map((micro) => {
+                                      const val = dish.micronutrients?.[micro.key as keyof MicronutrientProfile] ?? 0;
+                                      return (
+                                        <div key={micro.key} className="bg-[#E9F7F4]/40 p-2 rounded-xl border border-[#B5DED4]">
+                                          <span className="text-[9px] font-bold text-[#193A40]/70 uppercase block">{micro.label} ({micro.unit})</span>
+                                          <input
+                                            type="number"
+                                            step="0.01"
+                                            value={val || ""}
+                                            onChange={(e) => handleMicroNutrientChange(mealType, idx, micro.key as keyof MicronutrientProfile, Number(e.target.value))}
+                                            className="w-full font-bold text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
+                                          />
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+
+                              </div>
+                            )}
+
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                </div>
+              ))}
+            </div>
+          )
+        )}
+
+        {/* ================= VIEW MODE 2: EXCEL SPREADSHEET MATRIX ================= */}
+        {viewMode === "matrix" && (
+          isLoading ? (
+            <div className="py-20 text-center text-xs font-bold text-[#193A40]/70 bg-white rounded-3xl border-2 border-[#B5DED4]">
+              Loading spreadsheet matrix data...
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {MEAL_TYPES.map((mealType) => (
+                <div key={mealType} className="bg-white rounded-3xl border-2 border-[#B5DED4] p-5 shadow-sm space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-[#B5DED4]/70">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-black uppercase tracking-wider text-[#193A40] flex items-center gap-1.5">
+                        <span>🍽️</span> {mealType} Spreadsheet Matrix
+                      </span>
+                      <span className="text-[10px] font-bold bg-[#E9F7F4] text-[#007F86] px-2 py-0.5 rounded-full border border-[#B5DED4]">
+                        {menu[mealType].length} Rows
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleAddItem(mealType)}
+                      className="text-[11px] font-bold text-[#007F86] bg-[#E9F7F4] border border-[#B5DED4] px-3.5 py-1.5 rounded-xl flex items-center gap-1 hover:bg-[#B5DED4]/30 transition cursor-pointer shadow-2xs"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add Row
+                    </button>
+                  </div>
+
+                  {menu[mealType].length === 0 ? (
+                    <p className="text-xs italic text-[#193A40]/60 py-6 text-center font-medium">
+                      No rows found for {mealType}. Click "+ Add Row" to insert data.
+                    </p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs whitespace-nowrap border-collapse">
+                        <thead>
+                          <tr className="bg-[#E9F7F4] border-b-2 border-[#B5DED4] text-[10px] uppercase tracking-wider text-[#193A40]/70 font-black">
+                            <th className="py-2.5 px-3">#</th>
+                            <th className="py-2.5 px-3 min-w-[220px]">Dish Title</th>
+                            <th className="py-2.5 px-3 min-w-[130px]">Serving Qty</th>
+                            <th className="py-2.5 px-3 min-w-[170px]">Regional Tag</th>
+                            <th className="py-2.5 px-2 text-center w-24">Energy</th>
+                            <th className="py-2.5 px-2 text-center w-20">Protein</th>
+                            <th className="py-2.5 px-2 text-center w-20">Carbs</th>
+                            <th className="py-2.5 px-2 text-center w-20">Fat</th>
+                            <th className="py-2.5 px-3 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#B5DED4]/60">
+                          {menu[mealType].map((dish, idx) => {
+                            const itemKey = `${mealType}_matrix_${idx}`;
+                            const isExpanded = !!expandedCards[itemKey];
+
+                            return (
+                              <>
+                                <tr key={idx} className="transition hover:bg-[#E9F7F4]/40">
+                                  <td className="py-3 px-3 font-bold text-[#193A40]/50">{idx + 1}</td>
+                                  
+                                  <td className="py-3 px-3">
                                     <input
                                       type="text"
-                                      value={dish.specialTag || ""}
-                                      onChange={(e) => handleItemFieldChange(mealType, idx, "specialTag", e.target.value)}
-                                      placeholder="Special Tag (e.g. State Special)"
-                                      className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-lg px-2.5 py-1 text-[10px] font-bold text-purple-800 focus:outline-none focus:border-[#007F86]"
+                                      value={dish.name}
+                                      onChange={(e) => handleItemFieldChange(mealType, idx, "name", e.target.value)}
+                                      placeholder="Dish name..."
+                                      className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-1.5 text-xs font-bold text-[#193A40] focus:outline-none focus:border-[#007F86]"
                                     />
-                                  </div>
-                                </div>
+                                  </td>
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                  <div>
-                                    <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">
-                                      Description &amp; Key Nutritional Perk
-                                    </label>
-                                    <textarea
-                                      rows={3}
-                                      value={dish.description || ""}
-                                      onChange={(e) => handleItemFieldChange(mealType, idx, "description", e.target.value)}
-                                      placeholder="Brief overview of preparation, flavor profile, and health perks..."
-                                      className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
+                                  <td className="py-3 px-3">
+                                    <input
+                                      type="text"
+                                      value={dish.servingSize || ""}
+                                      onChange={(e) => handleItemFieldChange(mealType, idx, "servingSize", e.target.value)}
+                                      placeholder="1 Portion"
+                                      className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-1.5 text-xs font-medium text-[#193A40] focus:outline-none focus:border-[#007F86]"
                                     />
-                                  </div>
+                                  </td>
 
-                                  <div>
-                                    <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">
-                                      Origin &amp; Cultural Roots
-                                    </label>
-                                    <textarea
-                                      rows={3}
-                                      value={dish.originStory || ""}
-                                      onChange={(e) => handleItemFieldChange(mealType, idx, "originStory", e.target.value)}
-                                      placeholder="Geographic roots, community history, or traditional culinary folklore..."
-                                      className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
+                                  <td className="py-3 px-3">
+                                    <input
+                                      type="text"
+                                      list={`matrix_tags_${itemKey}`}
+                                      value={dish.regionalTag || ""}
+                                      onChange={(e) => handleItemFieldChange(mealType, idx, "regionalTag", e.target.value)}
+                                      placeholder="Regional Tag"
+                                      className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-1.5 text-xs font-bold text-[#007F86] focus:outline-none focus:border-[#007F86]"
                                     />
-                                  </div>
+                                    <datalist id={`matrix_tags_${itemKey}`}>
+                                      {POPULAR_REGIONS.map((r) => (
+                                        <option key={r} value={r} />
+                                      ))}
+                                    </datalist>
+                                  </td>
 
-                                  <div>
-                                    <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">
-                                      Popular or Fun Trivia Fact
-                                    </label>
-                                    <textarea
-                                      rows={3}
-                                      value={dish.funFact || ""}
-                                      onChange={(e) => handleItemFieldChange(mealType, idx, "funFact", e.target.value)}
-                                      placeholder="Fun facts, historical anecdotes, or traditional serving customs..."
-                                      className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
+                                  <td className="py-3 px-2 text-center">
+                                    <input
+                                      type="number"
+                                      value={dish.calories || ""}
+                                      onChange={(e) => handleItemFieldChange(mealType, idx, "calories", Number(e.target.value))}
+                                      className="w-20 bg-white border border-[#B5DED4] rounded-xl py-1.5 text-center text-xs font-black text-orange-700 focus:outline-none focus:border-[#007F86]"
                                     />
-                                  </div>
-                                </div>
-                              </div>
+                                  </td>
 
-                              {/* Kitchen Team Standard Recipe (Chef View) */}
-                              <div className="pt-2 border-t border-[#B5DED4]">
-                                <h4 className="text-[11px] font-black uppercase tracking-wider text-[#193A40] flex items-center gap-1.5 mb-2.5">
-                                  <ChefHat className="w-3.5 h-3.5 text-amber-600" /> Kitchen Team Standard Recipe (Kitchen View)
-                                </h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                  <div>
-                                    <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">
-                                      Standard Ingredients &amp; Quantities
-                                    </label>
-                                    <textarea
-                                      rows={3}
-                                      value={dish.recipe?.ingredients || ""}
-                                      onChange={(e) => handleRecipeChange(mealType, idx, "ingredients", e.target.value)}
-                                      placeholder="Ingredients ratio per 100 students (e.g. 10kg Basmati Rice, 2kg Paneer)..."
-                                      className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
+                                  <td className="py-3 px-2 text-center">
+                                    <input
+                                      type="number"
+                                      step="0.1"
+                                      value={dish.protein || ""}
+                                      onChange={(e) => handleItemFieldChange(mealType, idx, "protein", Number(e.target.value))}
+                                      className="w-16 bg-white border border-[#B5DED4] rounded-xl py-1.5 text-center text-xs font-black text-emerald-700 focus:outline-none focus:border-[#007F86]"
                                     />
-                                  </div>
-                                  <div>
-                                    <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">
-                                      Preparation Guidelines &amp; Method
-                                    </label>
-                                    <textarea
-                                      rows={3}
-                                      value={dish.recipe?.method || ""}
-                                      onChange={(e) => handleRecipeChange(mealType, idx, "method", e.target.value)}
-                                      placeholder="Step-by-step cooking method to maintain consistency across shifts..."
-                                      className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
+                                  </td>
+
+                                  <td className="py-3 px-2 text-center">
+                                    <input
+                                      type="number"
+                                      step="0.1"
+                                      value={dish.carbs || ""}
+                                      onChange={(e) => handleItemFieldChange(mealType, idx, "carbs", Number(e.target.value))}
+                                      className="w-16 bg-white border border-[#B5DED4] rounded-xl py-1.5 text-center text-xs font-black text-amber-700 focus:outline-none focus:border-[#007F86]"
                                     />
-                                  </div>
-                                </div>
-                              </div>
+                                  </td>
 
-                              {/* 12 Essential Micronutrients Breakdown */}
-                              <div className="pt-2 border-t border-[#B5DED4]">
-                                <h4 className="text-[11px] font-black uppercase tracking-wider text-[#193A40] flex items-center gap-1.5 mb-2.5">
-                                  <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Micronutrients Breakdown ("Know More" Window)
-                                </h4>
+                                  <td className="py-3 px-2 text-center">
+                                    <input
+                                      type="number"
+                                      step="0.1"
+                                      value={dish.fat || ""}
+                                      onChange={(e) => handleItemFieldChange(mealType, idx, "fat", Number(e.target.value))}
+                                      className="w-16 bg-white border border-[#B5DED4] rounded-xl py-1.5 text-center text-xs font-black text-blue-700 focus:outline-none focus:border-[#007F86]"
+                                    />
+                                  </td>
 
-                                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                                  {[
-                                    { key: "iron", label: "Iron", unit: "mg" },
-                                    { key: "calcium", label: "Calcium", unit: "mg" },
-                                    { key: "magnesium", label: "Magnesium", unit: "mg" },
-                                    { key: "potassium", label: "Potassium", unit: "mg" },
-                                    { key: "sodium", label: "Sodium", unit: "mg" },
-                                    { key: "zinc", label: "Zinc", unit: "mg" },
-                                    { key: "vitaminA", label: "Vitamin A", unit: "mcg" },
-                                    { key: "vitaminC", label: "Vitamin C", unit: "mg" },
-                                    { key: "vitaminB12", label: "Vitamin B12", unit: "mcg" },
-                                    { key: "folate", label: "Folate", unit: "mcg" },
-                                    { key: "vitaminD", label: "Vitamin D", unit: "mcg" },
-                                    { key: "vitaminB6", label: "Vitamin B6", unit: "mg" },
-                                  ].map((micro) => {
-                                    const val = dish.micronutrients?.[micro.key as keyof MicronutrientProfile] ?? 0;
-                                    return (
-                                      <div key={micro.key} className="bg-[#E9F7F4]/40 p-2 rounded-xl border border-[#B5DED4]">
-                                        <span className="text-[9px] font-bold text-[#193A40]/70 uppercase block">
-                                          {micro.label} ({micro.unit})
-                                        </span>
-                                        <input
-                                          type="number"
-                                          step="0.01"
-                                          value={val || ""}
-                                          onChange={(e) =>
-                                            handleMicroNutrientChange(
-                                              mealType,
-                                              idx,
-                                              micro.key as keyof MicronutrientProfile,
-                                              Number(e.target.value)
-                                            )
-                                          }
-                                          className="w-full font-bold text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
-                                        />
+                                  <td className="py-3 px-3 text-right">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleDetails(itemKey)}
+                                        className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs ${
+                                          isExpanded ? "bg-[#007F86] text-white border-[#007F86]" : "bg-white text-[#193A40] border-[#B5DED4] hover:bg-[#E9F7F4]"
+                                        }`}
+                                      >
+                                        <BookOpen className="w-3.5 h-3.5" />
+                                        <span>{isExpanded ? "Hide" : "Details"}</span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveItem(mealType, idx)}
+                                        className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50 transition cursor-pointer"
+                                        title="Delete Row"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+
+                                {isExpanded && (
+                                  <tr className="bg-[#E9F7F4]/60">
+                                    <td colSpan={9} className="p-4">
+                                      <div className="bg-white p-4 rounded-2xl border-2 border-[#B5DED4] space-y-4 shadow-xs">
+                                        <div className="flex items-center justify-between border-b border-[#B5DED4] pb-2">
+                                          <h4 className="text-xs font-black uppercase text-[#193A40] flex items-center gap-1.5">
+                                            <Sparkles className="w-4 h-4 text-amber-500" /> Advanced Nutrition &amp; Recipe Matrix for "{dish.name || "Untitled"}"
+                                          </h4>
+                                          <input
+                                            type="text"
+                                            value={dish.specialTag || ""}
+                                            onChange={(e) => handleItemFieldChange(mealType, idx, "specialTag", e.target.value)}
+                                            placeholder="Special Tag"
+                                            className="bg-[#E9F7F4] border border-[#B5DED4] rounded-lg px-2.5 py-1 text-[10px] font-bold text-purple-800 outline-none"
+                                          />
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                          <div>
+                                            <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">Description</label>
+                                            <textarea
+                                              rows={2}
+                                              value={dish.description || ""}
+                                              onChange={(e) => handleItemFieldChange(mealType, idx, "description", e.target.value)}
+                                              placeholder="Health perks..."
+                                              className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] outline-none"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">Ingredients</label>
+                                            <textarea
+                                              rows={2}
+                                              value={dish.recipe?.ingredients || ""}
+                                              onChange={(e) => handleRecipeChange(mealType, idx, "ingredients", e.target.value)}
+                                              placeholder="Ingredients..."
+                                              className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] outline-none"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">Method</label>
+                                            <textarea
+                                              rows={2}
+                                              value={dish.recipe?.method || ""}
+                                              onChange={(e) => handleRecipeChange(mealType, idx, "method", e.target.value)}
+                                              placeholder="Cooking steps..."
+                                              className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] outline-none"
+                                            />
+                                          </div>
+                                        </div>
+
+                                        <div>
+                                          <h5 className="text-[10px] font-black uppercase tracking-wider text-[#193A40] mb-2">12 Essential Micronutrients</h5>
+                                          <div className="grid grid-cols-3 sm:grid-cols-6 md:grid-cols-12 gap-1.5">
+                                            {[
+                                              { key: "iron", label: "Iron", unit: "mg" },
+                                              { key: "calcium", label: "Calcium", unit: "mg" },
+                                              { key: "magnesium", label: "Mag", unit: "mg" },
+                                              { key: "potassium", label: "K", unit: "mg" },
+                                              { key: "sodium", label: "Na", unit: "mg" },
+                                              { key: "zinc", label: "Zinc", unit: "mg" },
+                                              { key: "vitaminA", label: "Vit A", unit: "mcg" },
+                                              { key: "vitaminC", label: "Vit C", unit: "mg" },
+                                              { key: "vitaminB12", label: "B12", unit: "mcg" },
+                                              { key: "folate", label: "Folate", unit: "mcg" },
+                                              { key: "vitaminD", label: "Vit D", unit: "mcg" },
+                                              { key: "vitaminB6", label: "B6", unit: "mg" },
+                                            ].map((micro) => {
+                                              const val = dish.micronutrients?.[micro.key as keyof MicronutrientProfile] ?? 0;
+                                              return (
+                                                <div key={micro.key} className="bg-[#E9F7F4]/50 p-1.5 rounded-lg border border-[#B5DED4]">
+                                                  <span className="text-[8px] font-bold text-[#193A40]/70 uppercase block truncate">{micro.label}</span>
+                                                  <input
+                                                    type="number"
+                                                    step="0.01"
+                                                    value={val || ""}
+                                                    onChange={(e) => handleMicroNutrientChange(mealType, idx, micro.key as keyof MicronutrientProfile, Number(e.target.value))}
+                                                    className="w-full font-bold text-[11px] text-[#193A40] bg-transparent outline-none text-center"
+                                                  />
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+
                                       </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-
-                            </div>
-                          )}
-
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-              </div>
-            ))}
-          </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )
         )}
 
       </main>
