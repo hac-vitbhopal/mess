@@ -64,7 +64,7 @@ export function Onboarding({ onComplete }: { onComplete: (p: StudentProfile) => 
       // 4. Notification permissions & topic switch
       const permission = await requestNotificationPermission();
       if (permission === "granted") {
-        await subscribeToMessTopic(profile.messId, profile.name);
+        await subscribeToMessTopic(profile.messId, profile.name, profile.email);
       }
 
       onComplete(profile);

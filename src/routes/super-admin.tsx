@@ -1,13 +1,17 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
-import { db } from "@/lib/firebase"; 
-import { collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, limit, doc, getDocs, getDoc, updateDoc, deleteDoc, setDoc, writeBatch } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
+import { signInWithCustomToken } from "firebase/auth";
+import { loginOperator } from "@/lib/operator-auth-action";
+import { ChangeOperatorPassword } from "@/components/messhub/ChangeOperatorPassword";
+import { useOperatorAuth } from "@/lib/use-operator-auth";
+import { ReplyFeedbackBox } from "@/components/messhub/ReplyFeedbackBox";
+import { collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, limit, doc, getDocs, getDoc, updateDoc, deleteDoc, setDoc, writeBatch, getCountFromServer, where } from "firebase/firestore";
 import { 
   getAdminSession, 
   saveAdminSession, 
   clearAdminSession, 
-  verifyAdminPasscode,
   MESSES as DEFAULT_STATIC_MESSES,
   MEAL_DEFS,
   currentAndNextMeal,
@@ -67,6 +71,8 @@ function SuperAdminGatekeeper() {
   const [session, setSession] = useState<any>(null);
   const [passcode, setPasscode] = useState("");
   const [authError, setAuthError] = useState(false);
+  const [authMessage, setAuthMessage] = useState("");
+  const { ready: authReady, claims } = useOperatorAuth();
 
   useEffect(() => {
     const activeSession = getAdminSession();
@@ -85,25 +91,37 @@ function SuperAdminGatekeeper() {
     }
   }, [session, navigate, isMounted]);
 
-  function handleVerifyPasscode(e: React.FormEvent) {
-    e.preventDefault();
-    const cleanPass = passcode.trim();
-    const matchedAuth = verifyAdminPasscode(cleanPass);
+  // Wait for Firebase to restore the saved sign-in before showing the dashboard.
+  useEffect(() => {
+    if (!authReady) return;
+    if (getAdminSession() && claims?.role !== "super-admin") {
+      clearAdminSession();
+      setSession(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady]);
 
-    if (matchedAuth && matchedAuth.role === "super-admin") {
+  async function handleVerifyPasscode(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      const matchedAuth = await loginOperator({ data: { password: passcode, area: "super-admin" } });
+      if (matchedAuth.role !== "super-admin" || !auth) throw new Error("Unauthorized");
+      await signInWithCustomToken(auth, matchedAuth.token);
       setAuthError(false);
       const newSession = { role: matchedAuth.role };
       saveAdminSession(newSession);
       setSession(newSession);
       logSuperAdminActivity("all", "Root Login", "Super Admin authorized access to Master Control Dashboard");
-    } else {
+    } catch (error) {
+      console.error("[super-admin-login]", error);
+      setAuthMessage(error instanceof Error ? error.message : "");
       setAuthError(true);
       setPasscode("");
       if ("vibrate" in navigator) navigator.vibrate(200);
     }
   }
 
-  if (!isMounted) {
+  if (!isMounted || !authReady) {
     return <div className="min-h-screen bg-[#E9F7F4]" />;
   }
 
@@ -137,7 +155,7 @@ function SuperAdminGatekeeper() {
                 authError ? "border-red-500 ring-4 ring-red-500/10" : "focus:border-[#007F86]"
               }`}
             />
-            {authError && <p className="mt-2.5 text-xs font-semibold text-red-600">Invalid authorization sequence.</p>}
+            {authError && <p className="mt-2.5 text-xs font-semibold text-red-600">{authMessage && authMessage !== "Invalid password." ? authMessage : "Invalid authorization sequence."}</p>}
             <button type="submit" disabled={passcode.length === 0} className="mt-4 w-full rounded-2xl bg-[#007F86] py-4 text-sm font-bold text-white shadow-sm active:scale-[0.99] transition-all disabled:opacity-40 cursor-pointer hover:opacity-90">
               Verify Root Access
             </button>
@@ -162,6 +180,9 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
   // Global Realtime Datasets
   const [dynamicMesses, setDynamicMesses] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
+  const [studentsLoaded, setStudentsLoaded] = useState(false);
+  const [studentTotal, setStudentTotal] = useState(0);
+  const [messStudentCounts, setMessStudentCounts] = useState<Record<string, number>>({});
   const [feedbacks, setFeedbacks] = useState<ItemFeedback[]>([]);
   const [complaints, setComplaints] = useState<any[]>([]);
   const [menuLogs, setMenuLogs] = useState<any[]>([]);
@@ -206,12 +227,16 @@ const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
         const messesSnap = await getDocs(collection(firestoreDb, "messes"));
         setDynamicMesses(messesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
-        // Students: Safely load up to 12,000 records in one-time fetch
-        const studentsQuery = query(collection(firestoreDb, "registered_students"), limit(10000));
-        const studentsSnap = await getDocs(studentsQuery);
-        const studentList = studentsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        studentList.sort((a: any, b: any) => (b.lastActiveAt?.toDate?.()?.getTime() || 0) - (a.lastActiveAt?.toDate?.()?.getTime() || 0));
-        setStudents(studentList);
+        // Students: counts only (about 1 read per 1,000 students instead of 1 per student).
+        // The full list loads on demand when the Student Directory tab is opened.
+        const totalSnap = await getCountFromServer(collection(firestoreDb, "registered_students"));
+        setStudentTotal(totalSnap.data().count);
+        const messIds = Array.from(new Set([...messesSnap.docs.map((d) => d.id), ...DEFAULT_STATIC_MESSES.map((m) => m.id)]));
+        const countEntries = await Promise.all(messIds.map(async (id) => {
+          const snap = await getCountFromServer(query(collection(firestoreDb, "registered_students"), where("messId", "==", id)));
+          return [id, snap.data().count] as const;
+        }));
+        setMessStudentCounts(Object.fromEntries(countEntries));
 
         // Feedbacks (recent 500)
         const feedbacksQuery = query(collection(firestoreDb, "item_feedback"), orderBy("createdAt", "desc"), limit(500));
@@ -248,6 +273,21 @@ const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
       unsubConfig(); // Clean up the lightweight settings listener
     };
   }, []);
+
+  // Student Directory: load the 300 most recently active students only when that tab opens.
+  useEffect(() => {
+    if (activeTab !== "students" || studentsLoaded || !db) return;
+    const firestoreDb = db;
+    void (async () => {
+      try {
+        const snap = await getDocs(query(collection(firestoreDb, "registered_students"), orderBy("lastActiveAt", "desc"), limit(300)));
+        setStudents(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setStudentsLoaded(true);
+      } catch (err) {
+        console.warn("Failed to load student directory:", err);
+      }
+    })();
+  }, [activeTab, studentsLoaded]);
 
   async function handleSaveKitchenPermissions(e: React.FormEvent) {
     e.preventDefault();
@@ -480,6 +520,7 @@ const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
         </div>
 
         <div className="p-4 border-t border-[#B5DED4]">
+          <div className="mb-3"><ChangeOperatorPassword /></div>
           <button 
             onClick={() => { 
               logSuperAdminActivity("all", "Root Logout", "Super Admin logged out");
@@ -515,7 +556,7 @@ const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <MetricCard 
                 title="Registered Students" 
-                value={students.length} 
+                value={studentTotal} 
                 icon={Users} 
                 color="bg-[#007F86]/10 text-[#007F86]" 
                 onClick={() => setActiveTab("students")}
@@ -556,7 +597,7 @@ const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
                 </div>
                 <div className="mt-3 overflow-y-auto flex-1 space-y-3 pr-1">
                   {allMesses.map((mess) => {
-                    const userCount = students.filter(s => s.messId === mess.id).length;
+                    const userCount = messStudentCounts[mess.id] ?? 0;
                     const authKeyEntry = DEFAULT_STATIC_MESSES.find((m) => m.id === mess.id);
                     const adminRole = authKeyEntry ? "admin" : "Unassigned";
 
@@ -914,12 +955,15 @@ const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  if (students.length === 0) {
+                onClick={async () => {
+                  if (!db) return;
+                  if (!window.confirm(`Exporting reads every student record (about ${studentTotal} reads). Continue?`)) return;
+                  const everyone = (await getDocs(collection(db, "registered_students"))).docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+                  if (everyone.length === 0) {
                     alert("No student records available to export.");
                     return;
                   }
-                  const rows = students.map((s) => ({
+                  const rows = everyone.map((s: any) => ({
                     "Student Name": sanitizeExcelCell(s.name || "Anonymous"),
                     "Email": sanitizeExcelCell(s.email || "N/A"),
                     "Assigned Mess": sanitizeExcelCell(s.messId || "N/A"),
@@ -943,7 +987,7 @@ const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
                   <span>👥</span> Active Onboarded Profiles
                 </h2>
                 <span className="rounded-full bg-emerald-100 text-emerald-800 font-bold px-3 py-1 text-xs">
-                  Total Students: {students.length}
+                  Total Students: {studentTotal} (showing latest {students.length})
                 </span>
               </div>
 
@@ -1959,6 +2003,8 @@ function SuperAdminFeedbackViewer({ feedbacks }: { feedbacks: ItemFeedback[] }) 
                       "{item.comment}"
                     </p>
                   )}
+
+                  {item.id && <ReplyFeedbackBox feedbackId={item.id} replyText={item.replyText} repliedAt={item.repliedAt} />}
 
                   <div className="pt-2 flex justify-end">
                     {isSolved ? (

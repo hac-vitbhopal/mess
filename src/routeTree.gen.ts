@@ -16,6 +16,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as NutritionistRouteImport } from './routes/nutritionist'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as SuperAdminRouteImport } from './routes/super-admin'
+import { Route as TechnicalRouteImport } from './routes/technical'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -52,6 +53,11 @@ const SuperAdminRoute = SuperAdminRouteImport.update({
   path: '/super-admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TechnicalRoute = TechnicalRouteImport.update({
+  id: '/technical',
+  path: '/technical',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -61,6 +67,7 @@ export interface FileRoutesByFullPath {
   '/nutritionist': typeof NutritionistRoute
   '/privacy': typeof PrivacyRoute
   '/super-admin': typeof SuperAdminRoute
+  '/technical': typeof TechnicalRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -70,6 +77,7 @@ export interface FileRoutesByTo {
   '/nutritionist': typeof NutritionistRoute
   '/privacy': typeof PrivacyRoute
   '/super-admin': typeof SuperAdminRoute
+  '/technical': typeof TechnicalRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -80,6 +88,7 @@ export interface FileRoutesById {
   '/nutritionist': typeof NutritionistRoute
   '/privacy': typeof PrivacyRoute
   '/super-admin': typeof SuperAdminRoute
+  '/technical': typeof TechnicalRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -91,6 +100,7 @@ export interface FileRouteTypes {
     | '/nutritionist'
     | '/privacy'
     | '/super-admin'
+    | '/technical'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
     | '/nutritionist'
     | '/privacy'
     | '/super-admin'
+    | '/technical'
   id:
     | '__root__'
     | '/'
@@ -109,6 +120,7 @@ export interface FileRouteTypes {
     | '/nutritionist'
     | '/privacy'
     | '/super-admin'
+    | '/technical'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -119,6 +131,7 @@ export interface RootRouteChildren {
   NutritionistRoute: typeof NutritionistRoute
   PrivacyRoute: typeof PrivacyRoute
   SuperAdminRoute: typeof SuperAdminRoute
+  TechnicalRoute: typeof TechnicalRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -172,6 +185,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SuperAdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/technical': {
+      id: '/technical'
+      path: '/technical'
+      fullPath: '/technical'
+      preLoaderRoute: typeof TechnicalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -183,6 +203,7 @@ const rootRouteChildren: RootRouteChildren = {
   NutritionistRoute: NutritionistRoute,
   PrivacyRoute: PrivacyRoute,
   SuperAdminRoute: SuperAdminRoute,
+  TechnicalRoute: TechnicalRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

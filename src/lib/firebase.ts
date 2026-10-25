@@ -85,26 +85,38 @@ export async function subscribeToMessTopic(messId: string, name?: string, email?
       return;
     }
 
-    console.log("[FCM] Generated Token:", token);
-
-    // Call server action with matching payload schema
+    // Do not register an unchanged device on every page load. FCM can rotate a
+    // token, so the actual token is part of the cache key.
+    const registrationKey = `messhub.fcm-registration.v1:${messId}:${(email || "").trim().toLowerCase()}`;
+    const registrationToday = new Date().toISOString().slice(0, 10);
+    let shouldRegister = true;
     try {
-      const res = await registerFcmToken({
-        data: {
-          token,
-          messId,
-          name: name || null,
-          email: email || null,
-        },
-      });
+      const previous = JSON.parse(localStorage.getItem(registrationKey) || "null");
+      shouldRegister = previous?.day !== registrationToday || previous?.token !== token;
+    } catch {
+      localStorage.removeItem(registrationKey);
+    }
 
-      if (res?.success) {
-        console.log("[FCM] Token registered and subscribed successfully.");
-      } else {
-        console.warn("[FCM] Server token registration reported:", res?.error);
+    if (shouldRegister) {
+      // Call server action with matching payload schema
+      try {
+        const res = await registerFcmToken({
+          data: {
+            token,
+            messId,
+            name: name || null,
+            email: email || null,
+          },
+        });
+
+        if (res?.success) {
+          localStorage.setItem(registrationKey, JSON.stringify({ day: registrationToday, token }));
+        } else {
+          console.warn("[FCM] Server token registration reported:", res?.error);
+        }
+      } catch (serverErr) {
+        console.warn("[FCM] Server registration skipped/failed:", serverErr);
       }
-    } catch (serverErr) {
-      console.warn("[FCM] Server registration skipped/failed:", serverErr);
     }
 
     // Set up foreground message listener
@@ -112,13 +124,18 @@ export async function subscribeToMessTopic(messId: string, name?: string, email?
       console.log("[FCM] Foreground message received:", payload);
 
       if (Notification.permission === "granted") {
-        new Notification(
+        const notification = new Notification(
           payload.data?.title || payload.notification?.title || "MessHub",
           {
             body: payload.data?.body || payload.notification?.body || "",
             icon: "/mess_logo.png",
           }
         );
+        notification.onclick = () => {
+          window.focus();
+          const url = payload.data?.url;
+          if (url) window.location.assign(url);
+        };
       }
     });
   } catch (err) {

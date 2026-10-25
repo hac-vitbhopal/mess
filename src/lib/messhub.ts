@@ -1,4 +1,4 @@
-import { db } from "./firebase";
+import { auth, db } from "./firebase";
 import { 
   collection, 
   addDoc, 
@@ -10,6 +10,7 @@ import {
   serverTimestamp,
   getDoc
 } from "firebase/firestore";
+import { signOut } from "firebase/auth";
 
 export type MessId = 
   | "jmb"
@@ -234,9 +235,17 @@ export async function deleteBroadcasts(ids: string[]): Promise<void> {
 export async function logStudentOnboarding(profile: StudentProfile) {
   if (!db || !profile.name.trim() || !profile.messId) return;
 
+  // A visit should not become a write on every render/reload. Keep the local
+  // activity signal at most once per calendar day for this student + mess.
+  const activityKey = `messhub.activity.v1:${(profile.email || profile.name).trim().toLowerCase()}:${profile.messId}`;
+  const today = new Date().toISOString().slice(0, 10);
+  if (typeof window !== "undefined" && localStorage.getItem(activityKey) === today) return;
+
   try {
+    // The Firestore rule binds the document path to the signed-in student's
+    // email. Do not transform it: the email itself is a valid document ID.
     const docKey = profile.email && profile.email.trim() !== ""
-      ? profile.email.trim().toLowerCase().replace(/[^a-z0-9]/g, "_")
+      ? profile.email.trim().toLowerCase()
       : profile.name.trim().toLowerCase().replace(/\s+/g, "_");
 
     const studentRef = doc(db, "registered_students", docKey);
@@ -247,6 +256,8 @@ export async function logStudentOnboarding(profile: StudentProfile) {
       messId: profile.messId,
       lastActiveAt: serverTimestamp(),
     }, { merge: true });
+
+    if (typeof window !== "undefined") localStorage.setItem(activityKey, today);
 
     console.info(`[Firestore] Updated record for ${profile.name} (Key: ${docKey})`);
   } catch (error) {
@@ -335,27 +346,6 @@ export const MEALS = MEAL_DEFS;
 
 /* ---------------- Role Security & Gatekeeping ---------------- */
 
-export function verifyAdminPasscode(passcode: string): { role: "admin" | "super-admin" | "nutritionist"; messId?: MessId } | null {
-  const cleanKey = passcode.trim();
-  if (!cleanKey) return null;
-
-  const credentials: Record<string, { role: "admin" | "super-admin" | "nutritionist"; messId?: MessId }> = {
-    [import.meta.env.VITE_ADMIN_PASS_JMB || ""]: { role: "admin", messId: "jmb" },
-    [import.meta.env.VITE_ADMIN_PASS_MAYURI_BOYS || ""]: { role: "admin", messId: "mayuri_boys" },
-    [import.meta.env.VITE_ADMIN_PASS_MAYURI_GIRLS || ""]: { role: "admin", messId: "mayuri_girls" },
-    [import.meta.env.VITE_ADMIN_PASS_RASSENSE || ""]: { role: "admin", messId: "rassense" },
-    [import.meta.env.VITE_ADMIN_PASS_FOOD_SUTRA || ""]: { role: "admin", messId: "food_sutra" },
-    [import.meta.env.VITE_ADMIN_PASS_SAFAL || ""]: { role: "admin", messId: "safal" },
-    [import.meta.env.VITE_ADMIN_PASS_ANCHOR || ""]: { role: "admin", messId: "anchor" },
-    [import.meta.env.VITE_ADMIN_PASS_AB_CATERING || ""]: { role: "admin", messId: "ab_catering" },
-    [import.meta.env.VITE_SUPER_ADMIN_PASS || ""]: { role: "super-admin" },
-    [import.meta.env.VITE_NUTRITIONIST_PASS || ""]: { role: "nutritionist" }
-  };
-
-  delete credentials[""];
-  return credentials[cleanKey] || null;
-}
-
 const ADMIN_SESSION_KEY = "messhub.admin.session";
 const TAB_LOCK_KEY = "messhub.active.tab.lock";
 
@@ -401,6 +391,7 @@ export function clearAdminSession() {
   if (typeof window === "undefined") return;
   sessionStorage.removeItem(ADMIN_SESSION_KEY);
   sessionStorage.removeItem(TAB_LOCK_KEY);
+  if (auth) void signOut(auth);
 }
 
 export function validateTabSessionLock(): boolean {
@@ -618,6 +609,10 @@ export interface ItemFeedback {
   rating: number;
   comment?: string;
   status: "solved" | "unsolved";
+  replyText?: string;
+  replyingMessId?: MessId;
+  repliedAt?: any;
+  replySeenByStudent?: boolean;
   createdAt?: any;
 }
 

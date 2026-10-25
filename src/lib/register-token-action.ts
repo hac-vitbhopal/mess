@@ -50,7 +50,7 @@ export const registerFcmToken = createServerFn({
             token,
             messId,
             ...(name ? { name } : {}),
-            ...(email ? { email } : {}),
+            ...(email ? { email: email.toLowerCase().trim() } : {}),
             updatedAt: new Date(),
           },
           { merge: true }

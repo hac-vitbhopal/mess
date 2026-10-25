@@ -51,10 +51,14 @@ self.addEventListener('notificationclick', function (event) {
   const targetUrl = event.notification.data?.url || '/';
 
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clientList) {
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async function (clientList) {
       for (const client of clientList) {
-        if (client.url.includes(targetUrl) && 'focus' in client) {
-          return client.focus();
+        if (new URL(client.url).origin === self.location.origin && 'focus' in client) {
+          await client.focus();
+          if ('navigate' in client && !client.url.endsWith(targetUrl)) {
+            try { await client.navigate(targetUrl); } catch (e) { /* fall through, tab is already focused */ }
+          }
+          return;
         }
       }
       if (clients.openWindow) {

@@ -9,7 +9,6 @@ import {
   getAdminSession,
   saveAdminSession,
   clearAdminSession,
-  verifyAdminPasscode,
   sendBroadcast,
   toggleFeedbackStatus,
   deleteFirestoreOverride,
@@ -21,7 +20,12 @@ import {
   type SpecialOverride,
   type NutritionDishItem,
 } from "@/lib/messhub";
-import { db } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
+import { signInWithCustomToken } from "firebase/auth";
+import { loginOperator } from "@/lib/operator-auth-action";
+import { ChangeOperatorPassword } from "@/components/messhub/ChangeOperatorPassword";
+import { useOperatorAuth } from "@/lib/use-operator-auth";
+import { ReplyFeedbackBox } from "@/components/messhub/ReplyFeedbackBox";
 import {  
   collection, 
   query, 
@@ -32,8 +36,11 @@ import {
   serverTimestamp,
   doc,
   getDoc,
+  getDocs,
   setDoc,
-  writeBatch
+  writeBatch,
+  limit,
+  startAfter
 } from "firebase/firestore";
 import {  
   Plus, 
@@ -135,6 +142,8 @@ function AdminGatekeeper() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [passcode, setPasscode] = useState("");
   const [authError, setAuthError] = useState(false);
+  const [authMessage, setAuthMessage] = useState("");
+  const { ready: authReady, claims } = useOperatorAuth();
 
   useEffect(() => {
     const savedSession = getAdminSession();
@@ -150,11 +159,23 @@ function AdminGatekeeper() {
     }
   }, [session, navigate]);
 
-  function handleVerifyPasscode(e: React.FormEvent) {
-    e.preventDefault();
-    const matchedAuth = verifyAdminPasscode(passcode);
+  // Once Firebase has restored (or failed to restore) the saved sign-in, drop
+  // a stale tab session so the dashboard never loads without a real identity.
+  useEffect(() => {
+    if (!authReady) return;
+    if (getAdminSession() && !claims?.role) {
+      clearAdminSession();
+      setSession(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authReady]);
 
-    if (matchedAuth) {
+  async function handleVerifyPasscode(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      const matchedAuth = await loginOperator({ data: { password: passcode, area: "admin" } });
+      if (!auth) throw new Error("Firebase auth unavailable");
+      await signInWithCustomToken(auth, matchedAuth.token);
       setAuthError(false);
       const newSession = { role: matchedAuth.role, messId: matchedAuth.messId };
       saveAdminSession(newSession);
@@ -162,14 +183,16 @@ function AdminGatekeeper() {
       if (matchedAuth.role === "super-admin") {
         navigate({ to: "/super-admin" });
       }
-    } else {
+    } catch (error) {
+      console.error("[admin-login]", error);
+      setAuthMessage(error instanceof Error ? error.message : "");
       setAuthError(true);
       setPasscode("");
       if ("vibrate" in navigator) navigator.vibrate(200);
     }
   }
 
-  if (!isHydrated) {
+  if (!isHydrated || !authReady) {
     return <div className="min-h-screen bg-[#E9F7F4]" />;
   }
 
@@ -207,7 +230,7 @@ function AdminGatekeeper() {
             />
             {authError && (
               <p className="mt-2.5 text-xs font-semibold text-red-600 animate-fade-in">
-                Invalid key code sequence. Try again.
+                {authMessage && authMessage !== "Invalid password." ? authMessage : "Invalid key code sequence. Try again."}
               </p>
             )}
             <button
@@ -727,12 +750,15 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
           </div>
         </div>
 
+        <div className="flex items-center gap-3">
+        <ChangeOperatorPassword />
         <button
           onClick={() => { clearAdminSession(); onSignOut(); }}
           className="text-xs font-bold text-red-600 flex items-center gap-1 border border-red-200 bg-red-50 px-2.5 py-1 rounded-xl cursor-pointer"
         >
           <LogOut className="w-3.5 h-3.5" /> Exit
         </button>
+        </div>
       </div>
 
       {/* 🧭 Desktop & Mobile Sidebar Drawer */}
@@ -850,6 +876,7 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
             <span>Live Student Feed</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </Link>
+          <ChangeOperatorPassword variant="sidebar" />
           <button
             onClick={() => { clearAdminSession(); onSignOut(); }}
             className="w-full flex items-center gap-2 text-xs font-bold text-red-600 hover:bg-red-50 px-3 py-2 rounded-xl transition cursor-pointer"
@@ -1362,42 +1389,44 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
 function AdminDishFeedbackViewer({ messId }: { messId: MessId }) {
   const [feedbacks, setFeedbacks] = useState<ItemFeedback[]>([]);
   const [filter, setFilter] = useState<"all" | "unsolved" | "solved">("all");
+  const [lastFeedbackDoc, setLastFeedbackDoc] = useState<any>(null);
+  const [hasMoreFeedback, setHasMoreFeedback] = useState(false);
+  const [isLoadingFeedback, setIsLoadingFeedback] = useState(false);
+  const pageSize = 25;
+
+  const loadFeedbackPage = async (nextPage = false) => {
+    if (!db || (nextPage && !lastFeedbackDoc) || isLoadingFeedback) return;
+    const firestoreDb = db;
+    setIsLoadingFeedback(true);
+    try {
+      const constraints: any[] = [
+        where("messId", "==", messId),
+        orderBy("createdAt", "desc"),
+        limit(pageSize + 1),
+      ];
+      if (nextPage && lastFeedbackDoc) constraints.splice(2, 0, startAfter(lastFeedbackDoc));
+      const feedbackQuery = query(
+      collection(firestoreDb, "item_feedback"),
+      ...constraints,
+      );
+      const snap = await getDocs(feedbackQuery);
+      const docs = snap.docs.slice(0, pageSize);
+      const list = docs.map((d) => ({ id: d.id, ...d.data() } as ItemFeedback));
+      setFeedbacks((current) => nextPage ? [...current, ...list] : list);
+      setLastFeedbackDoc(docs.at(-1) ?? null);
+      setHasMoreFeedback(snap.docs.length > pageSize);
+    } catch (err) {
+      console.error("[Firestore] Could not load feedback page:", err);
+    } finally {
+      setIsLoadingFeedback(false);
+    }
+  };
 
   useEffect(() => {
-    if (!db) return;
-    const firestoreDb = db;
-    let fallbackUnsub: (() => void) | null = null;
-
-    const indexedQuery = query(
-      collection(firestoreDb, "item_feedback"),
-      where("messId", "==", messId),
-      orderBy("createdAt", "desc")
-    );
-
-    const primaryUnsub = onSnapshot(
-      indexedQuery,
-      (snap) => {
-        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as ItemFeedback));
-        setFeedbacks(list);
-      },
-      (err) => {
-        console.warn("[Firestore] Index fallback sorting:", err);
-        const fallbackQuery = query(
-          collection(firestoreDb, "item_feedback"),
-          where("messId", "==", messId)
-        );
-        fallbackUnsub = onSnapshot(fallbackQuery, (snap) => {
-          const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as ItemFeedback));
-          list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-          setFeedbacks(list);
-        });
-      }
-    );
-
-    return () => {
-      primaryUnsub();
-      if (fallbackUnsub) fallbackUnsub();
-    };
+    setFeedbacks([]);
+    setLastFeedbackDoc(null);
+    setHasMoreFeedback(false);
+    void loadFeedbackPage(false);
   }, [messId]);
 
   const filteredFeedbacks = feedbacks.filter((f) => {
@@ -1540,6 +1569,8 @@ function AdminDishFeedbackViewer({ messId }: { messId: MessId }) {
                     </p>
                   )}
 
+                  {item.id && <ReplyFeedbackBox feedbackId={item.id} replyText={(item as any).replyText} repliedAt={(item as any).repliedAt} />}
+
                   <div className="pt-1 flex items-center justify-end">
                     {isSolved ? (
                       <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 rounded-full">
@@ -1556,6 +1587,17 @@ function AdminDishFeedbackViewer({ messId }: { messId: MessId }) {
             );
           })}
         </div>
+      )}
+
+      {hasMoreFeedback && (
+        <button
+          type="button"
+          onClick={() => void loadFeedbackPage(true)}
+          disabled={isLoadingFeedback}
+          className="w-full rounded-xl border border-[#B5DED4] bg-[#E9F7F4] px-3 py-2 text-xs font-bold text-[#007F86] disabled:opacity-50"
+        >
+          {isLoadingFeedback ? "Loading…" : "Load 25 more"}
+        </button>
       )}
     </div>
   );

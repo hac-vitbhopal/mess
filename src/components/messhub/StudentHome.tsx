@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { db } from "@/lib/firebase";
 import { DishFeedbackSchema, checkRateLimit, countFeedbackCommentWords, MIN_FEEDBACK_COMMENT_WORDS } from "@/lib/security";
-import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore";
+import { collection, query, where, orderBy, onSnapshot, doc, getDoc, getDocs, limit } from "firebase/firestore";
 import { z } from "zod";
 import {
   MEAL_DEFS,
@@ -22,6 +22,9 @@ import {
 import { Star, Sparkles, ChevronDown, ChevronUp, Download } from "lucide-react";
 import { NavratriStudentWidget } from "@/components/messhub/NavratriSpecial";
 import { MessCountdownTimer } from "@/components/ui/MessCountdownTimer"; // 🌟 Imported the creative timer component
+import { StudentClock } from "@/components/messhub/StudentClock";
+import { submitComplaint } from "@/lib/complaint-action";
+import { MyFeedback } from "@/components/messhub/MyFeedback";
 
 const CATEGORIES = ["Food quality", "Hygiene", "Timing", "Staff behavior", "Other"] as const;
 
@@ -31,7 +34,10 @@ const complaintSchema = z.object({
 });
 
 export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; onSignOut: () => void }) {
-  const [now, setNow] = useState(() => new Date());
+  return <StudentClock>{(now) => <StudentHomeContents profile={profile} onSignOut={onSignOut} now={now} />}</StudentClock>;
+}
+
+function StudentHomeContents({ profile, onSignOut, now }: { profile: StudentProfile; onSignOut: () => void; now: Date }) {
 
   // 📱 PWA Install Prompt State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -63,13 +69,6 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
     }
   }, [profile]);
 
-  useEffect(() => {
-    const id = setInterval(() => {
-      setNow(new Date());
-    }, 1000);
-    return () => clearInterval(id);
-  }, []);
-
   const todayDateStr = useMemo(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -79,8 +78,9 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
   const [openMeal, setOpenMeal] = useState<MealKey | null>(null);
   const [broadcasts, setBroadcasts] = useState<{ id: string; title: string; body: string }[]>([]);
 
-  const [activeOverride, setActiveOverride] = useState<SpecialOverride | null>(null);
+  const [overrides, setOverrides] = useState<SpecialOverride[]>([]);
   const [dailyMenu, setDailyMenu] = useState<any>(null);
+  const [menuSource, setMenuSource] = useState<"daily" | "weekly" | "legacy-weekly" | "cache" | null>(null);
 
   useEffect(() => {
     if (!db || !profile?.messId) return;
@@ -90,58 +90,68 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
       where("messId", "==", profile.messId)
     );
 
+    // This subscription deliberately depends only on the mess and calendar day.
+    // The clock below evaluates the already-received data; it must not reopen
+    // the listener every second.
     const unsub = onSnapshot(q, (snapshot) => {
-      let foundOverride: SpecialOverride | null = null;
-
-      snapshot.forEach((docItem) => {
-        const data = docItem.data() as SpecialOverride;
-        if (data.date === todayDateStr) {
-          const [startH, startM] = (data.startTime || "00:00").split(":").map(Number);
-          const [endH, endM] = (data.endTime || "23:59").split(":").map(Number);
-
-          const startDateTime = new Date();
-          startDateTime.setHours(startH, startM, 0, 0);
-
-          const endDateTime = new Date();
-          endDateTime.setHours(endH, endM, 0, 0);
-
-          if (now >= startDateTime && now <= endDateTime) {
-            foundOverride = data;
-          }
-        }
-      });
-
-      setActiveOverride(foundOverride);
+      setOverrides(snapshot.docs.map((docItem) => docItem.data() as SpecialOverride));
     });
 
     return () => unsub();
-  }, [profile?.messId, todayDateStr, now]);
+  }, [profile?.messId, todayDateStr]);
+
+  const activeOverride = useMemo(() => {
+    return overrides.find((data) => {
+      if (data.date !== todayDateStr) return false;
+      const [startH, startM] = (data.startTime || "00:00").split(":").map(Number);
+      const [endH, endM] = (data.endTime || "23:59").split(":").map(Number);
+      const startDateTime = new Date(now);
+      startDateTime.setHours(startH, startM, 0, 0);
+      const endDateTime = new Date(now);
+      endDateTime.setHours(endH, endM, 0, 0);
+      return now >= startDateTime && now <= endDateTime;
+    }) ?? null;
+  }, [overrides, todayDateStr, now]);
 
   useEffect(() => {
     if (!db || !profile?.messId || !todayDateStr) return;
     const firestoreDb = db;
 
+    const cacheKey = `messhub.daily-menu.v1:${profile.messId}:${todayDateStr}`;
+
     async function loadDailyMenuFromFirestore() {
       try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          setDailyMenu(JSON.parse(cached));
+          setMenuSource("cache");
+          console.info("[Menu] Loaded daily cache", { messId: profile.messId, date: todayDateStr });
+          return;
+        }
+
+        // Prefer a dated menu, but retain both legacy weekly document formats
+        // while active messes are migrated. Any successful result is cached
+        // for the rest of the day, so repeat visits cost no reads.
         const dailyDocRef = doc(firestoreDb, "daily_menus", `${profile.messId}_${todayDateStr}`);
         const dailySnap = await getDoc(dailyDocRef);
-
-        if (dailySnap.exists()) {
-          setDailyMenu(dailySnap.data());
-        } else {
-          const weeklyDocRef = doc(firestoreDb, "mess_menus", `${profile.messId}_${activeWeekday}`);
+        let menu = dailySnap.exists() ? dailySnap.data() : null;
+        let source: "daily" | "weekly" | "legacy-weekly" = "daily";
+        if (!menu) {
+          const weeklyDocRef = doc(firestoreDb, "mess_menus", `${profile.messId}_day_${activeWeekday}`);
           const weeklySnap = await getDoc(weeklyDocRef);
-
-          if (weeklySnap.exists()) {
-            setDailyMenu(weeklySnap.data());
-          } else {
-            // Older nutritionist-published weekly menus use this document ID.
-            // Keep it as a fallback while the app migrates to the standard `{messId}_{day}` format.
-            const alternateWeeklyDocRef = doc(firestoreDb, "mess_menus", `${profile.messId}_day_${activeWeekday}`);
-            const alternateWeeklySnap = await getDoc(alternateWeeklyDocRef);
-            setDailyMenu(alternateWeeklySnap.exists() ? alternateWeeklySnap.data() : null);
-          }
+          menu = weeklySnap.exists() ? weeklySnap.data() : null;
+          source = "weekly";
         }
+        if (!menu) {
+          const olderWeeklyDocRef = doc(firestoreDb, "mess_menus", `${profile.messId}_${activeWeekday}`);
+          const olderWeeklySnap = await getDoc(olderWeeklyDocRef);
+          menu = olderWeeklySnap.exists() ? olderWeeklySnap.data() : null;
+          source = "legacy-weekly";
+        }
+        if (menu) localStorage.setItem(cacheKey, JSON.stringify(menu));
+        setDailyMenu(menu);
+        setMenuSource(menu ? source : null);
+        console.info("[Menu] Loaded", { messId: profile.messId, date: todayDateStr, source: menu ? source : "none" });
       } catch (err) {
         console.error("[StudentHome] Error loading daily menu:", err);
         setDailyMenu(null);
@@ -164,7 +174,7 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
       if (!profile?.messId) return;
       try {
         const { subscribeToMessTopic } = await import("@/lib/firebase");
-        await subscribeToMessTopic(profile.messId, profile.name);
+        await subscribeToMessTopic(profile.messId, profile.name, profile.email);
       } catch (err) {
         console.error("[FCM] Token sync failed:", err);
       }
@@ -238,25 +248,41 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
   useEffect(() => {
     if (!db || !profile.messId) return;
 
+    const cacheKey = `messhub.broadcasts.v1:${profile.messId}`;
+    const maxAgeMs = 3 * 60 * 1000;
+    try {
+      const cached = JSON.parse(localStorage.getItem(cacheKey) || "null");
+      if (cached?.expiresAt > Date.now() && Array.isArray(cached.items)) {
+        setBroadcasts(cached.items);
+        return;
+      }
+    } catch {
+      localStorage.removeItem(cacheKey);
+    }
+
     const broadcastQuery = query(
       collection(db, "broadcasts"),
+      where("messId", "in", [profile.messId, "all"]),
       orderBy("createdAt", "desc")
+      , limit(10)
     );
-    
-    const broadcastUnsubscribe = onSnapshot(broadcastQuery, (snapshot) => {
+
+    let cancelled = false;
+    getDocs(broadcastQuery).then((snapshot) => {
+      if (cancelled) return;
       const list = snapshot.docs
         .map(docItem => ({
           id: docItem.id,
           messId: docItem.data().messId,
           title: docItem.data().title,
           body: docItem.data().body
-        }))
-        .filter(b => b.messId === profile.messId || b.messId === "all");
+        }));
 
       setBroadcasts(list);
-    });
+      localStorage.setItem(cacheKey, JSON.stringify({ expiresAt: Date.now() + maxAgeMs, items: list }));
+    }).catch((err) => console.error("[StudentHome] Error loading broadcasts:", err));
 
-    return () => broadcastUnsubscribe();
+    return () => { cancelled = true; };
   }, [profile.messId]);
 
   async function handleFeedbackSubmit(e: React.FormEvent) {
@@ -271,25 +297,15 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
 
     setIsSubmittingFeedback(true);
     
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx5ixNijfyjthVlHvDQ9qSsEHsoDmo37PU6Q0hU69Dy_Mn2g4zOn3OheVBKdBs9p_w8/exec";
-
-    const formData = new URLSearchParams();
-    formData.append("secretKey", "mhub_sec_9f83a21b47c0e812d4a57891");
-    formData.append("name", profile.name || "VIT Student");
-    formData.append("email", profile.email || "N/A");
-    formData.append("mess", messLabelStr);
-    formData.append("messId", profile.messId);
-    formData.append("type", "complaint");
-    formData.append("rating", "-");
-    formData.append("message", `[Complaint - ${category.toUpperCase()}] ${feedbackMessage.trim()}`);
-
     try {
-      await fetch(GOOGLE_SCRIPT_URL, {
-        method: "POST",
-        mode: "no-cors",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: formData.toString(),
-      });
+      await submitComplaint({ data: {
+        name: profile.name || "VIT Student",
+        email: profile.email || "unknown@vitbhopal.ac.in",
+        mess: messLabelStr,
+        messId: profile.messId,
+        category,
+        message: feedbackMessage.trim(),
+      } });
 
       setComplaintSent(true);
       setFeedbackMessage("");
@@ -409,6 +425,9 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
               <Sparkles className="w-3.5 h-3.5 text-[#007F86]" /> {activeOverride.label}
             </span>
           )}
+          {menuSource && menuSource !== "daily" && menuSource !== "cache" && (
+            <span className="text-[10px] font-bold text-[#193A40]/60">Weekly menu fallback</span>
+          )}
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-3 px-5">
@@ -480,6 +499,9 @@ export function StudentHome({ profile, onSignOut }: { profile: StudentProfile; o
           )}
         </div>
       </section>
+
+      {/* Replies from the mess to this student's feedback */}
+      <MyFeedback profile={profile} />
 
       {/* Daily Item-Level Dish Rating & Feedback Card */}
       <section className="mt-8 px-5">
@@ -659,26 +681,6 @@ function DailyItemFeedbackCard({ profile, currentMenu }: { profile: StudentProfi
           await submitItemFeedback(validation.data);
         }
       }
-
-      const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx5ixNijfyjthVlHvDQ9qSsEHsoDmo37PU6Q0hU69Dy_Mn2g4zOn3OheVBKdBs9p_w8/exec";
-
-      const formData = new URLSearchParams();
-      formData.append("secretKey", "mhub_sec_9f83a21b47c0e812d4a57891");
-      formData.append("name", profile.name || "VIT Student");
-      formData.append("email", profile.email || "N/A");
-      formData.append("mess", profile.messId);
-      formData.append("rating", String(rating || 5));
-      formData.append(
-        "message",
-        `[Multiple Dish Feedback - ${selectedMeal.toUpperCase()}] Dishes: ${selectedDishes.join(", ")} | Rating: ${rating}/5 | Comment: ${comment.trim() || "None"}`
-      );
-
-      await fetch(GOOGLE_SCRIPT_URL, {
-        method: "POST",
-        mode: "no-cors",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: formData.toString(),
-      });
 
       alert(`⭐ Thank you ${profile.name.split(" ")[0]}! Your feedback for ${selectedDishes.length} items has been logged.`);
       setSelectedDishes([]);

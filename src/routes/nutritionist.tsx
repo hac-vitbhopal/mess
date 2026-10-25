@@ -1,6 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { db } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
+import { signInWithCustomToken } from "firebase/auth";
+import { useOperatorAuth } from "@/lib/use-operator-auth";
+import { loginOperator } from "@/lib/operator-auth-action";
+import { ChangeOperatorPassword } from "@/components/messhub/ChangeOperatorPassword";
 import { doc, getDoc, setDoc, serverTimestamp, addDoc, collection, writeBatch } from "firebase/firestore";
 import { 
   MESSES, 
@@ -8,7 +12,6 @@ import {
   getAdminSession,
   saveAdminSession,
   clearAdminSession,
-  verifyAdminPasscode,
   type MessId, 
   type DayMenuWithNutrition, 
   type NutritionDishItem,
@@ -136,16 +139,19 @@ function NutritionistPortalPage() {
   });
   const [initialLoadedMenu, setInitialLoadedMenu] = useState<StudioDayMenu | null>(null);
 
-  // 🔒 Secure Session Initialization on Mount
+  // 🔒 Secure session check: wait for Firebase to restore the saved sign-in first
+  const { ready: authReady, claims } = useOperatorAuth();
   useEffect(() => {
+    if (!authReady) return;
+    const allowed = (role?: string) => role === "nutritionist" || role === "super-admin";
     const activeSession = getAdminSession();
-    if (activeSession && (activeSession.role === "nutritionist" || activeSession.role === "super-admin")) {
+    if (activeSession && allowed(activeSession.role) && allowed(claims?.role)) {
       setIsAuthenticated(true);
     } else {
-      clearAdminSession();
+      if (activeSession) clearAdminSession();
       setIsAuthenticated(false);
     }
-  }, []);
+  }, [authReady, claims]);
 
   // Sync target primary mess when multi-mess is off
   const activePrimaryMess = isMultiMessActive ? (selectedMessIds[0] || "jmb") : selectedMess;
@@ -323,16 +329,19 @@ function NutritionistPortalPage() {
     return list;
   }, []);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const match = verifyAdminPasscode(passwordInput);
-
-    if (match && (match.role === "nutritionist" || match.role === "super-admin")) {
-      saveAdminSession({ role: match.role });
+    try {
+      const match = await loginOperator({ data: { password: passwordInput, area: "nutritionist" } });
+      if (!auth) throw new Error("Firebase auth unavailable");
+      await signInWithCustomToken(auth, match.token);
+      saveAdminSession({ role: match.role, messId: match.messId });
       setIsAuthenticated(true);
       setAuthError("");
-    } else {
-      setAuthError("Invalid Nutritionist Authorization Key");
+    } catch (error) {
+      console.error("[nutritionist-login]", error);
+      const message = error instanceof Error ? error.message : "";
+      setAuthError(message && message !== "Invalid password." ? message : "Invalid Nutritionist Authorization Key");
       if ("vibrate" in navigator) navigator.vibrate(200);
     }
   };
@@ -483,6 +492,10 @@ function NutritionistPortalPage() {
     }
   };
 
+  if (!authReady) {
+    return <div className="min-h-screen bg-[#E9F7F4]" />;
+  }
+
   /* ---------------- 🔒 LOGIN SCREEN ---------------- */
   if (!isAuthenticated) {
     return (
@@ -552,12 +565,15 @@ function NutritionistPortalPage() {
           </div>
         </div>
 
+        <div className="flex items-center gap-3">
+        <ChangeOperatorPassword />
         <button
           onClick={handleLogout}
           className="text-xs font-bold text-red-600 flex items-center gap-1 border border-red-200 px-2.5 py-1 rounded-xl bg-red-50 cursor-pointer"
         >
           <LogOut className="w-3.5 h-3.5" /> Exit
         </button>
+        </div>
       </div>
 
       {/* 🧭 SaaS Left Navigation Sidebar */}
