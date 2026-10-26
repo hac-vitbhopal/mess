@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import { auth, db } from "@/lib/firebase";
 import { signInWithCustomToken } from "firebase/auth";
 import { loginOperator } from "@/lib/operator-auth-action";
+import { setComplaintStatus, deleteComplaint } from "@/lib/complaint-admin-action";
 import { ChangeOperatorPassword } from "@/components/messhub/ChangeOperatorPassword";
 import { useOperatorAuth } from "@/lib/use-operator-auth";
 import { ReplyFeedbackBox } from "@/components/messhub/ReplyFeedbackBox";
@@ -749,7 +750,7 @@ const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
               <h1 className="text-2xl sm:text-3xl font-black text-[#193A40]">Student Complaints &amp; Error Reports</h1>
               <p className="text-xs sm:text-sm text-[#193A40]/70 mt-0.5">Review portal bug reports, service complaints, and manage resolution statuses.</p>
             </div>
-            <SuperAdminComplaintsViewer complaints={complaints} />
+            <SuperAdminComplaintsViewer complaints={complaints} setComplaints={setComplaints} />
           </div>
         )}
 
@@ -2027,7 +2028,7 @@ function SuperAdminFeedbackViewer({ feedbacks }: { feedbacks: ItemFeedback[] }) 
   );
 }
 
-function SuperAdminComplaintsViewer({ complaints }: { complaints: any[] }) {
+function SuperAdminComplaintsViewer({ complaints, setComplaints }: { complaints: any[]; setComplaints: React.Dispatch<React.SetStateAction<any[]>> }) {
   const [filter, setFilter] = useState<"all" | "unsolved" | "solved">("all");
   const [timeRange, setTimeRange] = useState<"day" | "week" | "month" | "all">("all");
 
@@ -2051,37 +2052,34 @@ function SuperAdminComplaintsViewer({ complaints }: { complaints: any[] }) {
   });
 
   async function handleToggleComplaintStatus(complaint: any) {
-    if (!complaint.id || !db) return;
-    const isSolved = complaint.status === "solved";
-    const newStatus = isSolved ? "unsolved" : "solved";
-
+    if (!complaint.id || !auth?.currentUser) {
+      alert("Not signed in. Please log in again.");
+      return;
+    }
+    const newStatus = complaint.status === "solved" ? "unsolved" : "solved";
+    // Optimistic update so the tick responds instantly.
+    setComplaints((list) => list.map((c) => (c.id === complaint.id ? { ...c, status: newStatus } : c)));
     try {
-      await updateDoc(doc(db, "complaints", complaint.id), { status: newStatus });
-      await logSuperAdminActivity(
-        complaint.messId || "all",
-        "Complaint Status Update",
-        `Marked complaint from ${complaint.studentName || "Student"} as ${newStatus}`
-      );
+      await setComplaintStatus({ data: { idToken: await auth.currentUser.getIdToken(), complaintId: complaint.id, status: newStatus } });
     } catch (err) {
       console.error("Error updating complaint status:", err);
-      alert("Failed to update complaint resolution status.");
+      setComplaints((list) => list.map((c) => (c.id === complaint.id ? { ...c, status: complaint.status } : c)));
+      alert(err instanceof Error ? err.message : "Failed to update complaint resolution status.");
     }
   }
 
   async function handleDeleteComplaint(complaint: any) {
-    if (!complaint.id || !db) return;
+    if (!complaint.id || !auth?.currentUser) {
+      alert("Not signed in. Please log in again.");
+      return;
+    }
     if (!confirm(`Permanently delete complaint from ${complaint.studentName || "Student"}?`)) return;
-
     try {
-      await deleteDoc(doc(db, "complaints", complaint.id));
-      await logSuperAdminActivity(
-        complaint.messId || "all",
-        "Complaint Deleted",
-        `Removed complaint report from ${complaint.studentName || "Student"}`
-      );
+      await deleteComplaint({ data: { idToken: await auth.currentUser.getIdToken(), complaintId: complaint.id } });
+      setComplaints((list) => list.filter((c) => c.id !== complaint.id));
     } catch (err) {
       console.error("Error deleting complaint:", err);
-      alert("Failed to delete complaint record.");
+      alert(err instanceof Error ? err.message : "Failed to delete complaint record.");
     }
   }
 

@@ -267,7 +267,7 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
   });
 
   const [showOverrideEditor, setShowOverrideEditor] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"menu" | "overrides" | "broadcasts" | "feedback" | "audit">("menu");
+  const [activeTab, setActiveTab] = useState<"menu" | "overrides" | "broadcasts" | "feedback" | "complaints" | "audit">("menu");
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [expandedRecipeIndex, setExpandedRecipeIndex] = useState<string | null>(null);
   const [isImportingExcel, setIsImportingExcel] = useState(false);
@@ -728,6 +728,7 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
     { id: "overrides", label: "Special Overrides", icon: Sparkles, count: overrideKeys.length },
     { id: "broadcasts", label: "Broadcast Notices", icon: Megaphone },
     { id: "feedback", label: "Student Feedback", icon: MessageSquare },
+    { id: "complaints", label: "Complaints", icon: MessageSquare },
     { id: "audit", label: "Operations Log", icon: History, count: auditLogs.length },
   ];
 
@@ -1305,6 +1306,12 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
           </div>
         )}
 
+        {activeTab === "complaints" && (
+          <div className="max-w-2xl mx-auto">
+            <AdminComplaintsViewer messId={messId} />
+          </div>
+        )}
+
         {activeTab === "audit" && (
           <div className="max-w-2xl mx-auto space-y-4">
             <div className="rounded-3xl border-2 border-[#B5DED4] bg-white p-6 shadow-sm">
@@ -1382,6 +1389,56 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
           }}
         />
       )}
+    </div>
+  );
+}
+
+function AdminComplaintsViewer({ messId }: { messId: MessId }) {
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!db) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    // No orderBy here on purpose: avoids needing a composite Firestore index. Sorted client-side.
+    getDocs(query(collection(db, "complaints"), where("messId", "==", messId), limit(200)))
+      .then((snap) => {
+        if (cancelled) return;
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as any));
+        list.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+        setItems(list);
+      })
+      .catch((err) => {
+        console.error("[Firestore] Could not load complaints:", err);
+        if (!cancelled) setError(err?.code === "permission-denied" ? "Permission denied by Firestore rules." : "Could not load complaints.");
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [messId]);
+
+  return (
+    <div className="rounded-3xl border-2 border-[#B5DED4] bg-white p-6 shadow-sm space-y-3">
+      <h3 className="text-base font-black text-[#193A40]">Student Complaints &amp; Reports</h3>
+      {loading && <p className="text-xs text-[#193A40]/60">Loading…</p>}
+      {error && <p className="text-xs font-semibold text-red-600">{error}</p>}
+      {!loading && !error && items.length === 0 && (
+        <p className="py-8 text-center text-xs italic text-[#193A40]/60">No complaints for this mess yet.</p>
+      )}
+      {items.map((c) => (
+        <div key={c.id} className="rounded-2xl border border-[#B5DED4] p-3 text-xs space-y-1">
+          <div className="flex justify-between gap-2">
+            <span className="font-black text-[#193A40]">{c.category || "Report / Issue"}</span>
+            <span className="text-[#193A40]/60">
+              {c.createdAt?.toDate ? c.createdAt.toDate().toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "Recent"}
+            </span>
+          </div>
+          <p className="text-[#193A40]/70">👤 {c.studentName || "Anonymous"} {c.email ? `(${c.email})` : ""}</p>
+          <p className="text-[#193A40]">{c.message}</p>
+        </div>
+      ))}
     </div>
   );
 }

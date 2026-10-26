@@ -4,6 +4,8 @@ import { signInWithCustomToken, signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useOperatorAuth } from "@/lib/use-operator-auth";
 import { getTechnicalOperatorHistory, loginTechnical, resetOperatorPassword, unlockLogins } from "@/lib/operator-auth-action";
+import { getTechnicalConsoleSnapshot, getTechnicalHealth } from "@/lib/technical-console-action";
+import { MESSES } from "@/lib/messhub";
 
 export const Route = createFileRoute("/technical")({ component: TechnicalPage });
 
@@ -20,6 +22,7 @@ function TechnicalPage() {
   const { ready, claims } = useOperatorAuth();
   const authenticated = ready && claims?.role === "technical";
 
+  const [tab, setTab] = useState<"operators" | "super-admin" | "admin" | "health">("operators");
   const [operators, setOperators] = useState<Operator[]>([]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -135,7 +138,28 @@ function TechnicalPage() {
       {error && <p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">{error}</p>}
       {notice && <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-800">{notice}</p>}
 
-      <section className="mt-5 space-y-3">
+      <nav className="mt-5 flex flex-wrap gap-2">
+        {([
+          ["operators", "Operators"],
+          ["super-admin", "Super Admin view"],
+          ["admin", "Admin view"],
+          ["health", "System health"],
+        ] as const).map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={`rounded-full px-4 py-2 text-xs font-bold ${tab === id ? "bg-[#007F86] text-white" : "border border-[#B5DED4] bg-white text-[#007F86]"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      {tab === "super-admin" && <ConsoleView key="super-admin" scope="super-admin" />}
+      {tab === "admin" && <ConsoleView key="admin" scope="admin" />}
+      {tab === "health" && <HealthView />}
+
+      <section className={`mt-5 space-y-3 ${tab === "operators" ? "" : "hidden"}`}>
         {operators.length === 0 && !error && <p className="text-xs italic text-[#193A40]/60">No operator accounts found yet.</p>}
         {operators.map((operator) => (
           <article key={operator.id} className="rounded-2xl border border-[#B5DED4] bg-white p-4">
@@ -162,5 +186,184 @@ function TechnicalPage() {
         ))}
       </section>
     </main>
+  );
+}
+
+
+/* ---------------- Read-only debug consoles ---------------- */
+
+type Section<T = any> = { ok: true; data: T } | { ok: false; error: string };
+
+function fmt(value: any) {
+  return value ? new Date(value).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "—";
+}
+
+function ConsoleView({ scope }: { scope: "super-admin" | "admin" }) {
+  const [messId, setMessId] = useState<string>(MESSES[0]?.id ?? "");
+  const [snapshot, setSnapshot] = useState<any>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [view, setView] = useState<"complaints" | "feedback" | "broadcasts" | "audit" | "menus">("complaints");
+
+  const refresh = useCallback(async () => {
+    if (!auth?.currentUser) return;
+    setLoading(true);
+    setError("");
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      setSnapshot(await getTechnicalConsoleSnapshot({ data: { idToken, scope, messId: scope === "admin" ? messId : undefined } }));
+    } catch (value) {
+      setSnapshot(null);
+      setError(value instanceof Error ? value.message : "Could not load console data.");
+    } finally {
+      setLoading(false);
+    }
+  }, [scope, messId]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const sections: [typeof view, string][] = [
+    ["complaints", "Complaints"],
+    ["feedback", "Dish feedback"],
+    ["broadcasts", "Broadcasts"],
+    ["audit", "Audit log"],
+    ["menus", "Menus"],
+  ];
+
+  const current: Section | undefined = snapshot?.[view === "audit" ? "audit" : view];
+
+  return (
+    <section className="mt-5 space-y-3">
+      <p className="rounded-xl border border-[#B5DED4] bg-white p-3 text-xs">
+        Read-only {scope === "super-admin" ? "Super Admin (all messes)" : "Admin (single mess)"} view, loaded on the server so Firestore rules cannot hide data.
+        {snapshot?.students?.ok && <> Registered students: <b>{snapshot.students.data.count}</b>.</>}
+      </p>
+
+      {scope === "admin" && (
+        <div className="flex flex-wrap gap-2">
+          {MESSES.map((m) => (
+            <button
+              key={m.id}
+              onClick={() => setMessId(m.id)}
+              className={`rounded-full px-3 py-1.5 text-xs font-bold ${messId === m.id ? "bg-[#193A40] text-white" : "border border-[#B5DED4] bg-white"}`}
+            >
+              {m.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        {sections.map(([id, label]) => {
+          const sec: Section | undefined = snapshot?.[id];
+          const count = sec?.ok && Array.isArray(sec.data) ? sec.data.length : null;
+          return (
+            <button
+              key={id}
+              onClick={() => setView(id)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-bold ${view === id ? "bg-[#007F86] text-white" : "border border-[#B5DED4] bg-white text-[#007F86]"}`}
+            >
+              {label}{count !== null ? ` (${count})` : ""}{sec && !sec.ok ? " ⚠" : ""}
+            </button>
+          );
+        })}
+        <button onClick={() => void refresh()} className="ml-auto rounded-lg border border-[#B5DED4] bg-white px-3 py-1.5 text-xs font-bold text-[#007F86]">
+          {loading ? "Loading…" : "Refresh"}
+        </button>
+      </div>
+
+      {error && <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">{error}</p>}
+      {current && !current.ok && <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">{current.error}</p>}
+      {current?.ok && Array.isArray(current.data) && current.data.length === 0 && (
+        <p className="text-xs italic text-[#193A40]/60">Nothing here.</p>
+      )}
+
+      {current?.ok && Array.isArray(current.data) && current.data.map((row: any) => (
+        <article key={row.id} className="rounded-2xl border border-[#B5DED4] bg-white p-3 text-xs space-y-1">
+          {view === "complaints" && (
+            <>
+              <p className="font-bold">{row.category || "Report"} <span className="text-[#007F86]">({row.messId})</span> · {row.status === "solved" ? "✅ solved" : "🕓 pending"}</p>
+              <p>👤 {row.studentName || "Anonymous"} {row.email ? `(${row.email})` : ""} · {fmt(row.createdAt)}</p>
+              <p className="italic">“{row.message}”</p>
+            </>
+          )}
+          {view === "feedback" && (
+            <>
+              <p className="font-bold">{row.itemName} <span className="text-[#007F86]">({row.messId} · {row.mealKey})</span> · ⭐ {row.rating} · {row.status}</p>
+              <p>👤 {row.studentName} · {fmt(row.createdAt)}</p>
+              {row.comment && <p className="italic">“{row.comment}”</p>}
+              {row.replyText && <p>↳ Reply: {row.replyText}</p>}
+            </>
+          )}
+          {view === "broadcasts" && (
+            <>
+              <p className="font-bold">{row.title} <span className="text-[#007F86]">({row.messId})</span> · {fmt(row.createdAt)}</p>
+              <p>{row.body}</p>
+            </>
+          )}
+          {view === "audit" && (
+            <>
+              <p className="font-bold">{row.action} <span className="text-[#007F86]">({row.operatorRole} · {row.messId})</span></p>
+              <p>{row.details} · {fmt(row.timestamp)}</p>
+            </>
+          )}
+          {view === "menus" && (
+            <details>
+              <summary className="cursor-pointer font-bold">{row.id} · {fmt(row.updatedAt)}</summary>
+              <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-[#E9F7F4] p-2 text-[10px]">{JSON.stringify(row, null, 2)}</pre>
+            </details>
+          )}
+        </article>
+      ))}
+    </section>
+  );
+}
+
+function HealthView() {
+  const [health, setHealth] = useState<any>(null);
+  const [error, setError] = useState("");
+
+  const refresh = useCallback(async () => {
+    if (!auth?.currentUser) return;
+    try {
+      setHealth(await getTechnicalHealth({ data: { idToken: await auth.currentUser.getIdToken() } }));
+      setError("");
+    } catch (value) {
+      setError(value instanceof Error ? value.message : "Could not run health check.");
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const Row = ({ label, ok }: { label: string; ok: boolean }) => (
+    <li className="flex justify-between rounded-lg border border-[#B5DED4] bg-white px-3 py-2 text-xs">
+      <span className="font-mono">{label}</span>
+      <span className={ok ? "font-bold text-emerald-700" : "font-bold text-red-600"}>{ok ? "set" : "MISSING"}</span>
+    </li>
+  );
+
+  return (
+    <section className="mt-5 space-y-3">
+      <p className="text-xs text-[#193A40]/70">Shows whether each server setting exists. Values are never displayed.</p>
+      {error && <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">{error}</p>}
+      {health && (
+        <>
+          <ul className="space-y-1.5">
+            {Object.entries(health.env).map(([k, v]) => <Row key={k} label={k} ok={Boolean(v)} />)}
+            <Row label="Apps Script URL format (…/macros/s/ID/exec)" ok={health.appsScriptUrlLooksValid} />
+          </ul>
+          <ul className="space-y-1.5">
+            <Row label="Firebase Admin auth" ok={health.services.firebaseAdminAuth} />
+            <Row label="Firestore (admin)" ok={health.services.firestoreAdmin} />
+            <Row label="Push messaging" ok={health.services.messaging} />
+          </ul>
+        </>
+      )}
+      <button onClick={() => void refresh()} className="rounded-lg border border-[#B5DED4] bg-white px-3 py-2 text-xs font-bold text-[#007F86]">Re-check</button>
+    </section>
   );
 }

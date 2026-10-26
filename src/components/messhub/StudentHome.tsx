@@ -314,7 +314,11 @@ function StudentHomeContents({ profile, onSignOut, now }: { profile: StudentProf
       }, 4000);
     } catch (err) {
       console.error("Failed to submit complaint:", err);
-      setComplaintError("Failed to send complaint. Please check your network connection.");
+      setComplaintError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Failed to send complaint. Please try again."
+      );
     } finally {
       setIsSubmittingFeedback(false);
     }
