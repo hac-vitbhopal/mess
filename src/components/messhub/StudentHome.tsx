@@ -14,6 +14,7 @@ import {
   HARDCODED_WEEKLY_MENUS,
   trackBroadcastClick,
   logStudentOnboarding,
+  generateDishProfile,
   submitItemFeedback,
   type MealKey,
   type StudentProfile,
@@ -118,20 +119,27 @@ function StudentHomeContents({ profile, onSignOut, now }: { profile: StudentProf
     const firestoreDb = db;
 
     const cacheKey = `messhub.daily-menu.v1:${profile.messId}:${todayDateStr}`;
+    const cacheCheckedAtKey = `${cacheKey}:checked-at`;
+    const CACHE_REFRESH_MS = 12 * 60 * 60 * 1000;
 
     async function loadDailyMenuFromFirestore() {
       try {
         const cached = localStorage.getItem(cacheKey);
+        const lastCheckedAt = Number(localStorage.getItem(cacheCheckedAtKey) ?? 0);
+        const cacheIsFresh = Boolean(cached) && Date.now() - lastCheckedAt < CACHE_REFRESH_MS;
         if (cached) {
           setDailyMenu(JSON.parse(cached));
           setMenuSource("cache");
           console.info("[Menu] Loaded daily cache", { messId: profile.messId, date: todayDateStr });
-          return;
         }
 
+        if (cacheIsFresh) return;
+
+        // Show cached data immediately, then refresh it only after the
+        // 12-hour TTL has elapsed. This keeps published-menu updates timely
+        // without charging a Firestore read on every app visit.
         // Prefer a dated menu, but retain both legacy weekly document formats
-        // while active messes are migrated. Any successful result is cached
-        // for the rest of the day, so repeat visits cost no reads.
+        // while active messes are migrated.
         const dailyDocRef = doc(firestoreDb, "daily_menus", `${profile.messId}_${todayDateStr}`);
         const dailySnap = await getDoc(dailyDocRef);
         let menu = dailySnap.exists() ? dailySnap.data() : null;
@@ -148,9 +156,15 @@ function StudentHomeContents({ profile, onSignOut, now }: { profile: StudentProf
           menu = olderWeeklySnap.exists() ? olderWeeklySnap.data() : null;
           source = "legacy-weekly";
         }
-        if (menu) localStorage.setItem(cacheKey, JSON.stringify(menu));
-        setDailyMenu(menu);
-        setMenuSource(menu ? source : null);
+        if (menu) {
+          localStorage.setItem(cacheKey, JSON.stringify(menu));
+          localStorage.setItem(cacheCheckedAtKey, String(Date.now()));
+          setDailyMenu(menu);
+          setMenuSource(source);
+        } else if (!cached) {
+          setDailyMenu(null);
+          setMenuSource(null);
+        }
         console.info("[Menu] Loaded", { messId: profile.messId, date: todayDateStr, source: menu ? source : "none" });
       } catch (err) {
         console.error("[StudentHome] Error loading daily menu:", err);
@@ -845,11 +859,23 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
           <ul className="mt-2 space-y-3">
             {items.length > 0 ? (
               items.map((item, idx) => {
-                const isObject = typeof item === "object";
-                const name = isObject ? item.name : item;
+                const isObject = typeof item === "object" && item !== null;
+                const sourceItem = isObject ? item : {};
+                const name = String(isObject ? sourceItem.name : item);
+                // Historic menu documents contain either plain dish names or
+                // partial nutrition objects. Merge them with the standard dish
+                // profile so the student view always has useful Know More data.
+                const fallbackProfile = generateDishProfile(name, mealKey);
+                const dish = isObject
+                  ? {
+                    ...fallbackProfile,
+                    ...sourceItem,
+                    micronutrients: { ...fallbackProfile.micronutrients, ...sourceItem.micronutrients },
+                  }
+                  : fallbackProfile;
                 const isExpanded = !!expandedDishes[idx];
 
-                const activeMicronutrients = isObject && item.micronutrients ? Object.entries(item.micronutrients).filter(([_, val]) => typeof val === "number" && val > 0) : [];
+                const activeMicronutrients = Object.entries(dish.micronutrients ?? {}).filter(([_, val]) => typeof val === "number" && val > 0);
 
                 return (
                   <li key={idx} className="flex flex-col gap-2 rounded-2xl border-2 border-[#B5DED4] bg-[#E9F7F4]/30 p-3.5 text-sm text-[#193A40]">
@@ -859,23 +885,21 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
                         <span className="text-[#193A40] font-bold">{name}</span>
                       </div>
                       
-                      {isObject && (
-                        <button
-                          type="button"
-                          onClick={() => toggleDishExpand(idx)}
-                          className="text-[10px] font-bold text-[#007F86] flex items-center gap-1 bg-[#007F86]/10 px-2.5 py-1 rounded-xl cursor-pointer hover:bg-[#007F86]/20 transition border border-[#007F86]/30"
-                        >
-                          <span>{isExpanded ? "Less" : "Know More"}</span>
-                          {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => toggleDishExpand(idx)}
+                        className="text-[10px] font-bold text-[#007F86] flex items-center gap-1 bg-[#007F86]/10 px-2.5 py-1 rounded-xl cursor-pointer hover:bg-[#007F86]/20 transition border border-[#007F86]/30"
+                      >
+                        <span>{isExpanded ? "Less" : "Know More"}</span>
+                        {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                      </button>
                     </div>
 
-                    {isObject && (() => {
-                      const serving = item.servingSize || item.ServingSize;
-                      const calories = Number(item.calories ?? item.Energy_kcal);
-                      const protein = Number(item.protein ?? item.Protein_g);
-                      const carbs = Number(item.carbs ?? item.Carbs_g);
+                    {(() => {
+                      const serving = dish.servingSize || sourceItem.ServingSize;
+                      const calories = Number(dish.calories ?? sourceItem.Energy_kcal);
+                      const protein = Number(dish.protein ?? sourceItem.Protein_g);
+                      const carbs = Number(dish.carbs ?? sourceItem.Carbs_g);
 
                       const hasAnyBadge = Boolean(serving) || calories > 0 || protein > 0 || carbs > 0;
                       if (!hasAnyBadge) return null;
@@ -906,17 +930,17 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
                       );
                     })()}
 
-                    {isExpanded && isObject && (
+                    {isExpanded && (
                       <div className="mt-2 pt-3 border-t border-[#B5DED4] space-y-3 text-xs animate-fade-in bg-white p-3 rounded-xl border">
-                        {(item.description || item.originStory || item.funFact || item.regionalTag) && (
+                        {(dish.description || dish.originStory || dish.funFact || dish.regionalTag) && (
                           <div className="space-y-1">
                             <span className="text-[9px] uppercase font-bold text-[#007F86] flex items-center gap-1">
                               Cultural &amp; Food Profile
                             </span>
-                            {item.regionalTag && <p className="text-[11px] font-semibold text-teal-800">🌍 {item.regionalTag}</p>}
-                            {item.description && <p className="text-[11px] text-[#193A40]">{item.description}</p>}
-                            {item.originStory && <p className="text-[11px] text-[#193A40]/70">🏛️ Roots: {item.originStory}</p>}
-                            {item.funFact && <p className="text-[11px] text-[#193A40]/70 italic">💡 Trivia: {item.funFact}</p>}
+                            {dish.regionalTag && <p className="text-[11px] font-semibold text-teal-800">🌍 {dish.regionalTag}</p>}
+                            {dish.description && <p className="text-[11px] text-[#193A40]">{dish.description}</p>}
+                            {dish.originStory && <p className="text-[11px] text-[#193A40]/70">🏛️ Roots: {dish.originStory}</p>}
+                            {dish.funFact && <p className="text-[11px] text-[#193A40]/70 italic">💡 Trivia: {dish.funFact}</p>}
                           </div>
                         )}
 
