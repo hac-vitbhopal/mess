@@ -524,8 +524,9 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
     setIsSaving(true);
 
     try {
+      const batch = writeBatch(firestoreDb);
+
       const dailyDocRef = doc(firestoreDb, "daily_menus", `${messId}_${selectedDate}`);
-      
       const payload = cleanFirestoreData({
         ...menu,
         messId,
@@ -533,8 +534,17 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
         updatedAt: serverTimestamp(),
         updatedByRole: "admin",
       });
+      batch.set(dailyDocRef, payload, { merge: true });
 
-      await setDoc(dailyDocRef, payload, { merge: true });
+      // 🌟 Load Balancer Optimization: Bump version timestamp for instant student sync
+      const metaRef = doc(firestoreDb, "mess_meta", messId);
+      batch.set(metaRef, {
+        version: Date.now(),
+        lastPublishedAt: serverTimestamp(),
+        updatedBy: messId
+      }, { merge: true });
+
+      await batch.commit();
 
       await logAdminActivity(
         messId, 
@@ -672,7 +682,14 @@ function LockedMessDashboard({ messId, onSignOut }: { messId: MessId; onSignOut:
         });
         batch.set(docRef, payload, { merge: true });
       }
-
+// 🌟 Load Balancer Optimization: Bump version timestamp for bulk imports too
+      const metaRef = doc(firestoreDb, "mess_meta", messId);
+      batch.set(metaRef, {
+        version: Date.now(),
+        lastPublishedAt: serverTimestamp(),
+        updatedBy: messId
+      }, { merge: true });
+      
       await batch.commit();
       await logAdminActivity(messId, "Excel Menu Import", `Imported ${dishCount} dishes across ${dates.length} calendar days from Excel`);
 

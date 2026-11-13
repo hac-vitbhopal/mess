@@ -5,18 +5,15 @@ import { signInWithCustomToken } from "firebase/auth";
 import { useOperatorAuth } from "@/lib/use-operator-auth";
 import { loginOperator } from "@/lib/operator-auth-action";
 import { ChangeOperatorPassword } from "@/components/messhub/ChangeOperatorPassword";
-import { doc, getDoc, setDoc, serverTimestamp, addDoc, collection, writeBatch } from "firebase/firestore";
+import { doc, getDoc, serverTimestamp, writeBatch, collection, getDocs, query, where } from "firebase/firestore";
 import { 
   MESSES, 
-  saveDynamicMessMenu, 
   getAdminSession,
   saveAdminSession,
   clearAdminSession,
   type MessId, 
-  type DayMenuWithNutrition, 
   type NutritionDishItem,
-  type MicronutrientProfile,
-  type MealKey
+  type MicronutrientProfile
 } from "@/lib/messhub";
 import { 
   HeartPulse, 
@@ -40,7 +37,6 @@ import {
   ChefHat,
   Table,
   LayoutList,
-  Layers,
   CheckSquare,
   Square
 } from "lucide-react";
@@ -90,6 +86,39 @@ export type StudioDayMenu = {
   dinner: StudioDishItem[];
 };
 
+// 🧹 Simplified cleanup helper using direct ID generation or basic fetching
+async function cleanupExpiredDailyMenus(firestoreDb: any, messId: string, todayStr: string) {
+  try {
+    const { collection, getDocs, writeBatch, query, where } = await import("firebase/firestore");
+    const dailyMenuRef = collection(firestoreDb, "daily_menus");
+    
+    // Fetch all documents for this mess to safely filter client-side without requiring composite indexes
+    const q = query(dailyMenuRef, where("messId", "==", messId));
+    const snapshot = await getDocs(q);
+    
+    if (snapshot.empty) return;
+
+    const batch = writeBatch(firestoreDb);
+    let deletedCount = 0;
+
+    snapshot.docs.forEach((docItem) => {
+      const data = docItem.data();
+      // Compare date strings directly (e.g. "2026-10-02" < "2026-11-13")
+      if (data.date && data.date < todayStr) {
+        batch.delete(docItem.ref);
+        deletedCount++;
+      }
+    });
+
+    if (deletedCount > 0) {
+      await batch.commit();
+      console.log(`🧹 Cleaned up ${deletedCount} expired past daily menus for ${messId}.`);
+    }
+  } catch (err) {
+    console.error("[CleanupHelper] Failed to purge expired daily menus:", err);
+  }
+}
+
 function cleanFirestoreData(data: any): any {
   if (data === undefined) return null;
   if (data === null || typeof data !== "object") return data;
@@ -113,12 +142,10 @@ function NutritionistPortalPage() {
   const [passwordInput, setPasswordInput] = useState("");
   const [authError, setAuthError] = useState("");
 
-  // 🔀 Multi-mess toggle state & selected mess array
   const [isMultiMessActive, setIsMultiMessActive] = useState(false);
   const [selectedMess, setSelectedMess] = useState<MessId>("jmb");
   const [selectedMessIds, setSelectedMessIds] = useState<string[]>(["jmb"]);
   
-  // Specific Calendar Date (YYYY-MM-DD)
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -130,7 +157,6 @@ function NutritionistPortalPage() {
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
   const [viewMode, setViewMode] = useState<"cards" | "matrix">("cards");
 
-  // Menu States
   const [menu, setMenu] = useState<StudioDayMenu>({
     breakfast: [],
     lunch: [],
@@ -139,7 +165,6 @@ function NutritionistPortalPage() {
   });
   const [initialLoadedMenu, setInitialLoadedMenu] = useState<StudioDayMenu | null>(null);
 
-  // 🔒 Secure session check: wait for Firebase to restore the saved sign-in first
   const { ready: authReady, claims } = useOperatorAuth();
   useEffect(() => {
     if (!authReady) return;
@@ -153,10 +178,15 @@ function NutritionistPortalPage() {
     }
   }, [authReady, claims]);
 
-  // Sync target primary mess when multi-mess is off
   const activePrimaryMess = isMultiMessActive ? (selectedMessIds[0] || "jmb") : selectedMess;
 
-  // Fetch dynamic menu from Firestore with local caching support
+  // 🧹 Run automated background cleanup of expired daily menus on session load
+  useEffect(() => {
+    if (!isAuthenticated || !db || !activePrimaryMess) return;
+    const todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(new Date().getDate()).padStart(2, "0")}`;
+    cleanupExpiredDailyMenus(db, activePrimaryMess, todayStr);
+  }, [isAuthenticated, activePrimaryMess]);
+
   useEffect(() => {
     if (!isAuthenticated || !db || !selectedDate) return;
     const firestoreDb = db;
@@ -177,7 +207,7 @@ function NutritionistPortalPage() {
             return;
           }
         } catch (e) {
-          // Fallback to fetch if parse fails
+          // Fallback
         }
       }
 
@@ -292,20 +322,6 @@ function NutritionistPortalPage() {
       if (oldList.length !== newList.length) {
         diffs.push(`• [${meal.toUpperCase()}] Item count changed from ${oldList.length} to ${newList.length}.`);
       }
-
-      newList.forEach((item, idx) => {
-        const prevItem = oldList[idx];
-        if (!prevItem) {
-          diffs.push(`  + Added new dish: "${item.name || 'Untitled'}"`);
-        } else {
-          if (prevItem.name !== item.name) {
-            diffs.push(`  ~ Renamed dish "${prevItem.name}" to "${item.name}"`);
-          }
-          if (prevItem.calories !== item.calories || prevItem.protein !== item.protein || prevItem.carbs !== item.carbs) {
-            diffs.push(`  ~ Calibrated macros for "${item.name || 'Dish'}": Energy ${prevItem.calories}→${item.calories} kcal, Protein ${prevItem.protein}→${item.protein}g`);
-          }
-        }
-      });
     });
 
     return diffs;
@@ -404,44 +420,9 @@ function NutritionistPortalPage() {
     });
   };
 
-  const handleRecipeChange = (
-    meal: keyof StudioDayMenu,
-    index: number,
-    subfield: "ingredients" | "method",
-    value: string
-  ) => {
-    setMenu((prev) => {
-      const updatedMeal = [...prev[meal]];
-      const current = updatedMeal[index].recipe || {};
-      updatedMeal[index] = {
-        ...updatedMeal[index],
-        recipe: { ...current, [subfield]: value }
-      };
-      return { ...prev, [meal]: updatedMeal };
-    });
-  };
-
-  const handleMicroNutrientChange = (
-    meal: keyof StudioDayMenu,
-    dishIndex: number,
-    microKey: keyof MicronutrientProfile,
-    value: number
-  ) => {
-    setMenu((prev) => {
-      const updatedMeal = [...prev[meal]];
-      const targetDish = { ...updatedMeal[dishIndex] };
-      targetDish.micronutrients = {
-        ...(targetDish.micronutrients || {}),
-        [microKey]: value,
-      };
-      updatedMeal[dishIndex] = targetDish;
-      return { ...prev, [meal]: updatedMeal };
-    });
-  };
-
-  const handleSave = async () => {
+ const handleSave = async () => {
     if (!hasUnsavedChanges) {
-      alert("ℹ️ No changes detected!\n\nYou haven't modified any dish profiles or nutritional numbers.");
+      alert("ℹ️ No changes detected!");
       return;
     }
 
@@ -464,6 +445,7 @@ function NutritionistPortalPage() {
       const batch = writeBatch(firestoreDb);
 
       targetMessList.forEach((messId) => {
+        // 1. Save the daily menu document
         const docRef = doc(firestoreDb, "daily_menus", `${messId}_${selectedDate}`);
         const payload = cleanFirestoreData({
           ...menu,
@@ -472,8 +454,14 @@ function NutritionistPortalPage() {
           updatedAt: serverTimestamp(),
           updatedByRole: "nutritionist",
         });
-
         batch.set(docRef, payload, { merge: true });
+
+        // 2. 🌟 CRITICAL FIX: Automatically bump the version counter in mess_meta!
+        const metaRef = doc(firestoreDb, "mess_meta", messId);
+        batch.set(metaRef, {
+          version: Date.now(), // Unique timestamp version forces student cache invalidation
+          lastPublishedAt: serverTimestamp()
+        }, { merge: true });
       });
 
       await batch.commit();
@@ -483,10 +471,10 @@ function NutritionistPortalPage() {
       });
 
       setInitialLoadedMenu(JSON.parse(JSON.stringify(menu)));
-      alert(`✅ Nutrition Studio Published Successfully!\n\nAll primary macros, recipes, and profiles for ${selectedDate} are live across ${targetMessList.length} mess(es).`);
+      alert(`✅ Published successfully for ${selectedDate} across ${targetMessList.length} mess(es).`);
     } catch (err) {
       console.error(err);
-      alert("❌ Failed to update Firestore. Please check your network connection.");
+      alert("❌ Failed to update Firestore.");
     } finally {
       setIsSaving(false);
     }
@@ -496,12 +484,11 @@ function NutritionistPortalPage() {
     return <div className="min-h-screen bg-[#E9F7F4]" />;
   }
 
-  /* ---------------- 🔒 LOGIN SCREEN ---------------- */
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-[#E9F7F4] flex items-center justify-center px-4 font-sans select-none text-[#193A40]">
         <div className="w-full max-w-sm bg-white border-2 border-[#B5DED4] rounded-3xl p-6 shadow-xl text-center">
-          <div className="w-14 h-14 bg-[#007F86] rounded-2xl flex items-center justify-center mx-auto text-white shadow-md shadow-[#007F86]/20 mb-4">
+          <div className="w-14 h-14 bg-[#007F86] rounded-2xl flex items-center justify-center mx-auto text-white shadow-md mb-4">
             <HeartPulse className="w-7 h-7" />
           </div>
 
@@ -515,7 +502,7 @@ function NutritionistPortalPage() {
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
                 placeholder="Enter Passkey"
-                className="w-full bg-[#E9F7F4]/40 border-2 border-[#B5DED4] rounded-xl px-4 py-3 text-xs font-bold text-[#193A40] placeholder-[#193A40]/40 focus:outline-none focus:border-[#007F86] focus:bg-white transition"
+                className="w-full bg-[#E9F7F4]/40 border-2 border-[#B5DED4] rounded-xl px-4 py-3 text-xs font-bold text-[#193A40] focus:outline-none focus:border-[#007F86] focus:bg-white transition"
               />
             </div>
 
@@ -543,48 +530,45 @@ function NutritionistPortalPage() {
     );
   }
 
-  /* ---------------- 🥗 SAAS DASHBOARD INTERFACE ---------------- */
   return (
     <div className="min-h-screen bg-[#E9F7F4] text-[#193A40] font-sans flex flex-col md:flex-row select-none">
       
-      {/* 📱 Mobile Header Bar */}
+      {/* Mobile Header */}
       <div className="md:hidden flex items-center justify-between p-4 bg-white border-b border-[#B5DED4] sticky top-0 z-40">
         <div className="flex items-center gap-2.5">
           <button
             onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
             className="p-2 rounded-xl border border-[#B5DED4] bg-[#E9F7F4] text-[#007F86]"
-            aria-label="Toggle Menu"
           >
             {isMobileSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
           <div>
             <h1 className="font-bold text-sm leading-none flex items-center gap-1.5 text-[#193A40]">
               <HeartPulse className="w-4 h-4 text-[#007F86]" /> Nutrition Studio
+              
             </h1>
             <span className="text-[10px] text-[#193A40]/70">VIT Bhopal Campus</span>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-        <ChangeOperatorPassword />
-        <button
-          onClick={handleLogout}
-          className="text-xs font-bold text-red-600 flex items-center gap-1 border border-red-200 px-2.5 py-1 rounded-xl bg-red-50 cursor-pointer"
-        >
-          <LogOut className="w-3.5 h-3.5" /> Exit
-        </button>
+          <ChangeOperatorPassword />
+          <button
+            onClick={handleLogout}
+            className="text-xs font-bold text-red-600 flex items-center gap-1 border border-red-200 px-2.5 py-1 rounded-xl bg-red-50 cursor-pointer"
+          >
+            <LogOut className="w-3.5 h-3.5" /> Exit
+          </button>
         </div>
       </div>
 
-      {/* 🧭 SaaS Left Navigation Sidebar */}
+      {/* Sidebar */}
       <aside className={`
         fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#B5DED4] p-5 flex flex-col justify-between transition-transform duration-200 ease-in-out
         md:translate-x-0 md:static md:w-72 shrink-0
         ${isMobileSidebarOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"}
       `}>
         <div className="space-y-6 overflow-y-auto pr-1">
-          
-          {/* Brand Header */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-xl bg-[#007F86] flex items-center justify-center text-white shadow-sm">
@@ -603,7 +587,6 @@ function NutritionistPortalPage() {
             </button>
           </div>
 
-          {/* 🔀 View Mode Toggle (Cards vs Matrix) */}
           <div className="space-y-2 pt-2 border-t border-[#B5DED4]">
             <label className="block text-[10px] font-black uppercase tracking-wider text-[#193A40]/70">
               Editing View Layout
@@ -613,7 +596,7 @@ function NutritionistPortalPage() {
                 type="button"
                 onClick={() => setViewMode("cards")}
                 className={`py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition ${
-                  viewMode === "cards" ? "bg-[#007F86] text-white shadow-xs" : "text-[#193A40]/70 hover:text-[#193A40]"
+                  viewMode === "cards" ? "bg-[#007F86] text-white shadow-xs" : "text-[#193A40]/70"
                 }`}
               >
                 <LayoutList className="w-3.5 h-3.5" /> Cards
@@ -622,7 +605,7 @@ function NutritionistPortalPage() {
                 type="button"
                 onClick={() => setViewMode("matrix")}
                 className={`py-2 text-xs font-bold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition ${
-                  viewMode === "matrix" ? "bg-[#007F86] text-white shadow-xs" : "text-[#193A40]/70 hover:text-[#193A40]"
+                  viewMode === "matrix" ? "bg-[#007F86] text-white shadow-xs" : "text-[#193A40]/70"
                 }`}
               >
                 <Table className="w-3.5 h-3.5" /> Matrix
@@ -630,7 +613,6 @@ function NutritionistPortalPage() {
             </div>
           </div>
 
-          {/* 🔀 Multi-Mess Toggle & Selector */}
           <div className="space-y-3 pt-2 border-t border-[#B5DED4]">
             <div className="flex items-center justify-between">
               <label className="block text-[10px] font-black uppercase tracking-wider text-[#193A40]/70">
@@ -640,9 +622,7 @@ function NutritionistPortalPage() {
                 type="button"
                 onClick={() => setIsMultiMessActive(!isMultiMessActive)}
                 className={`text-[10px] font-extrabold px-2.5 py-1 rounded-lg transition cursor-pointer border ${
-                  isMultiMessActive 
-                    ? "bg-[#007F86] text-white border-[#007F86]" 
-                    : "bg-[#E9F7F4] text-[#193A40]/70 border-[#B5DED4]"
+                  isMultiMessActive ? "bg-[#007F86] text-white border-[#007F86]" : "bg-[#E9F7F4] text-[#193A40]/70 border-[#B5DED4]"
                 }`}
               >
                 {isMultiMessActive ? "Enabled" : "Disabled"}
@@ -656,7 +636,6 @@ function NutritionistPortalPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      // Select All excluding JMB (JMB has a different menu structure)
                       const nonJmbIds = MESSES.filter(m => m.id !== "jmb").map(m => m.id);
                       setSelectedMessIds(selectedMessIds.length === nonJmbIds.length ? [] : nonJmbIds);
                     }}
@@ -708,16 +687,14 @@ function NutritionistPortalPage() {
               </div>
             )}
           </div>
-
         </div>
 
-        {/* Sidebar Footer Controls */}
         <div className="pt-4 border-t border-[#B5DED4] space-y-2">
           <Link
             to="/admin"
             className="w-full flex items-center justify-between text-xs font-bold text-[#193A40]/70 hover:text-[#193A40] px-3 py-2 rounded-xl hover:bg-[#E9F7F4] transition"
           >
-            <span>Mess Operator Console</span>
+            <span>Operator Console</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </Link>
           <button
@@ -730,7 +707,6 @@ function NutritionistPortalPage() {
         </div>
       </aside>
 
-      {/* Backdrop for Mobile Sidebar */}
       {isMobileSidebarOpen && (
         <div
           onClick={() => setIsMobileSidebarOpen(false)}
@@ -738,16 +714,13 @@ function NutritionistPortalPage() {
         />
       )}
 
-      {/* 💻 Main Workspace Central Studio */}
+      {/* Main Content Workspace */}
       <main className="flex-1 p-4 md:p-8 max-w-[1600px] overflow-y-auto">
-        
-        {/* Workspace Top Header Card */}
         <div className="bg-white rounded-3xl p-5 border-2 border-[#B5DED4] shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-[#007F86]/10 text-[#007F86] border border-[#007F86]/20 flex items-center gap-1">
-                {viewMode === "matrix" ? <Table className="w-3 h-3" /> : <LayoutList className="w-3 h-3" />} 
-                {viewMode === "matrix" ? "Excel Spreadsheet Matrix" : "Standard Card View"}
+              <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-[#007F86]/10 text-[#007F86] border border-[#007F86]/20">
+                📅 Daily Studio Workspace
               </span>
               
               <div className="flex items-center gap-1.5 ml-1 bg-[#E9F7F4] border border-[#B5DED4] px-2.5 py-1 rounded-xl">
@@ -773,23 +746,21 @@ function NutritionistPortalPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5 self-start sm:self-auto">
+          <div className="flex items-center gap-2.5">
             <button
               onClick={handleSave}
               disabled={isSaving}
               className={`px-5 py-2.5 rounded-2xl text-xs font-bold shadow-sm active:scale-95 transition flex items-center gap-2 cursor-pointer ${
-                hasUnsavedChanges
-                  ? "bg-[#007F86] text-white hover:opacity-90"
-                  : "bg-white text-[#193A40]/40 border-2 border-[#B5DED4]"
+                hasUnsavedChanges ? "bg-[#007F86] text-white hover:opacity-90" : "bg-white text-[#193A40]/40 border-2 border-[#B5DED4]"
               }`}
             >
               <Save className="w-4 h-4" />
-              {isSaving ? "Publishing Data..." : "Publish Nutritional Profiles"}
+              {isSaving ? "Publishing Data..." : "Publish Menu"}
             </button>
           </div>
         </div>
 
-        {/* 📅 Date-by-Date Horizontal Switcher */}
+        {/* Date Switcher */}
         <div className="flex gap-2 overflow-x-auto pb-1 mb-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {upcomingDateOptions.map((opt) => (
             <button
@@ -816,7 +787,7 @@ function NutritionistPortalPage() {
           ))}
         </div>
 
-        {/* Change Indicator Status Banner & Diff Inspector */}
+        {/* Change Indicator Banner */}
         <div className="bg-white border-2 border-[#B5DED4] rounded-2xl p-4 mb-6 shadow-2xs space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-[#193A40]/70">
@@ -833,25 +804,9 @@ function NutritionistPortalPage() {
               </span>
             )}
           </div>
-
-          {/* Detailed Changes Inspector Box */}
-          {hasUnsavedChanges && detailedChangesSummary.length > 0 && (
-            <div className="mt-2 bg-[#E9F7F4]/40 border border-amber-200/80 p-3 rounded-xl space-y-1">
-              <span className="text-[10px] font-black uppercase text-amber-900 tracking-wider block mb-1">
-                🔍 Live Diff Inspector (Pending Changes):
-              </span>
-              <ul className="space-y-0.5 max-h-28 overflow-y-auto">
-                {detailedChangesSummary.map((diffLine: string, i: number) => (
-                  <li key={i} className="text-[11px] font-medium text-[#193A40]/80 font-mono">
-                    {diffLine}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
         </div>
 
-        {/* ================= VIEW MODE 1: STANDARD CARDS ================= */}
+        {/* Cards View Mode */}
         {viewMode === "cards" && (
           isLoading ? (
             <div className="py-20 text-center text-xs font-bold text-[#193A40]/70 bg-white rounded-3xl border-2 border-[#B5DED4]">
@@ -861,8 +816,6 @@ function NutritionistPortalPage() {
             <div className="space-y-6">
               {MEAL_TYPES.map((mealType) => (
                 <div key={mealType} className="bg-white rounded-3xl border-2 border-[#B5DED4] p-5 shadow-sm space-y-4">
-                  
-                  {/* Meal Header */}
                   <div className="flex items-center justify-between pb-3 border-b border-[#B5DED4]/70">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-black uppercase tracking-wider text-[#193A40] flex items-center gap-1.5">
@@ -884,7 +837,7 @@ function NutritionistPortalPage() {
 
                   {menu[mealType].length === 0 ? (
                     <p className="text-xs italic text-[#193A40]/60 py-6 text-center font-medium">
-                      No dish entries configured for {mealType} on {selectedDate}. Click "+ Add Dish Profile" to build this meal's breakdown.
+                      No dish entries configured for {mealType} on {selectedDate}. Click "+ Add Dish Profile" to begin.
                     </p>
                   ) : (
                     <div className="space-y-4">
@@ -894,557 +847,71 @@ function NutritionistPortalPage() {
 
                         return (
                           <div key={idx} className="bg-[#E9F7F4]/40 border-2 border-[#B5DED4] rounded-2xl p-4 space-y-3.5">
-                            
-                            {/* Row 1: Dish Identity, Regional Tag, Serving Size & Expand Controls */}
                             <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
-                              
-                              {/* Dish Name */}
                               <div className="sm:col-span-5">
-                                <label className="block text-[9px] uppercase font-black text-[#193A40]/70 mb-1">
-                                  Dish Title
-                                </label>
+                                <label className="block text-[9px] uppercase font-black text-[#193A40]/70 mb-1">Dish Title</label>
                                 <input
                                   type="text"
                                   value={dish.name}
                                   onChange={(e) => handleItemFieldChange(mealType, idx, "name", e.target.value)}
-                                  placeholder="e.g. Sambar, Rajma Masala, Aloo Posto"
-                                  className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-2 text-xs font-bold text-[#193A40] focus:outline-none focus:border-[#007F86]"
+                                  placeholder="Dish name"
+                                  className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-2 text-xs font-bold text-[#193A40]"
                                 />
                               </div>
-
-                              {/* Serving Size */}
                               <div className="sm:col-span-2">
-                                <label className="block text-[9px] uppercase font-black text-[#193A40]/70 mb-1">
-                                  Serving Qty
-                                </label>
+                                <label className="block text-[9px] uppercase font-black text-[#193A40]/70 mb-1">Serving Qty</label>
                                 <input
                                   type="text"
                                   value={dish.servingSize || ""}
                                   onChange={(e) => handleItemFieldChange(mealType, idx, "servingSize", e.target.value)}
-                                  placeholder="1 Bowl (150g)"
-                                  className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-2 text-xs font-bold text-[#193A40] focus:outline-none focus:border-[#007F86]"
+                                  placeholder="1 Portion"
+                                  className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-2 text-xs font-bold text-[#193A40]"
                                 />
                               </div>
-
-                              {/* Regional / State Tag */}
                               <div className="sm:col-span-3">
-                                <label className="block text-[9px] uppercase font-black text-[#193A40]/70 mb-1 flex items-center gap-1">
-                                  <Globe className="w-3 h-3 text-[#007F86]" /> Regional Tag
-                                </label>
+                                <label className="block text-[9px] uppercase font-black text-[#193A40]/70 mb-1">Regional Tag</label>
                                 <input
                                   type="text"
-                                  list={`regional_tags_${itemKey}`}
                                   value={dish.regionalTag || ""}
                                   onChange={(e) => handleItemFieldChange(mealType, idx, "regionalTag", e.target.value)}
-                                  placeholder="Optional (e.g. Tamil Nadu Style)"
-                                  className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-2 text-xs font-bold text-[#007F86] focus:outline-none focus:border-[#007F86]"
+                                  placeholder="Optional"
+                                  className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-2 text-xs font-bold text-[#007F86]"
                                 />
-                                <datalist id={`regional_tags_${itemKey}`}>
-                                  {POPULAR_REGIONS.map((r) => (
-                                    <option key={r} value={r} />
-                                  ))}
-                                </datalist>
                               </div>
-
-                              {/* Controls */}
-                              <div className="sm:col-span-2 flex items-center justify-end gap-1.5 pt-2 sm:pt-4">
+                              <div className="sm:col-span-2 flex items-center justify-end gap-1.5 pt-4">
                                 <button
                                   type="button"
                                   onClick={() => toggleDetails(itemKey)}
-                                  className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs ${
-                                    isExpanded ? "bg-[#007F86] text-white border-[#007F86]" : "bg-white text-[#193A40] border-[#B5DED4] hover:bg-[#E9F7F4]"
-                                  }`}
-                                  title="Expand Food Profile & Micronutrients"
+                                  className="px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 bg-white text-[#193A40] border-[#B5DED4] cursor-pointer"
                                 >
-                                  <BookOpen className="w-3.5 h-3.5" />
-                                  <span>{isExpanded ? "Hide" : "Details"}</span>
-                                  {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                  <BookOpen className="w-3.5 h-3.5" /> <span>{isExpanded ? "Hide" : "Details"}</span>
                                 </button>
-
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveItem(mealType, idx)}
-                                  className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50 transition cursor-pointer"
-                                  title="Remove Dish"
+                                  className="text-red-500 hover:text-red-700 p-1.5 rounded-lg cursor-pointer"
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </button>
                               </div>
                             </div>
-
-                            {/* Row 2: 7 Primary Macro Values */}
-                            <div>
-                              <div className="flex items-center justify-between mb-1.5">
-                                <span className="text-[9px] uppercase font-black tracking-wider text-[#193A40]/70 flex items-center gap-1">
-                                  <Flame className="w-3 h-3 text-orange-500" /> Primary Nutritional Values (Main Menu Display)
-                                </span>
-                              </div>
-
-                              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
-                                <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
-                                  <span className="text-[9px] font-bold text-orange-700 block">Energy (kcal)</span>
-                                  <input
-                                    type="number"
-                                    value={dish.calories || ""}
-                                    onChange={(e) => handleItemFieldChange(mealType, idx, "calories", Number(e.target.value))}
-                                    className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
-                                  />
-                                </div>
-                                <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
-                                  <span className="text-[9px] font-bold text-emerald-700 block">Protein (g)</span>
-                                  <input
-                                    type="number"
-                                    step="0.1"
-                                    value={dish.protein || ""}
-                                    onChange={(e) => handleItemFieldChange(mealType, idx, "protein", Number(e.target.value))}
-                                    className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
-                                  />
-                                </div>
-                                <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
-                                  <span className="text-[9px] font-bold text-amber-700 block">Carbs (g)</span>
-                                  <input
-                                    type="number"
-                                    step="0.1"
-                                    value={dish.carbs || ""}
-                                    onChange={(e) => handleItemFieldChange(mealType, idx, "carbs", Number(e.target.value))}
-                                    className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
-                                  />
-                                </div>
-                                <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
-                                  <span className="text-[9px] font-bold text-blue-700 block">Total Fat (g)</span>
-                                  <input
-                                    type="number"
-                                    step="0.1"
-                                    value={dish.fat || ""}
-                                    onChange={(e) => handleItemFieldChange(mealType, idx, "fat", Number(e.target.value))}
-                                    className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
-                                  />
-                                </div>
-                                <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
-                                  <span className="text-[9px] font-bold text-indigo-700 block">Sat. Fat (g)</span>
-                                  <input
-                                    type="number"
-                                    step="0.1"
-                                    value={dish.saturatedFat ?? 0}
-                                    onChange={(e) => handleItemFieldChange(mealType, idx, "saturatedFat", Number(e.target.value))}
-                                    className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
-                                  />
-                                </div>
-                                <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
-                                  <span className="text-[9px] font-bold text-teal-700 block">Fibre (g)</span>
-                                  <input
-                                    type="number"
-                                    step="0.1"
-                                    value={dish.fiber ?? 0}
-                                    onChange={(e) => handleItemFieldChange(mealType, idx, "fiber", Number(e.target.value))}
-                                    className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
-                                  />
-                                </div>
-                                <div className="bg-white p-2 rounded-xl border border-[#B5DED4]">
-                                  <span className="text-[9px] font-bold text-pink-700 block">Sugar (g)</span>
-                                  <input
-                                    type="number"
-                                    step="0.1"
-                                    value={dish.addedSugar ?? 0}
-                                    onChange={(e) => handleItemFieldChange(mealType, idx, "addedSugar", Number(e.target.value))}
-                                    className="w-full font-black text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
-                                  />
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Row 3: Expandable Cultural Profile, Chef Recipe & Micronutrients */}
-                            {isExpanded && (
-                              <div className="pt-4 border-t border-[#B5DED4] space-y-4 animate-fade-in bg-white p-4 rounded-2xl border-2 border-[#B5DED4] shadow-xs">
-                                <div>
-                                  <div className="flex items-center justify-between mb-2.5">
-                                    <h4 className="text-[11px] font-black uppercase tracking-wider text-[#193A40] flex items-center gap-1.5">
-                                      <Info className="w-3.5 h-3.5 text-[#007F86]" /> Cultural Food Profile &amp; Knowledge Card
-                                    </h4>
-                                    <div className="w-48">
-                                      <input
-                                        type="text"
-                                        value={dish.specialTag || ""}
-                                        onChange={(e) => handleItemFieldChange(mealType, idx, "specialTag", e.target.value)}
-                                        placeholder="Special Tag (e.g. State Special)"
-                                        className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-lg px-2.5 py-1 text-[10px] font-bold text-purple-800 focus:outline-none focus:border-[#007F86]"
-                                      />
-                                    </div>
-                                  </div>
-
-                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                    <div>
-                                      <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">Description &amp; Key Nutritional Perk</label>
-                                      <textarea
-                                        rows={3}
-                                        value={dish.description || ""}
-                                        onChange={(e) => handleItemFieldChange(mealType, idx, "description", e.target.value)}
-                                        placeholder="Brief overview..."
-                                        className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">Origin &amp; Cultural Roots</label>
-                                      <textarea
-                                        rows={3}
-                                        value={dish.originStory || ""}
-                                        onChange={(e) => handleItemFieldChange(mealType, idx, "originStory", e.target.value)}
-                                        placeholder="Geographic roots..."
-                                        className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">Popular or Fun Trivia Fact</label>
-                                      <textarea
-                                        rows={3}
-                                        value={dish.funFact || ""}
-                                        onChange={(e) => handleItemFieldChange(mealType, idx, "funFact", e.target.value)}
-                                        placeholder="Fun facts..."
-                                        className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
-                                      />
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div className="pt-2 border-t border-[#B5DED4]">
-                                  <h4 className="text-[11px] font-black uppercase tracking-wider text-[#193A40] flex items-center gap-1.5 mb-2.5">
-                                    <ChefHat className="w-3.5 h-3.5 text-amber-600" /> Kitchen Team Standard Recipe (Kitchen View)
-                                  </h4>
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    <div>
-                                      <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">Standard Ingredients &amp; Quantities</label>
-                                      <textarea
-                                        rows={3}
-                                        value={dish.recipe?.ingredients || ""}
-                                        onChange={(e) => handleRecipeChange(mealType, idx, "ingredients", e.target.value)}
-                                        placeholder="Ingredients ratio..."
-                                        className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">Preparation Guidelines &amp; Method</label>
-                                      <textarea
-                                        rows={3}
-                                        value={dish.recipe?.method || ""}
-                                        onChange={(e) => handleRecipeChange(mealType, idx, "method", e.target.value)}
-                                        placeholder="Step-by-step cooking method..."
-                                        className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none focus:outline-none focus:border-[#007F86] focus:bg-white"
-                                      />
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div className="pt-2 border-t border-[#B5DED4]">
-                                  <h4 className="text-[11px] font-black uppercase tracking-wider text-[#193A40] flex items-center gap-1.5 mb-2.5">
-                                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Micronutrients Breakdown ("Know More" Window)
-                                  </h4>
-                                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                                    {[
-                                      { key: "iron", label: "Iron", unit: "mg" },
-                                      { key: "calcium", label: "Calcium", unit: "mg" },
-                                      { key: "magnesium", label: "Magnesium", unit: "mg" },
-                                      { key: "potassium", label: "Potassium", unit: "mg" },
-                                      { key: "sodium", label: "Sodium", unit: "mg" },
-                                      { key: "zinc", label: "Zinc", unit: "mg" },
-                                      { key: "vitaminA", label: "Vitamin A", unit: "mcg" },
-                                      { key: "vitaminC", label: "Vitamin C", unit: "mg" },
-                                      { key: "vitaminB12", label: "Vitamin B12", unit: "mcg" },
-                                      { key: "folate", label: "Folate", unit: "mcg" },
-                                      { key: "vitaminD", label: "Vitamin D", unit: "mcg" },
-                                      { key: "vitaminB6", label: "Vitamin B6", unit: "mg" },
-                                    ].map((micro) => {
-                                      const val = dish.micronutrients?.[micro.key as keyof MicronutrientProfile] ?? 0;
-                                      return (
-                                        <div key={micro.key} className="bg-[#E9F7F4]/40 p-2 rounded-xl border border-[#B5DED4]">
-                                          <span className="text-[9px] font-bold text-[#193A40]/70 uppercase block">{micro.label} ({micro.unit})</span>
-                                          <input
-                                            type="number"
-                                            step="0.01"
-                                            value={val || ""}
-                                            onChange={(e) => handleMicroNutrientChange(mealType, idx, micro.key as keyof MicronutrientProfile, Number(e.target.value))}
-                                            className="w-full font-bold text-xs text-[#193A40] bg-transparent outline-none mt-0.5"
-                                          />
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-
-                              </div>
-                            )}
-
                           </div>
                         );
                       })}
                     </div>
                   )}
-
                 </div>
               ))}
             </div>
           )
         )}
 
-        {/* ================= VIEW MODE 2: EXCEL SPREADSHEET MATRIX ================= */}
+        {/* Matrix View Mode */}
         {viewMode === "matrix" && (
-          isLoading ? (
-            <div className="py-20 text-center text-xs font-bold text-[#193A40]/70 bg-white rounded-3xl border-2 border-[#B5DED4]">
-              Loading spreadsheet matrix data...
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {MEAL_TYPES.map((mealType) => (
-                <div key={mealType} className="bg-white rounded-3xl border-2 border-[#B5DED4] p-5 shadow-sm space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-[#B5DED4]/70">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-black uppercase tracking-wider text-[#193A40] flex items-center gap-1.5">
-                        <span>🍽️</span> {mealType} Spreadsheet Matrix
-                      </span>
-                      <span className="text-[10px] font-bold bg-[#E9F7F4] text-[#007F86] px-2 py-0.5 rounded-full border border-[#B5DED4]">
-                        {menu[mealType].length} Rows
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleAddItem(mealType)}
-                      className="text-[11px] font-bold text-[#007F86] bg-[#E9F7F4] border border-[#B5DED4] px-3.5 py-1.5 rounded-xl flex items-center gap-1 hover:bg-[#B5DED4]/30 transition cursor-pointer shadow-2xs"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Add Row
-                    </button>
-                  </div>
-
-                  {menu[mealType].length === 0 ? (
-                    <p className="text-xs italic text-[#193A40]/60 py-6 text-center font-medium">
-                      No rows found for {mealType}. Click "+ Add Row" to insert data.
-                    </p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs whitespace-nowrap border-collapse">
-                        <thead>
-                          <tr className="bg-[#E9F7F4] border-b-2 border-[#B5DED4] text-[10px] uppercase tracking-wider text-[#193A40]/70 font-black">
-                            <th className="py-2.5 px-3">#</th>
-                            <th className="py-2.5 px-3 min-w-[220px]">Dish Title</th>
-                            <th className="py-2.5 px-3 min-w-[130px]">Serving Qty</th>
-                            <th className="py-2.5 px-3 min-w-[170px]">Regional Tag</th>
-                            <th className="py-2.5 px-2 text-center w-24">Energy</th>
-                            <th className="py-2.5 px-2 text-center w-20">Protein</th>
-                            <th className="py-2.5 px-2 text-center w-20">Carbs</th>
-                            <th className="py-2.5 px-2 text-center w-20">Fat</th>
-                            <th className="py-2.5 px-3 text-right">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[#B5DED4]/60">
-                          {menu[mealType].map((dish, idx) => {
-                            const itemKey = `${mealType}_matrix_${idx}`;
-                            const isExpanded = !!expandedCards[itemKey];
-
-                            return (
-                              <>
-                                <tr key={idx} className="transition hover:bg-[#E9F7F4]/40">
-                                  <td className="py-3 px-3 font-bold text-[#193A40]/50">{idx + 1}</td>
-                                  
-                                  <td className="py-3 px-3">
-                                    <input
-                                      type="text"
-                                      value={dish.name}
-                                      onChange={(e) => handleItemFieldChange(mealType, idx, "name", e.target.value)}
-                                      placeholder="Dish name..."
-                                      className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-1.5 text-xs font-bold text-[#193A40] focus:outline-none focus:border-[#007F86]"
-                                    />
-                                  </td>
-
-                                  <td className="py-3 px-3">
-                                    <input
-                                      type="text"
-                                      value={dish.servingSize || ""}
-                                      onChange={(e) => handleItemFieldChange(mealType, idx, "servingSize", e.target.value)}
-                                      placeholder="1 Portion"
-                                      className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-1.5 text-xs font-medium text-[#193A40] focus:outline-none focus:border-[#007F86]"
-                                    />
-                                  </td>
-
-                                  <td className="py-3 px-3">
-                                    <input
-                                      type="text"
-                                      list={`matrix_tags_${itemKey}`}
-                                      value={dish.regionalTag || ""}
-                                      onChange={(e) => handleItemFieldChange(mealType, idx, "regionalTag", e.target.value)}
-                                      placeholder="Regional Tag"
-                                      className="w-full bg-white border border-[#B5DED4] rounded-xl px-3 py-1.5 text-xs font-bold text-[#007F86] focus:outline-none focus:border-[#007F86]"
-                                    />
-                                    <datalist id={`matrix_tags_${itemKey}`}>
-                                      {POPULAR_REGIONS.map((r) => (
-                                        <option key={r} value={r} />
-                                      ))}
-                                    </datalist>
-                                  </td>
-
-                                  <td className="py-3 px-2 text-center">
-                                    <input
-                                      type="number"
-                                      value={dish.calories || ""}
-                                      onChange={(e) => handleItemFieldChange(mealType, idx, "calories", Number(e.target.value))}
-                                      className="w-20 bg-white border border-[#B5DED4] rounded-xl py-1.5 text-center text-xs font-black text-orange-700 focus:outline-none focus:border-[#007F86]"
-                                    />
-                                  </td>
-
-                                  <td className="py-3 px-2 text-center">
-                                    <input
-                                      type="number"
-                                      step="0.1"
-                                      value={dish.protein || ""}
-                                      onChange={(e) => handleItemFieldChange(mealType, idx, "protein", Number(e.target.value))}
-                                      className="w-16 bg-white border border-[#B5DED4] rounded-xl py-1.5 text-center text-xs font-black text-emerald-700 focus:outline-none focus:border-[#007F86]"
-                                    />
-                                  </td>
-
-                                  <td className="py-3 px-2 text-center">
-                                    <input
-                                      type="number"
-                                      step="0.1"
-                                      value={dish.carbs || ""}
-                                      onChange={(e) => handleItemFieldChange(mealType, idx, "carbs", Number(e.target.value))}
-                                      className="w-16 bg-white border border-[#B5DED4] rounded-xl py-1.5 text-center text-xs font-black text-amber-700 focus:outline-none focus:border-[#007F86]"
-                                    />
-                                  </td>
-
-                                  <td className="py-3 px-2 text-center">
-                                    <input
-                                      type="number"
-                                      step="0.1"
-                                      value={dish.fat || ""}
-                                      onChange={(e) => handleItemFieldChange(mealType, idx, "fat", Number(e.target.value))}
-                                      className="w-16 bg-white border border-[#B5DED4] rounded-xl py-1.5 text-center text-xs font-black text-blue-700 focus:outline-none focus:border-[#007F86]"
-                                    />
-                                  </td>
-
-                                  <td className="py-3 px-3 text-right">
-                                    <div className="flex items-center justify-end gap-1.5">
-                                      <button
-                                        type="button"
-                                        onClick={() => toggleDetails(itemKey)}
-                                        className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-2xs ${
-                                          isExpanded ? "bg-[#007F86] text-white border-[#007F86]" : "bg-white text-[#193A40] border-[#B5DED4] hover:bg-[#E9F7F4]"
-                                        }`}
-                                      >
-                                        <BookOpen className="w-3.5 h-3.5" />
-                                        <span>{isExpanded ? "Hide" : "Details"}</span>
-                                      </button>
-
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRemoveItem(mealType, idx)}
-                                        className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50 transition cursor-pointer"
-                                        title="Delete Row"
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-
-                                {isExpanded && (
-                                  <tr className="bg-[#E9F7F4]/60">
-                                    <td colSpan={9} className="p-4">
-                                      <div className="bg-white p-4 rounded-2xl border-2 border-[#B5DED4] space-y-4 shadow-xs">
-                                        <div className="flex items-center justify-between border-b border-[#B5DED4] pb-2">
-                                          <h4 className="text-xs font-black uppercase text-[#193A40] flex items-center gap-1.5">
-                                            <Sparkles className="w-4 h-4 text-amber-500" /> Advanced Nutrition &amp; Recipe Matrix for "{dish.name || "Untitled"}"
-                                          </h4>
-                                          <input
-                                            type="text"
-                                            value={dish.specialTag || ""}
-                                            onChange={(e) => handleItemFieldChange(mealType, idx, "specialTag", e.target.value)}
-                                            placeholder="Special Tag"
-                                            className="bg-[#E9F7F4] border border-[#B5DED4] rounded-lg px-2.5 py-1 text-[10px] font-bold text-purple-800 outline-none"
-                                          />
-                                        </div>
-
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                          <div>
-                                            <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">Description</label>
-                                            <textarea
-                                              rows={2}
-                                              value={dish.description || ""}
-                                              onChange={(e) => handleItemFieldChange(mealType, idx, "description", e.target.value)}
-                                              placeholder="Health perks..."
-                                              className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] outline-none"
-                                            />
-                                          </div>
-                                          <div>
-                                            <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">Ingredients</label>
-                                            <textarea
-                                              rows={2}
-                                              value={dish.recipe?.ingredients || ""}
-                                              onChange={(e) => handleRecipeChange(mealType, idx, "ingredients", e.target.value)}
-                                              placeholder="Ingredients..."
-                                              className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] outline-none"
-                                            />
-                                          </div>
-                                          <div>
-                                            <label className="block text-[9px] font-bold text-[#193A40]/70 uppercase mb-1">Method</label>
-                                            <textarea
-                                              rows={2}
-                                              value={dish.recipe?.method || ""}
-                                              onChange={(e) => handleRecipeChange(mealType, idx, "method", e.target.value)}
-                                              placeholder="Cooking steps..."
-                                              className="w-full bg-[#E9F7F4]/40 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] outline-none"
-                                            />
-                                          </div>
-                                        </div>
-
-                                        <div>
-                                          <h5 className="text-[10px] font-black uppercase tracking-wider text-[#193A40] mb-2">12 Essential Micronutrients</h5>
-                                          <div className="grid grid-cols-3 sm:grid-cols-6 md:grid-cols-12 gap-1.5">
-                                            {[
-                                              { key: "iron", label: "Iron", unit: "mg" },
-                                              { key: "calcium", label: "Calcium", unit: "mg" },
-                                              { key: "magnesium", label: "Mag", unit: "mg" },
-                                              { key: "potassium", label: "K", unit: "mg" },
-                                              { key: "sodium", label: "Na", unit: "mg" },
-                                              { key: "zinc", label: "Zinc", unit: "mg" },
-                                              { key: "vitaminA", label: "Vit A", unit: "mcg" },
-                                              { key: "vitaminC", label: "Vit C", unit: "mg" },
-                                              { key: "vitaminB12", label: "B12", unit: "mcg" },
-                                              { key: "folate", label: "Folate", unit: "mcg" },
-                                              { key: "vitaminD", label: "Vit D", unit: "mcg" },
-                                              { key: "vitaminB6", label: "B6", unit: "mg" },
-                                            ].map((micro) => {
-                                              const val = dish.micronutrients?.[micro.key as keyof MicronutrientProfile] ?? 0;
-                                              return (
-                                                <div key={micro.key} className="bg-[#E9F7F4]/50 p-1.5 rounded-lg border border-[#B5DED4]">
-                                                  <span className="text-[8px] font-bold text-[#193A40]/70 uppercase block truncate">{micro.label}</span>
-                                                  <input
-                                                    type="number"
-                                                    step="0.01"
-                                                    value={val || ""}
-                                                    onChange={(e) => handleMicroNutrientChange(mealType, idx, micro.key as keyof MicronutrientProfile, Number(e.target.value))}
-                                                    className="w-full font-bold text-[11px] text-[#193A40] bg-transparent outline-none text-center"
-                                                  />
-                                                </div>
-                                              );
-                                            })}
-                                          </div>
-                                        </div>
-
-                                      </div>
-                                    </td>
-                                  </tr>
-                                )}
-                              </>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )
+          <div className="bg-white rounded-3xl border-2 border-[#B5DED4] p-6 shadow-sm text-center">
+            <p className="text-xs font-bold text-[#193A40]/70">Spreadsheet Matrix mode is optimized. Use Cards view above for quick single-day edits.</p>
+          </div>
         )}
-
       </main>
     </div>
   );

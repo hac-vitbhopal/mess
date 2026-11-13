@@ -9,19 +9,7 @@ import { ChangeOperatorPassword } from "@/components/messhub/ChangeOperatorPassw
 import { useOperatorAuth } from "@/lib/use-operator-auth";
 import { ReplyFeedbackBox } from "@/components/messhub/ReplyFeedbackBox";
 import { collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, limit, doc, getDocs, getDoc, updateDoc, deleteDoc, setDoc, writeBatch, getCountFromServer, where } from "firebase/firestore";
-import { 
-  getAdminSession, 
-  saveAdminSession, 
-  clearAdminSession, 
-  MESSES as DEFAULT_STATIC_MESSES,
-  MEAL_DEFS,
-  currentAndNextMeal,
-  HARDCODED_WEEKLY_MENUS,
-  deleteBroadcasts,
-  toggleFeedbackStatus,
-  type MealKey,
-  type ItemFeedback
-} from "@/lib/messhub";
+import { z } from "zod";
 import { 
   ShieldCheck, Users, Activity, MessageSquare, Megaphone, 
   LogOut, Menu, X, Clock, CheckSquare, Square, Star, 
@@ -29,6 +17,19 @@ import {
   PlusCircle, History, Utensils, Download, AlertTriangle, Lock, Unlock, KeyRound, Search, Sparkles, Save
 } from "lucide-react";
 import { NavratriSpecialAdminHub } from "@/components/messhub/NavratriSpecial";
+import { 
+  getAdminSession, 
+  saveAdminSession, 
+  clearAdminSession, 
+  MESSES as DEFAULT_STATIC_MESSES,
+  MEAL_DEFS,               
+  HARDCODED_WEEKLY_MENUS,  
+  currentAndNextMeal,      
+  deleteBroadcasts,
+  toggleFeedbackStatus,
+  type MealKey,
+  type ItemFeedback
+} from "@/lib/messhub";
 
 export const Route = createFileRoute("/super-admin")({
   head: () => ({
@@ -92,14 +93,12 @@ function SuperAdminGatekeeper() {
     }
   }, [session, navigate, isMounted]);
 
-  // Wait for Firebase to restore the saved sign-in before showing the dashboard.
   useEffect(() => {
     if (!authReady) return;
     if (getAdminSession() && claims?.role !== "super-admin") {
       clearAdminSession();
       setSession(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authReady]);
 
   async function handleVerifyPasscode(e: React.FormEvent) {
@@ -175,10 +174,9 @@ function SuperAdminGatekeeper() {
 
 /* ---------------- 👑 PLATFORM MASTER SAAS DASHBOARD ---------------- */
 function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
-  const [activeTab, setActiveTab] = useState<"overview" | "roles" | "menus" | "feedbacks" | "complaints" | "broadcasts" | "students" | "analytics" | "navratri" | "audit">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "roles" | "menus" | "special-menus" | "feedbacks" | "complaints" | "broadcasts" | "students" | "analytics" | "navratri" | "audit">("overview");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Global Realtime Datasets
   const [dynamicMesses, setDynamicMesses] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [studentsLoaded, setStudentsLoaded] = useState(false);
@@ -188,29 +186,25 @@ function PlatformMasterDashboard({ onSignOut }: { onSignOut: () => void }) {
   const [complaints, setComplaints] = useState<any[]>([]);
   const [menuLogs, setMenuLogs] = useState<any[]>([]);
   const [broadcastList, setBroadcastList] = useState<any[]>([]);
-  const [clickLogs, setClickLogs] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
-  // Local Action States
   const [selectedMealKey, setSelectedMealKey] = useState<MealKey>("lunch");
   const [isFiringMealAlert, setIsFiringMealAlert] = useState(false);
   const [targetMessId, setTargetMessId] = useState<string>("all");
   const [broadcastTitle, setBroadcastTitle] = useState("");
   const [broadcastBody, setBroadcastBody] = useState("");
+  const [autoExpire24h, setAutoExpire24h] = useState(true);
   const [isBroadcastingCustom, setIsBroadcastingCustom] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // 🔒 Master Kitchen Editing Permission State (Synced for Roles Tab)
   const [isMenuEditingUnlocked, setIsMenuEditingUnlocked] = useState(false);
   const [isUpdatingLock, setIsUpdatingLock] = useState(false);
   const [saveSuccessNotice, setSaveSuccessNotice] = useState(false);
-const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
-// ⚡ Optimized Data Fetching for 10k+ Students (One-time getDocs to protect quota)
+
   useEffect(() => {
     if (!db) return;
 
-    // 1. Keep config real-time ONLY for the kitchen lock toggle state (1 tiny document)
     const configRef = doc(db, "platform_config", "settings");
     const unsubConfig = onSnapshot(configRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -218,18 +212,14 @@ const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
       }
     });
 
-    // 2. Fetch all administrative datasets once on mount (Supports 10k+ students without open connections)
-   async function fetchSuperAdminData() {
+    async function fetchSuperAdminData() {
       if (!db) return;
-      const firestoreDb = db; // Safely bound non-null reference for TypeScript
+      const firestoreDb = db;
 
       try {
-        // Messes
         const messesSnap = await getDocs(collection(firestoreDb, "messes"));
         setDynamicMesses(messesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
-        // Students: counts only (about 1 read per 1,000 students instead of 1 per student).
-        // The full list loads on demand when the Student Directory tab is opened.
         const totalSnap = await getCountFromServer(collection(firestoreDb, "registered_students"));
         setStudentTotal(totalSnap.data().count);
         const messIds = Array.from(new Set([...messesSnap.docs.map((d) => d.id), ...DEFAULT_STATIC_MESSES.map((m) => m.id)]));
@@ -239,27 +229,22 @@ const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
         }));
         setMessStudentCounts(Object.fromEntries(countEntries));
 
-        // Feedbacks (recent 500)
         const feedbacksQuery = query(collection(firestoreDb, "item_feedback"), orderBy("createdAt", "desc"), limit(500));
         const feedbackSnap = await getDocs(feedbacksQuery);
         setFeedbacks(feedbackSnap.docs.map(d => ({ id: d.id, ...d.data() } as ItemFeedback)));
 
-        // Complaints (recent 100)
         const complaintsQuery = query(collection(firestoreDb, "complaints"), orderBy("createdAt", "desc"), limit(100));
         const complaintSnap = await getDocs(complaintsQuery);
         setComplaints(complaintSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
-        // Menu Logs (recent 50)
         const menuQuery = query(collection(firestoreDb, "mess_menus"), orderBy("updatedAt", "desc"), limit(50));
         const menuSnap = await getDocs(menuQuery);
         setMenuLogs(menuSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
-        // Broadcasts (recent 50)
         const broadcastsQuery = query(collection(firestoreDb, "broadcasts"), orderBy("createdAt", "desc"), limit(50));
         const broadcastSnap = await getDocs(broadcastsQuery);
         setBroadcastList(broadcastSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
-        // Audit Logs (recent 100)
         const auditQuery = query(collection(firestoreDb, "admin_audit_logs"), orderBy("timestamp", "desc"), limit(100));
         const auditSnap = await getDocs(auditQuery);
         setAuditLogs(auditSnap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -271,11 +256,10 @@ const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
     fetchSuperAdminData();
 
     return () => {
-      unsubConfig(); // Clean up the lightweight settings listener
+      unsubConfig();
     };
   }, []);
 
-  // Student Directory: load the 300 most recently active students only when that tab opens.
   useEffect(() => {
     if (activeTab !== "students" || studentsLoaded || !db) return;
     const firestoreDb = db;
@@ -386,6 +370,7 @@ const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
 
       const now = new Date();
       const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const expiresAtDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
       for (const mess of allMesses) {
         let items: string[] = [];
@@ -412,6 +397,7 @@ const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
           title: template.title,
           body: finalBodyText,
           createdAt: serverTimestamp(),
+          expiresAt: expiresAtDate.toISOString(),
         });
       }
 
@@ -433,25 +419,28 @@ const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
 
     setIsBroadcastingCustom(true);
     try {
+      const expiresAtDate = autoExpire24h ? new Date(Date.now() + 24 * 60 * 60 * 1000) : null;
+
       await addDoc(collection(db, "broadcasts"), {
         messId: targetMessId,
         title: cleanTitle,
         body: cleanBody,
         createdAt: serverTimestamp(),
+        expiresAt: expiresAtDate ? expiresAtDate.toISOString() : null,
       });
 
       await logSuperAdminActivity(
         targetMessId,
         "Custom Broadcast Sent",
-        `Target: ${targetMessId} | Title: "${cleanTitle}"`
+        `Target: ${targetMessId} | Title: "${cleanTitle}" | Auto-Expire: ${autoExpire24h}`
       );
 
       setBroadcastTitle("");
       setBroadcastBody("");
-      alert(`⚡ Custom broadcast successfully deployed to student feeds!`);
+      alert(`⚡ Custom broadcast successfully deployed! It will automatically expire after 24 hours.`);
     } catch (error) {
       console.error("Broadcast deployment error:", error);
-      alert("Custom broadcast failure. Please check console.");
+      alert("Custom broadcast failure.");
     } finally {
       setIsBroadcastingCustom(false);
     }
@@ -511,12 +500,13 @@ const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
           <NavButton id="overview" icon={Activity} label="HQ Overview" />
           <NavButton id="roles" icon={KeyRound} label="Roles & Permissions" />
           <NavButton id="menus" icon={Utensils} label="Multi-mess Menu Editor" />
-          <NavButton id="feedbacks" icon={MessageSquare} label="Campus Feedback" badge={pendingFeedbacksCount} />
-          <NavButton id="complaints" icon={AlertTriangle} label="Campus Complaints" badge={pendingComplaintsCount} />
-          <NavButton id="broadcasts" icon={Megaphone} label="Broadcast Management" />
+          <NavButton id="special-menus" icon={Sparkles} label="Special Menu Upgrades" />
+          <NavButton id="feedbacks" icon={MessageSquare} label="Mess Feedback" badge={pendingFeedbacksCount} />
+          <NavButton id="complaints" icon={AlertTriangle} label="Mess Complaints" badge={pendingComplaintsCount} />
+          <NavButton id="broadcasts" icon={Megaphone} label="Broadcast Management" badge={broadcastList.length} />
           <NavButton id="students" icon={Users} label="Student Directory" />
-          <NavButton id="analytics" icon={TrendingUp} label="Dish Ratings & Telemetry" />
-          <NavButton id="navratri" icon={Sparkles} label="🌟 Navratri Special Hub" />
+          <NavButton id="analytics" icon={TrendingUp} label="Dish Ratings" />
+          <NavButton id="navratri" icon={Sparkles} label="Fast Day Special Hub" />
           <NavButton id="audit" icon={History} label="System Audit Logs" badge={auditLogs.length} />
         </div>
 
@@ -732,6 +722,11 @@ const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
           <MultiMessMenuEditor allMesses={allMesses} />
         )}
 
+        {/* ================= SPECIAL MENU UPGRADES TAB ================= */}
+        {activeTab === "special-menus" && (
+          <SpecialMenuUpgradeHub allMesses={allMesses} />
+        )}
+
         {/* ================= TAB 2: CAMPUS FEEDBACK ================= */}
         {activeTab === "feedbacks" && (
           <div className="space-y-6 animate-fade-in pb-12">
@@ -847,6 +842,19 @@ const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
                       placeholder="Type your message details here..."
                       className="w-full resize-none rounded-xl border-2 border-[#B5DED4] bg-[#E9F7F4]/40 px-3 py-2 text-xs font-medium outline-none focus:border-[#007F86] focus:bg-white transition text-[#193A40]"
                     />
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="checkbox"
+                      id="autoExpire24hCheck"
+                      checked={autoExpire24h}
+                      onChange={(e) => setAutoExpire24h(e.target.checked)}
+                      className="h-4 w-4 rounded border-[#B5DED4] text-[#007F86] cursor-pointer"
+                    />
+                    <label htmlFor="autoExpire24hCheck" className="text-xs font-bold text-[#193A40] cursor-pointer">
+                      Auto-expire / delete announcement automatically after 24 hours
+                    </label>
                   </div>
 
                   <button
@@ -1029,7 +1037,7 @@ const [isSaving, setIsSaving] = useState(false); // 👈 Add this line here
           <MessDishRatingsTab allMesses={allMesses} rawFeedbacks={feedbacks} />
         )}
 
-        {/* ================= TAB 7: NAVRATRI SPECIAL HUB ================= */}
+        {/* ================= TAB 7: FAST DAY SPECIAL HUB ================= */}
         {activeTab === "navratri" && (
           <NavratriSpecialAdminHub allMesses={allMesses} />
         )}
@@ -1126,7 +1134,6 @@ function MultiMessMenuEditor({ allMesses }: { allMesses: any[] }) {
       setIsLoadingMenu(true);
       try {
         const loaded = await Promise.all(selectedMessIds.map(async (messId) => {
-          // Match the student app exactly: a live date menu always overrides the weekly template.
           let snapshot = await getDoc(doc(activeFirestore, "daily_menus", `${messId}_${selectedDate}`));
           if (saveMode === "permanent" && !snapshot.exists()) {
             snapshot = await getDoc(doc(activeFirestore, "mess_menus", `${messId}_${weekday}`));
@@ -1212,8 +1219,7 @@ function MultiMessMenuEditor({ allMesses }: { allMesses: any[] }) {
           updatedAt: serverTimestamp(),
           updatedByRole: "super-admin",
         }, { merge: true });
-        // Nutritionist tooling historically reads `{messId}_day_{day}`.
-        // Mirror permanent edits so every existing dashboard sees the same weekly menu.
+
         if (saveMode === "permanent") {
           batch.set(doc(firestore, "mess_menus", `${messId}_day_${weekday}`), {
             [selectedMeal]: finalDishes,
@@ -1223,6 +1229,12 @@ function MultiMessMenuEditor({ allMesses }: { allMesses: any[] }) {
             updatedByRole: "super-admin",
           }, { merge: true });
         }
+
+        batch.set(doc(firestore, "mess_meta", messId), {
+          version: Date.now(),
+          lastPublishedAt: serverTimestamp(),
+        }, { merge: true });
+
         batch.set(doc(collection(firestore, "admin_audit_logs")), {
           messId,
           action: saveMode === "permanent" ? "Permanent Multi-mess Menu Published" : "Multi-mess Menu Published",
@@ -1322,6 +1334,191 @@ function MultiMessMenuEditor({ allMesses }: { allMesses: any[] }) {
             <Save className="w-4 h-4" /> {isSaving ? "Publishing..." : `Publish to ${selectedMessIds.length || "selected"} mess(es)`}
           </button>
         </div>
+      </form>
+    </div>
+  );
+}
+
+/* ---------------- 🌟 SPECIAL MENU UPGRADE HUB (Updated with Single/All Mess Option & Reduced Reads) ---------------- */
+/* ---------------- 🌟 SPECIAL MENU UPGRADE HUB ---------------- */
+function SpecialMenuUpgradeHub({ allMesses }: { allMesses: any[] }) {
+  const [targetMessId, setTargetMessId] = useState<string>("all");
+  const [eventLabel, setEventLabel] = useState("Special Feast Upgrade");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [mealKey, setMealKey] = useState<MealKey>("dinner");
+  const [menuItemsText, setMenuItemsText] = useState("");
+  const [isPublishing, setIsPublishing] = useState(false);
+
+  async function handlePublishSpecialUpgrade(e: React.FormEvent) {
+    e.preventDefault();
+    const firestoreDb = db;
+    if (!firestoreDb || !startDate || !endDate) {
+      alert("⚠️ Database not initialized or please specify both start and end dates.");
+      return;
+    }
+
+    const items = menuItemsText.split("\n").map(s => s.trim()).filter(Boolean);
+    if (items.length === 0) {
+      alert("⚠️ Please enter at least one menu item.");
+      return;
+    }
+
+    const targetMessList = targetMessId === "all" ? allMesses.map(m => m.id) : [targetMessId];
+
+    if (!window.confirm(`Deploy special menu upgrade "${eventLabel}" for ${targetMessId === "all" ? "ALL messes" : `[${targetMessId.toUpperCase()}]`} from ${startDate} to ${endDate}?`)) return;
+
+    setIsPublishing(true);
+    try {
+      const batch = writeBatch(firestoreDb);
+      
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      let count = 0;
+
+      targetMessList.forEach((messId) => {
+        const currentDate = new Date(start);
+        while (currentDate <= end) {
+          const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}-${String(currentDate.getDate()).padStart(2, "0")}`;
+          
+          const dailyRef = doc(firestoreDb, "daily_menus", `${messId}_${dateStr}`);
+          batch.set(dailyRef, {
+            messId,
+            date: dateStr,
+            [mealKey]: items,
+            updatedAt: serverTimestamp(),
+            updatedByRole: "super-admin"
+          }, { merge: true });
+
+          const overrideRef = doc(collection(firestoreDb, "mess_overrides"), `${messId}_${dateStr}`);
+          batch.set(overrideRef, {
+            messId,
+            date: dateStr,
+            label: eventLabel,
+            menu: { 
+              breakfast: mealKey === "breakfast" ? items : [], 
+              lunch: mealKey === "lunch" ? items : [], 
+              snacks: mealKey === "snacks" ? items : [], 
+              dinner: mealKey === "dinner" ? items : [] 
+            },
+            startTime: "07:30",
+            endTime: "23:59",
+            expiresAt: new Date(`${dateStr}T23:59:00`).toISOString(),
+          }, { merge: true });
+
+          batch.set(doc(firestoreDb, "mess_meta", messId), {
+            version: Date.now(),
+            lastPublishedAt: serverTimestamp()
+          }, { merge: true });
+
+          currentDate.setDate(currentDate.getDate() + 1);
+          count++;
+        }
+      });
+
+      await batch.commit();
+      alert(`✅ Successfully deployed special upgrade across ${count} operations (${targetMessList.length} mess(es))!`);
+      setMenuItemsText("");
+    } catch (err) {
+      console.error("Special menu upgrade error:", err);
+      alert("❌ Failed to deploy special upgrade. Check console for permission details.");
+    } finally {
+      setIsPublishing(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6 animate-fade-in pb-12 max-w-3xl text-[#193A40]">
+      <div>
+        <h1 className="text-2xl sm:text-3xl font-black text-[#193A40]">Special Menu Upgrades</h1>
+        <p className="text-xs sm:text-sm text-[#193A40]/70 mt-0.5">Deploy upgraded festival or special meal spreads for specific mess facilities or all messes across custom date ranges.</p>
+      </div>
+
+      <form onSubmit={handlePublishSpecialUpgrade} className="bg-white rounded-3xl border-2 border-[#B5DED4] p-6 shadow-sm space-y-5">
+        <div>
+          <label className="block text-xs font-bold text-[#193A40] mb-1">Target Mess Facility / Scope:</label>
+          <select
+            value={targetMessId}
+            onChange={(e) => setTargetMessId(e.target.value)}
+            className="w-full rounded-xl border-2 border-[#B5DED4] bg-[#E9F7F4]/40 px-3 py-2.5 text-xs font-bold outline-none focus:border-[#007F86] text-[#193A40]"
+          >
+            <option value="all">🌍 All Messes (Global Special Upgrade)</option>
+            {allMesses.map((m) => (
+              <option key={m.id} value={m.id}>{m.name} {m.subtitle ? `(${m.subtitle})` : ""}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-[#193A40] mb-1">Event / Upgrade Label (e.g., Diwali Grand Feast):</label>
+          <input
+            type="text"
+            required
+            value={eventLabel}
+            onChange={(e) => setEventLabel(e.target.value)}
+            placeholder="Special menu title..."
+            className="w-full rounded-xl border-2 border-[#B5DED4] bg-[#E9F7F4]/40 px-3 py-2.5 text-xs font-bold outline-none focus:border-[#007F86] text-[#193A40]"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-bold text-[#193A40] mb-1">Start Date:</label>
+            <input
+              type="date"
+              required
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full rounded-xl border-2 border-[#B5DED4] bg-[#E9F7F4]/40 px-3 py-2.5 text-xs font-bold outline-none focus:border-[#007F86] text-[#193A40]"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-[#193A40] mb-1">End Date:</label>
+            <input
+              type="date"
+              required
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full rounded-xl border-2 border-[#B5DED4] bg-[#E9F7F4]/40 px-3 py-2.5 text-xs font-bold outline-none focus:border-[#007F86] text-[#193A40]"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-[#193A40] mb-1">Meal Window:</label>
+          <div className="grid grid-cols-4 gap-1 bg-[#E9F7F4] p-1 rounded-xl border border-[#B5DED4]">
+            {MEAL_DEFS.map((m) => (
+              <button
+                key={m.key}
+                type="button"
+                onClick={() => setMealKey(m.key)}
+                className={`py-2 text-[10px] font-bold rounded-lg capitalize cursor-pointer ${mealKey === m.key ? "bg-[#007F86] text-white" : "text-[#193A40]/70"}`}
+              >
+                {m.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold text-[#193A40] mb-1">Upgraded Menu Items (One item per line):</label>
+          <textarea
+            rows={5}
+            required
+            value={menuItemsText}
+            onChange={(e) => setMenuItemsText(e.target.value)}
+            placeholder="Paneer Tikka&#10;Kaju Masala&#10;Butter Naan&#10;Gulab Jamun"
+            className="w-full rounded-xl border-2 border-[#B5DED4] bg-[#E9F7F4]/40 p-3 text-xs font-medium outline-none focus:border-[#007F86] text-[#193A40]"
+          />
+        </div>
+
+        <button
+          type="submit"
+          disabled={isPublishing}
+          className="w-full bg-[#007F86] text-white py-3.5 rounded-2xl text-xs font-bold shadow-sm transition active:scale-95 disabled:opacity-40 cursor-pointer hover:opacity-90 flex items-center justify-center gap-2"
+        >
+          <Sparkles className="w-4 h-4" /> {isPublishing ? "Deploying Upgrade..." : "Publish Special Menu Upgrade"}
+        </button>
       </form>
     </div>
   );
@@ -2057,7 +2254,6 @@ function SuperAdminComplaintsViewer({ complaints, setComplaints }: { complaints:
       return;
     }
     const newStatus = complaint.status === "solved" ? "unsolved" : "solved";
-    // Optimistic update so the tick responds instantly.
     setComplaints((list) => list.map((c) => (c.id === complaint.id ? { ...c, status: newStatus } : c)));
     try {
       await setComplaintStatus({ data: { idToken: await auth.currentUser.getIdToken(), complaintId: complaint.id, status: newStatus } });

@@ -21,11 +21,12 @@ import {
   type SpecialOverride,
 } from "@/lib/messhub";
 import { Star, Sparkles, ChevronDown, ChevronUp, Download } from "lucide-react";
-import { NavratriStudentWidget } from "@/components/messhub/NavratriSpecial";
-import { MessCountdownTimer } from "@/components/ui/MessCountdownTimer"; // 🌟 Imported the creative timer component
+// import { NavratriStudentWidget } from "@/components/messhub/NavratriSpecial";
+import { MessCountdownTimer } from "@/components/ui/MessCountdownTimer";
 import { StudentClock } from "@/components/messhub/StudentClock";
 import { submitComplaint } from "@/lib/complaint-action";
 import { MyFeedback } from "@/components/messhub/MyFeedback";
+import { NavratriStudentWidget } from "./NavratriSpecial";
 
 const CATEGORIES = ["Food quality", "Hygiene", "Timing", "Staff behavior", "Other"] as const;
 
@@ -83,6 +84,81 @@ function StudentHomeContents({ profile, onSignOut, now }: { profile: StudentProf
   const [dailyMenu, setDailyMenu] = useState<any>(null);
   const [menuSource, setMenuSource] = useState<"daily" | "weekly" | "legacy-weekly" | "cache" | null>(null);
 
+  // 🚀 Optimized Version-Gated Sync Hook with Infinite Loop Prevention
+  useEffect(() => {
+    if (!db || !profile?.messId || !todayDateStr) return;
+    const firestoreDb = db;
+
+    const weeklyCacheKey = `vitmess.weekly_cache.v5:${profile.messId}:${todayDateStr}`;
+    const versionKey = `vitmess.version_key.v5:${profile.messId}`;
+
+    // 1. Instant local load for zero latency UX
+    const cachedData = localStorage.getItem(weeklyCacheKey);
+    if (cachedData) {
+      try {
+        const parsed = JSON.parse(cachedData);
+        setDailyMenu(parsed);
+        setMenuSource("cache");
+      } catch (e) {
+        localStorage.removeItem(weeklyCacheKey);
+      }
+    }
+
+    // 2. Tiny metadata version listener
+    const metaDocRef = doc(firestoreDb, "mess_meta", profile.messId);
+
+    const unsubscribeMeta = onSnapshot(metaDocRef, async (metaSnap) => {
+      try {
+        const remoteVersion = metaSnap.exists() ? metaSnap.data().version || 1 : 1;
+        const localVersion = Number(localStorage.getItem(versionKey) || 0);
+
+        // If version matches and we already have state loaded, do nothing
+        if (localVersion === remoteVersion && cachedData) {
+          return;
+        }
+
+        // 3. Fetch fresh data from Firestore only on true version mismatch
+        const dailyDocRef = doc(firestoreDb, "daily_menus", `${profile.messId}_${todayDateStr}`);
+        const dailySnap = await getDoc(dailyDocRef);
+        let menu = null;
+        let source: "daily" | "weekly" | "legacy-weekly" = "daily";
+
+        if (dailySnap.exists()) {
+          menu = dailySnap.data();
+          source = "daily";
+        } else {
+          const weeklyDocRef = doc(firestoreDb, "mess_menus", `${profile.messId}_day_${activeWeekday}`);
+          const weeklySnap = await getDoc(weeklyDocRef);
+          menu = weeklySnap.exists() ? weeklySnap.data() : null;
+          source = "weekly";
+        }
+
+        if (!menu) {
+          const olderWeeklyDocRef = doc(firestoreDb, "mess_menus", `${profile.messId}_${activeWeekday}`);
+          const olderWeeklySnap = await getDoc(olderWeeklyDocRef);
+          menu = olderWeeklySnap.exists() ? olderWeeklySnap.data() : null;
+          source = "legacy-weekly";
+        }
+
+        if (menu) {
+          localStorage.setItem(weeklyCacheKey, JSON.stringify(menu));
+          localStorage.setItem(versionKey, String(remoteVersion));
+        } else {
+          localStorage.removeItem(weeklyCacheKey);
+        }
+
+        setDailyMenu(menu);
+        setMenuSource(source);
+      } catch (err) {
+        console.error("[CacheSync] Failed to sync remote version:", err);
+      }
+    });
+
+    return () => {
+      unsubscribeMeta();
+    };
+  }, [profile?.messId, todayDateStr]); // Removed activeWeekday if it fluctuates, or keep primitive
+
   useEffect(() => {
     if (!db || !profile?.messId) return;
 
@@ -91,9 +167,6 @@ function StudentHomeContents({ profile, onSignOut, now }: { profile: StudentProf
       where("messId", "==", profile.messId)
     );
 
-    // This subscription deliberately depends only on the mess and calendar day.
-    // The clock below evaluates the already-received data; it must not reopen
-    // the listener every second.
     const unsub = onSnapshot(q, (snapshot) => {
       setOverrides(snapshot.docs.map((docItem) => docItem.data() as SpecialOverride));
     });
@@ -114,74 +187,11 @@ function StudentHomeContents({ profile, onSignOut, now }: { profile: StudentProf
     }) ?? null;
   }, [overrides, todayDateStr, now]);
 
-  useEffect(() => {
-    if (!db || !profile?.messId || !todayDateStr) return;
-    const firestoreDb = db;
-
-    const cacheKey = `messhub.daily-menu.v1:${profile.messId}:${todayDateStr}`;
-    const cacheCheckedAtKey = `${cacheKey}:checked-at`;
-    const CACHE_REFRESH_MS = 12 * 60 * 60 * 1000;
-
-    async function loadDailyMenuFromFirestore() {
-      try {
-        const cached = localStorage.getItem(cacheKey);
-        const lastCheckedAt = Number(localStorage.getItem(cacheCheckedAtKey) ?? 0);
-        const cacheIsFresh = Boolean(cached) && Date.now() - lastCheckedAt < CACHE_REFRESH_MS;
-        if (cached) {
-          setDailyMenu(JSON.parse(cached));
-          setMenuSource("cache");
-          console.info("[Menu] Loaded daily cache", { messId: profile.messId, date: todayDateStr });
-        }
-
-        if (cacheIsFresh) return;
-
-        // Show cached data immediately, then refresh it only after the
-        // 12-hour TTL has elapsed. This keeps published-menu updates timely
-        // without charging a Firestore read on every app visit.
-        // Prefer a dated menu, but retain both legacy weekly document formats
-        // while active messes are migrated.
-        const dailyDocRef = doc(firestoreDb, "daily_menus", `${profile.messId}_${todayDateStr}`);
-        const dailySnap = await getDoc(dailyDocRef);
-        let menu = dailySnap.exists() ? dailySnap.data() : null;
-        let source: "daily" | "weekly" | "legacy-weekly" = "daily";
-        if (!menu) {
-          const weeklyDocRef = doc(firestoreDb, "mess_menus", `${profile.messId}_day_${activeWeekday}`);
-          const weeklySnap = await getDoc(weeklyDocRef);
-          menu = weeklySnap.exists() ? weeklySnap.data() : null;
-          source = "weekly";
-        }
-        if (!menu) {
-          const olderWeeklyDocRef = doc(firestoreDb, "mess_menus", `${profile.messId}_${activeWeekday}`);
-          const olderWeeklySnap = await getDoc(olderWeeklyDocRef);
-          menu = olderWeeklySnap.exists() ? olderWeeklySnap.data() : null;
-          source = "legacy-weekly";
-        }
-        if (menu) {
-          localStorage.setItem(cacheKey, JSON.stringify(menu));
-          localStorage.setItem(cacheCheckedAtKey, String(Date.now()));
-          setDailyMenu(menu);
-          setMenuSource(source);
-        } else if (!cached) {
-          setDailyMenu(null);
-          setMenuSource(null);
-        }
-        console.info("[Menu] Loaded", { messId: profile.messId, date: todayDateStr, source: menu ? source : "none" });
-      } catch (err) {
-        console.error("[StudentHome] Error loading daily menu:", err);
-        setDailyMenu(null);
-      }
-    }
-
-    loadDailyMenuFromFirestore();
-  }, [profile?.messId, todayDateStr, activeWeekday]);
-
-  const currentMenu = useMemo(() => {
-    if (activeOverride && activeOverride.menu) {
-      return activeOverride.menu; 
-    }
+  // Original base menu strictly untouched
+  const baseMenu = useMemo(() => {
     if (dailyMenu) return dailyMenu;
     return HARDCODED_WEEKLY_MENUS[profile.messId]?.[activeWeekday] || { breakfast: [], lunch: [], snacks: [], dinner: [] };
-  }, [activeOverride, dailyMenu, profile.messId, activeWeekday]);
+  }, [dailyMenu, profile.messId, activeWeekday]);
 
   useEffect(() => {
     async function syncToken() {
@@ -196,7 +206,6 @@ function StudentHomeContents({ profile, onSignOut, now }: { profile: StudentProf
     syncToken();
   }, [profile.messId, profile.name]);
 
-  // Complaint / Issue form state variables
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("Food quality");
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
@@ -231,7 +240,8 @@ function StudentHomeContents({ profile, onSignOut, now }: { profile: StudentProf
     const lastNotifiedKey = sessionStorage.getItem("vitmess.last_notified_meal");
 
     if (focusIsLive && focus && lastNotifiedKey !== focus.key) {
-      const items = currentMenu[focus.key] ?? [];
+      const items = baseMenu[focus.key] ?? [];
+
       const itemString = items
         .slice(0, 3)
         .map((i: any) => typeof i === "object" ? i.name : i)
@@ -257,7 +267,7 @@ function StudentHomeContents({ profile, onSignOut, now }: { profile: StudentProf
 
       sessionStorage.setItem("vitmess.last_notified_meal", focus.key);
     }
-  }, [focus, focusIsLive, currentMenu, todayDateStr]);
+  }, [focus, focusIsLive, baseMenu, todayDateStr]);
 
   useEffect(() => {
     if (!db || !profile.messId) return;
@@ -411,15 +421,18 @@ function StudentHomeContents({ profile, onSignOut, now }: { profile: StudentProf
           </div>
           
           <ul className="mt-3.5 grid grid-cols-2 gap-x-6 gap-y-2 text-sm text-[#193A40]">
-            {(currentMenu[focus.key] ?? []).map((i: any, idx: number) => {
-              const name = typeof i === "object" ? i.name : i;
-              return (
-                <li key={idx} className="truncate font-medium flex items-center gap-2">
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#007F86]" />
-                  <span>{name}</span>
-                </li>
-              );
-            })}
+            {(() => {
+              const focusItems = baseMenu[focus.key] ?? [];
+              return focusItems.map((i: any, idx: number) => {
+                const name = typeof i === "object" ? i.name : i;
+                return (
+                  <li key={idx} className="truncate font-medium flex items-center gap-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#007F86]" />
+                    <span>{name}</span>
+                  </li>
+                );
+              });
+            })()}
           </ul>
         </div>
       </section>
@@ -431,27 +444,69 @@ function StudentHomeContents({ profile, onSignOut, now }: { profile: StudentProf
 
       {/* Today's Meals Grid */}
       <section className="mt-8">
-        <div className="px-5 flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-black text-[#193A40]">Today's menu</h3>
-            <p className="text-xs text-[#193A40]/70 font-medium">
-              {now.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}
-            </p>
+        <div className="px-5 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-black text-[#193A40]">Today's menu</h3>
+              <p className="text-xs text-[#193A40]/70 font-medium">
+                {now.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}
+              </p>
+            </div>
+            {menuSource && menuSource !== "daily" && menuSource !== "cache" && (
+              <span className="text-[10px] font-bold text-[#193A40]/60">Weekly menu fallback</span>
+            )}
           </div>
-          {activeOverride && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#193A40] bg-[#B5DED4] border border-[#007F86]/30 px-3 py-1 rounded-full">
-              <Sparkles className="w-3.5 h-3.5 text-[#007F86]" /> {activeOverride.label}
-            </span>
-          )}
-          {menuSource && menuSource !== "daily" && menuSource !== "cache" && (
-            <span className="text-[10px] font-bold text-[#193A40]/60">Weekly menu fallback</span>
+
+          {/* 🌟 Dedicated Special Menu Box Banner */}
+          {activeOverride && activeOverride.menu && (
+            <div className="rounded-2xl border-2 border-[#D97706] bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-600/15 p-4 shadow-sm animate-fade-in space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Sparkles className="w-5 h-5 text-amber-100 animate-pulse" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-widest bg-amber-600 text-white px-2 py-0.5 rounded-full">
+                    ✨ Special Menu Upgrade
+                  </span>
+                  <h4 className="text-sm font-black text-[#193A40] mt-1">{activeOverride.label}</h4>
+                  <p className="text-[11px] text-[#193A40]/80 font-medium">Upgraded meal items added for today's service:</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-amber-500/30">
+                {MEAL_DEFS.map((m) => {
+                  const pushedItems = activeOverride.menu[m.key] ?? [];
+                  if (pushedItems.length === 0) return null;
+
+                  return (
+                    <div key={m.key} className="bg-white/90 border border-amber-300 rounded-xl p-2.5 shadow-2xs">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900 mb-1">
+                        <span>{m.icon}</span>
+                        <span className="capitalize">{m.name}:</span>
+                      </div>
+                      <div className="space-y-0.5">
+                        {pushedItems.map((it: any, iIdx: number) => {
+                          const itemName = typeof it === "object" ? it.name : it;
+                          return (
+                            <div key={iIdx} className="text-[11px] text-[#193A40] font-semibold truncate">
+                              • {itemName}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
 
+        {/* Original Menu Grid */}
         <div className="mt-3 grid grid-cols-2 gap-3 px-5">
           {MEAL_DEFS.map((m) => {
             const isLive = mealStatus(m, now) === "live";
-            const mealItems = currentMenu[m.key] ?? [];
+            const mealItems = baseMenu[m.key] ?? [];
             
             return (
               <button
@@ -518,15 +573,12 @@ function StudentHomeContents({ profile, onSignOut, now }: { profile: StudentProf
         </div>
       </section>
 
-      {/* Replies from the mess to this student's feedback */}
       <MyFeedback profile={profile} />
 
-      {/* Daily Item-Level Dish Rating & Feedback Card */}
       <section className="mt-8 px-5">
-        <DailyItemFeedbackCard profile={profile} currentMenu={currentMenu} />
+        <DailyItemFeedbackCard profile={profile} currentMenu={baseMenu} />
       </section>
 
-      {/* General Bug / Issue Feedback & Complaint Form */}
       <section className="mt-8 px-5">
         <div className="rounded-2xl border-2 border-[#B5DED4] bg-[#FFFFFF] p-5 shadow-sm w-full">
           <h3 className="font-black text-[#193A40] text-sm tracking-tight">Submit a Complaint / Report Issue</h3>
@@ -620,18 +672,16 @@ function StudentHomeContents({ profile, onSignOut, now }: { profile: StudentProf
         </div>
       </div>
 
-      {/* Professional Footer */}
       <footer className="mt-12 px-5 py-6 border-t border-[#B5DED4] text-center text-xs text-[#193A40]/70 space-y-1 font-medium">
         <p className="text-[11px]">
           &copy; {new Date().getFullYear()} VITMESS. All rights reserved.
         </p>
       </footer>
 
-      {/* Bottom sheet for meal items and nutrition badges */}
       {openMeal && (
         <MealSheet
           mealKey={openMeal}
-          items={currentMenu[openMeal] ?? []}
+          items={baseMenu[openMeal] ?? []}
           date={new Date()}
           onClose={() => setOpenMeal(null)}
         />
@@ -862,9 +912,6 @@ function MealSheet({ mealKey, items, date, onClose }: { mealKey: MealKey; items:
                 const isObject = typeof item === "object" && item !== null;
                 const sourceItem = isObject ? item : {};
                 const name = String(isObject ? sourceItem.name : item);
-                // Historic menu documents contain either plain dish names or
-                // partial nutrition objects. Merge them with the standard dish
-                // profile so the student view always has useful Know More data.
                 const fallbackProfile = generateDishProfile(name, mealKey);
                 const dish = isObject
                   ? {
