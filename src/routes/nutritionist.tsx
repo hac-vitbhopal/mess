@@ -895,6 +895,90 @@ function NutritionistPortalPage() {
                                 </button>
                               </div>
                             </div>
+
+                            {/* 🌟 Expanded Details & Recipe Drawer */}
+                            {isExpanded && (
+                              <div className="pt-3 border-t border-[#B5DED4] space-y-3 animate-fade-in bg-white p-4 rounded-2xl border">
+                                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                                  <div>
+                                    <label className="block text-[9px] uppercase font-bold text-[#193A40]/70 mb-1">Calories (kcal)</label>
+                                    <input
+                                      type="number"
+                                      value={dish.calories ?? 0}
+                                      onChange={(e) => handleItemFieldChange(mealType, idx, "calories", Number(e.target.value))}
+                                      className="w-full bg-[#E9F7F4]/50 border border-[#B5DED4] rounded-xl px-2.5 py-1.5 text-xs font-bold text-[#193A40]"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[9px] uppercase font-bold text-[#193A40]/70 mb-1">Protein (g)</label>
+                                    <input
+                                      type="number"
+                                      value={dish.protein ?? 0}
+                                      onChange={(e) => handleItemFieldChange(mealType, idx, "protein", Number(e.target.value))}
+                                      className="w-full bg-[#E9F7F4]/50 border border-[#B5DED4] rounded-xl px-2.5 py-1.5 text-xs font-bold text-[#193A40]"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[9px] uppercase font-bold text-[#193A40]/70 mb-1">Carbs (g)</label>
+                                    <input
+                                      type="number"
+                                      value={dish.carbs ?? 0}
+                                      onChange={(e) => handleItemFieldChange(mealType, idx, "carbs", Number(e.target.value))}
+                                      className="w-full bg-[#E9F7F4]/50 border border-[#B5DED4] rounded-xl px-2.5 py-1.5 text-xs font-bold text-[#193A40]"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[9px] uppercase font-bold text-[#193A40]/70 mb-1">Fat (g)</label>
+                                    <input
+                                      type="number"
+                                      value={dish.fat ?? 0}
+                                      onChange={(e) => handleItemFieldChange(mealType, idx, "fat", Number(e.target.value))}
+                                      className="w-full bg-[#E9F7F4]/50 border border-[#B5DED4] rounded-xl px-2.5 py-1.5 text-xs font-bold text-[#193A40]"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-[9px] uppercase font-bold text-[#193A40]/70 mb-1">Description &amp; Cultural Roots</label>
+                                  <textarea
+                                    rows={2}
+                                    value={dish.description || ""}
+                                    onChange={(e) => handleItemFieldChange(mealType, idx, "description", e.target.value)}
+                                    placeholder="Brief description of the dish..."
+                                    className="w-full bg-[#E9F7F4]/50 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none"
+                                  />
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  <div>
+                                    <label className="block text-[9px] uppercase font-bold text-[#193A40]/70 mb-1">Ingredients &amp; Ratios</label>
+                                    <textarea
+                                      rows={2}
+                                      value={dish.recipe?.ingredients || ""}
+                                      onChange={(e) => {
+                                        const r = { ...(dish.recipe || {}), ingredients: e.target.value };
+                                        handleItemFieldChange(mealType, idx, "recipe", r);
+                                      }}
+                                      placeholder="e.g. 10kg Rice, 2kg Paneer..."
+                                      className="w-full bg-[#E9F7F4]/50 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[9px] uppercase font-bold text-[#193A40]/70 mb-1">Cooking Method</label>
+                                    <textarea
+                                      rows={2}
+                                      value={dish.recipe?.method || ""}
+                                      onChange={(e) => {
+                                        const r = { ...(dish.recipe || {}), method: e.target.value };
+                                        handleItemFieldChange(mealType, idx, "recipe", r);
+                                      }}
+                                      placeholder="Step-by-step preparation..."
+                                      className="w-full bg-[#E9F7F4]/50 border border-[#B5DED4] rounded-xl p-2 text-xs text-[#193A40] resize-none"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
