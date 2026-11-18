@@ -150,10 +150,29 @@ function StudentHomeContents({ profile, onSignOut, now }: { profile: StudentProf
         setDailyMenu(menu);
         setMenuSource(source);
       } catch (err) {
-        console.error("[CacheSync] Failed to sync remote version:", err);
+       console.warn("[OfflineMode] Network offline or restricted. Serving secure local cache.");
+        if (cachedData) {
+          try {
+            const parsed = JSON.parse(cachedData);
+            setDailyMenu(parsed);
+            setMenuSource("cache");
+          } catch (e) {
+            localStorage.removeItem(weeklyCacheKey);
+          }
+        }
+      }
+    }, (error) => {
+      // Handle network disconnection or insufficient permission errors gracefully offline
+      console.warn("[CacheSync] Snapshot stream interrupted. Using local state.");
+      if (cachedData) {
+        try {
+          setDailyMenu(JSON.parse(cachedData));
+          setMenuSource("cache");
+        } catch (e) {
+          // Fallback safe
+        }
       }
     });
-
     return () => {
       unsubscribeMeta();
     };
